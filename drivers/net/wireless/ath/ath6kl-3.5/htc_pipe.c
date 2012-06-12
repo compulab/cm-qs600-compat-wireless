@@ -1291,7 +1291,7 @@ struct sk_buff *rx_sg_to_single_netbuf(struct htc_target *target)
 		goto _failed;
 	}
 
-	new_skb = __dev_alloc_skb(target->rx_sg_total_len_exp, GFP_KERNEL);
+	new_skb = __dev_alloc_skb(target->rx_sg_total_len_exp, GFP_ATOMIC);
 	if (new_skb == NULL) {
 		ath6kl_dbg(ATH6KL_DBG_HTC,
 			"%s: can't allocate %u size netbuf\n",
