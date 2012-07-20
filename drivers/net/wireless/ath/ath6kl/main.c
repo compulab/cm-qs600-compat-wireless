@@ -1108,8 +1108,12 @@ static struct net_device_stats *ath6kl_get_stats(struct net_device *dev)
 	return &vif->net_stats;
 }
 
-#if 0 //(LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+static int ath6kl_set_features(struct net_device *dev, netdev_features_t features)
+#else
 static int ath6kl_set_features(struct net_device *dev, u32 features)
+#endif
 {
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	struct ath6kl *ar = vif->ar;
@@ -1274,7 +1278,7 @@ static struct net_device_ops ath6kl_netdev_ops = {
 	.ndo_start_xmit         = ath6kl_data_tx,
 	.ndo_get_stats          = ath6kl_get_stats,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
-//	.ndo_set_features       = ath6kl_set_features,
+	.ndo_set_features       = ath6kl_set_features,
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 	.ndo_set_rx_mode	= ath6kl_set_multicast_list,
 };
