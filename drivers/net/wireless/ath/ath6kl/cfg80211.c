@@ -1523,6 +1523,15 @@ static struct net_device *ath6kl_cfg80211_add_iface(struct wiphy *wiphy,
 	return ndev;
 }
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
+struct net_device *ath6kl_cfg80211_add_p2p0_iface(struct ath6kl *ar)
+{
+	return ath6kl_cfg80211_add_iface(ar->wiphy, "p2p0",
+					 NL80211_IFTYPE_P2P_CLIENT,
+					 NULL, NULL);
+}
+#endif
+
 static int ath6kl_cfg80211_del_iface(struct wiphy *wiphy,
 				     struct net_device *ndev)
 {
@@ -2148,7 +2157,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 {
 	struct in_device *in_dev;
 	struct in_ifaddr *ifa;
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif = NULL;
 	int ret;
 	u32 filter = 0;
 	u16 i, bmiss_time;
@@ -2897,14 +2906,14 @@ void ath6kl_cfg80211_sta_bmiss_enhance(struct ath6kl_vif *vif, bool enable)
 {
 	int err;
 
+	if (!test_bit(ATH6KL_FW_CAPABILITY_BMISS_ENHANCE,
+		      vif->ar->fw_capabilities))
+		return;
+
 	if (WARN_ON(!test_bit(WMI_READY, &vif->ar->flag)))
 		return;
 
 	if (vif->nw_type != INFRA_NETWORK)
-		return;
-
-	if (!test_bit(ATH6KL_FW_CAPABILITY_BMISS_ENHANCE,
-		      vif->ar->fw_capabilities))
 		return;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s fw bmiss enhance\n",
