@@ -113,7 +113,7 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 	ath6kl_info("hw 0x%x fw %s\n", ar->wiphy->hw_version,
 			ar->wiphy->fw_version);
 
-	BUILD_BUG_ON(dumpcount % 4);
+	BUILD_BUG_ON(REG_DUMP_COUNT_AR6004 % 4);
 
 	for (i = 0; i < dumpcount / 4; i++) {
 		ath6kl_info("%d: 0x%8.8x 0x%8.8x 0x%8.8x 0x%8.8x\n",
@@ -143,6 +143,8 @@ static int ath6kl_hif_proc_dbg_intr(struct ath6kl_device *dev)
 		ath6kl_warn("Failed to clear debug interrupt: %d\n", ret);
 
 	ath6kl_hif_dump_fw_crash(dev->ar);
+
+	ath6kl_fw_crash_trap(dev->ar);
 
 	return ret;
 }
