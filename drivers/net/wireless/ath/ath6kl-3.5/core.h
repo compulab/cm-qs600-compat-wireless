@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.125
+#define __BUILD_VERSION_ 3.5.0.132
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -57,8 +57,17 @@
 #endif
 
 /* TODO : move to BSP, only for Android-JB now. */
+#ifdef CONFIG_ATH6KL_UB134
+#ifndef CONFIG_ATH6KL_MCC
+#define CONFIG_ATH6KL_MCC
+#endif
+#ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
+#define CONFIG_ATH6KL_UDP_TPUT_WAR
+#endif
+#endif
+
 #ifdef CONFIG_ANDROID
-#ifdef ATH6KL_MCC
+#ifdef CONFIG_ATH6KL_MCC
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
@@ -89,6 +98,14 @@
 
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_P2P
+#define ATH6KL_DEVNAME_DEF_P2P		"p2p%d"
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_AP
+#define ATH6KL_DEVNAME_DEF_AP		"ap%d"
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -336,7 +353,7 @@ struct ath6kl_android_wifi_priv_cmd {
 	"ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
-#define AR6004_MAX_64K_FW_SIZE                58880
+#define AR6004_MAX_64K_FW_SIZE                65536
 
 #define BDATA_CHECKSUM_OFFSET                 4
 #define BDATA_MAC_ADDR_OFFSET                 8
@@ -372,7 +389,8 @@ struct ath6kl_android_wifi_priv_cmd {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
-#define AGGR_RX_TIMEOUT          50  /* in ms */
+#define AGGR_RX_TIMEOUT          100	/* in ms */
+#define AGGR_RX_TIMEOUT_VO       50 /* in ms */
 
 #define AGGR_GET_RXTID_STATS(_p, _x)     (&(_p->stat[(_x)]))
 #define AGGR_GET_RXTID(_p, _x)           (&(_p->rx_tid[(_x)]))
@@ -454,14 +472,19 @@ struct skb_hold_q {
 
 struct rxtid {
 	bool aggr;
-	bool progress;
-	bool timer_mon;
 	u16 win_sz;
 	u16 seq_next;
 	u32 hold_q_sz;
 	struct skb_hold_q *hold_q;
 	struct sk_buff_head q;
 	spinlock_t lock;
+	u16 timerwait_seq_num;		/* current wait seq_no next */
+	bool sync_next_seq;
+	struct timer_list tid_timer;
+	u8 tid_timer_scheduled;
+	u8	tid;
+	u16	issue_timer_seq;
+	struct aggr_conn_info *aggr_conn;
 };
 
 struct rxtid_stats {
@@ -523,12 +546,11 @@ struct aggr_info {
 
 struct aggr_conn_info {
 	u8 aggr_sz;
-	u8 timer_scheduled;
-	struct timer_list timer;
 	struct aggr_info *aggr_cntxt;
 	struct net_device *dev;
 	struct rxtid rx_tid[NUM_OF_TIDS];
 	struct rxtid_stats stat[NUM_OF_TIDS];
+	u32 tid_timeout_setting[NUM_OF_TIDS];
 	/* TX A-MSDU */
 	struct txtid tx_tid[NUM_OF_TIDS];
 };
@@ -862,6 +884,7 @@ struct ath6kl_vif {
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
+	struct ap_acl_info *ap_acl_ctx;
 	struct timer_list sche_scan_timer;
 	int sche_scan_interval;			/* in ms. */
 
@@ -1014,8 +1037,11 @@ struct ath6kl {
 
 	struct dentry *debugfs_phy;
 
-	bool p2p;			/* Support P2P or not */
-	bool p2p_concurrent;		/* Support P2P-Concurrent or not */
+	/* Support P2P or not */
+	bool p2p;
+
+	/* Support P2P-Concurrent or not */
+	bool p2p_concurrent;
 
 	/* Support P2P-Multi-Channel-Concurrent or not */
 	bool p2p_multichan_concurrent;
@@ -1025,6 +1051,17 @@ struct ath6kl {
 
 	/* Support ath6kl-3.2's P2P-Concurrent or not */
 	bool p2p_compat;
+
+	/*
+	 * STA + AP is a special mode.
+	 * Reuse P2P framwork but no P2P function.
+	 * At least 4VAPs to support STA(1) + P2P(2) + AP(1) mode.
+	 */
+#define IS_STA_AP_ONLY(_ar)					\
+	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < 4))
+
+	/* Support P2P-Concurrent with softAP or not */
+	bool p2p_concurrent_ap;
 
 	bool sche_scan;
 
