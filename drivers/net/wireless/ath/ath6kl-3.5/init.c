@@ -39,6 +39,7 @@ static unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
+unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -50,8 +51,9 @@ unsigned int diag_local_test;
 module_param(diag_local_test, uint, 0644);
 #endif
 
-/* assume string is "00:11:22:33:44:55".  used to override the default MAC of MAC from softmac.bin file*/
-char *ath6kl_wifi_mac = NULL; 
+/* assume string is "00:11:22:33:44:55".
+   used to override the default MAC of MAC from softmac.bin file */
+char *ath6kl_wifi_mac;
 
 module_param(debug_mask, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
@@ -61,6 +63,7 @@ module_param(testmode, uint, 0644);
 module_param(ath6kl_wow_ext, uint, 0644);
 module_param(ath6kl_wow_gpio, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
+module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
 
 static const struct ath6kl_hw hw_list[] = {
@@ -227,10 +230,10 @@ static const struct ath6kl_hw hw_list[] = {
 	{
 		.id				= AR6004_HW_1_6_VERSION,
 		.name				= "ar6004 hw 1.6",
-		.dataset_patch_addr		= 0x57e884,
+		.dataset_patch_addr		= 0,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
-		.reserved_ram_size		= 11264,
+		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
 		.testscript_addr		= 0x43d400,
 
@@ -656,7 +659,9 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 			status = -EIO;
 		}
 
-	if (ar->p2p && (ar->vif_max == 1 || idx || !(ar->p2p_dedicate))) {
+	if (ar->p2p && (ar->vif_max == 1 ||
+			(idx >= ar->max_norm_iface) ||
+			!(ar->p2p_dedicate))) {
 		ret = ath6kl_wmi_info_req_cmd(ar->wmi, idx,
 					      P2P_FLAG_CAPABILITIES_REQ |
 					      P2P_FLAG_MACADDR_REQ |
@@ -669,7 +674,9 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 		}
 	}
 
-	if (ar->p2p && (ar->vif_max == 1 || idx || !(ar->p2p_dedicate))) {
+	if (ar->p2p && (ar->vif_max == 1 ||
+			(idx >= ar->max_norm_iface) ||
+			!(ar->p2p_dedicate))) {
 		/* Enable Probe Request reporting for P2P */
 		ret = ath6kl_wmi_probe_report_req_cmd(ar->wmi, idx, true);
 		if (ret) {
@@ -686,9 +693,9 @@ static int ath6kl_target_config_wlan_params(struct ath6kl *ar, int idx)
 		 */
 		if ((((ar->vif_max == 1) && (!ar->p2p)) ||
 		     (ar->vif_max > 1)) &&
-		    (idx == ATH6KL_24GHZ_HT40_DEF_STA_IDX)) {
+		    (idx < ar->max_norm_iface)) {
 			if (ath6kl_wmi_set_ht_cap_cmd(ar->wmi,
-				ATH6KL_24GHZ_HT40_DEF_STA_IDX,
+				idx,
 				A_BAND_24GHZ,
 				ATH6KL_24GHZ_HT40_DEF_WIDTH,
 				ATH6KL_24GHZ_HT40_DEF_SGI,
@@ -723,10 +730,17 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		fw_mode |= fw_iftype << (i * HI_OPTION_FW_MODE_BITS);
 
 	/*
-	 * p2p_dedicate, submodes :
+	 * p2p_concurrent & p2p_dedicate, submodes :
 	 *		vif[0] - AP/STA/IBSS
 	 *		vif[1] - "P2P dev"/"P2P GO"/"P2P Client"
 	 *		vif[2] - "P2P dev"/"P2P GO"/"P2P Client"
+	 *		vif[3] - "P2P dev"/"P2P GO"/"P2P Client" (if VAP == 4)
+	 *
+	 * p2p_concurrent_ap & p2p_dedicate, submodes :
+	 *		vif[0] - AP/STA/IBSS
+	 *		vif[1] - AP/STA/IBSS
+	 *		vif[2] - "P2P dev"/"P2P GO"/"P2P Client"
+	 *		vif[3] - "P2P dev"/"P2P GO"/"P2P Client" (if VAP == 4)
 	 *
 	 * !p2p_dedicate, submodes:
 	 *		vif[0] - "AP/STA/IBSS/P2P dev"
@@ -1029,25 +1043,25 @@ static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 	u32 param;
 	u8 macaddr[ETH_ALEN] = {0,};
 
+	if (ar->fw_board == NULL || str_mac == NULL)
+		return -EINVAL;
+
+	if (_string_to_mac(str_mac, strlen(str_mac), macaddr) < 0)
+		return -EINVAL;
+
 	/* set checksum filed in the board data to zero */
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
 
-	if (ar->fw_board == NULL || str_mac == NULL)
-		return -1;
-
-	if (_string_to_mac(str_mac, strlen(str_mac), macaddr) < 0) 
-		return -1;
-	
 	/* replace the mac address with module parameter input */
 	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], macaddr, ETH_ALEN);
 
 	p = (u16 *) ar->fw_board;
 
 	/* calculate check sum */
-	for (i = 0; i < (ar->fw_board_len / 2); i++) {
+	for (i = 0; i < (ar->fw_board_len / 2); i++)
 		sum ^= *p++;
-	}
+
 
 	sum = ~sum;
 
@@ -1084,11 +1098,10 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 	ret = ath6kl_get_fw(ar, filename, &ar->fw_board,
 			    &ar->fw_board_len);
 	if (ret == 0) {
-		
 		/*if valid MAC from module_param, then use it */
 		if (ath6kl_replace_with_module_param(ar, ath6kl_wifi_mac) == 0)
 			return 0;
-		
+
 		ret = ath6kl_get_fw(ar, ar->hw.fw_softmac, &ar->fw_softmac,
 			    &ar->fw_softmac_len);
 
@@ -1599,11 +1612,9 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 				 (unsigned char *) &param, 4);
 	}
 
-	/* AR6006 or AR6004_hw1.6 are loading fake board data,
+	/* AR6006 are loading fake board data,
 	   ignore checking */
-	if (!((ar->target_type == TARGET_TYPE_AR6006) ||
-		  ((ar->target_type == TARGET_TYPE_AR6004) &&
-		   (ar->version.target_ver == AR6004_HW_1_6_VERSION)))) {
+	if (!(ar->target_type == TARGET_TYPE_AR6006)) {
 		if (ar->fw_board_len < board_data_size) {
 			ath6kl_err("Too small board file: %zu, need: %zu\n",
 				ar->fw_board_len, board_data_size);
@@ -1844,9 +1855,7 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		status = ath6kl_bmi_reg_write(ar, address, param);
 		if (status)
 			return status;
-	} else if ((ar->target_type == TARGET_TYPE_AR6006) ||
-		   ((ar->target_type == TARGET_TYPE_AR6004) &&
-		    (ar->version.target_ver == AR6004_HW_1_6_VERSION))) {
+	} else if ((ar->target_type == TARGET_TYPE_AR6006)) {
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "FPGA is running at 40/44MHz\n");
 		param = 0;
 		address = RTC_BASE_ADDRESS + CPU_CLOCK_ADDRESS;

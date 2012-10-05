@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.125
+#define __BUILD_VERSION_ 3.5.0.145
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -57,8 +57,17 @@
 #endif
 
 /* TODO : move to BSP, only for Android-JB now. */
+#ifdef CONFIG_ATH6KL_UB134
+#ifndef CONFIG_ATH6KL_MCC
+#define CONFIG_ATH6KL_MCC
+#endif
+#ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
+#define CONFIG_ATH6KL_UDP_TPUT_WAR
+#endif
+#endif
+
 #ifdef CONFIG_ANDROID
-#ifdef ATH6KL_MCC
+#ifdef CONFIG_ATH6KL_MCC
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
@@ -87,8 +96,24 @@
 #define ATH6KL_MODULEP2P_DEF_MODE	(0)
 #endif
 
+#ifndef ATH6KL_MODULEVAP_DEF_MODE
+#define ATH6KL_MODULEVAP_DEF_MODE	(0)
+#endif
+
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_P2P
+#define ATH6KL_DEVNAME_DEF_P2P		"p2p%d"
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_AP
+#define ATH6KL_DEVNAME_DEF_AP		"ap%d"
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_STA
+#define ATH6KL_DEVNAME_DEF_STA		"sta%d"
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -326,7 +351,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6006 1.0 definitions */
-#define AR6006_HW_1_0_VERSION                 0x31c8097a
+#define AR6006_HW_1_0_VERSION                 0x31c80997
 #define AR6006_HW_1_0_FW_DIR			"ath6k/AR6006/hw1.0"
 #define AR6006_HW_1_0_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_0_FIRMWARE_FILE           "fw.ram.bin"
@@ -336,7 +361,7 @@ struct ath6kl_android_wifi_priv_cmd {
 	"ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
 
-#define AR6004_MAX_64K_FW_SIZE                58880
+#define AR6004_MAX_64K_FW_SIZE                65536
 
 #define BDATA_CHECKSUM_OFFSET                 4
 #define BDATA_MAC_ADDR_OFFSET                 8
@@ -372,7 +397,8 @@ struct ath6kl_android_wifi_priv_cmd {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
-#define AGGR_RX_TIMEOUT          50  /* in ms */
+#define AGGR_RX_TIMEOUT          100	/* in ms */
+#define AGGR_RX_TIMEOUT_VO       50 /* in ms */
 
 #define AGGR_GET_RXTID_STATS(_p, _x)     (&(_p->stat[(_x)]))
 #define AGGR_GET_RXTID(_p, _x)           (&(_p->rx_tid[(_x)]))
@@ -454,14 +480,19 @@ struct skb_hold_q {
 
 struct rxtid {
 	bool aggr;
-	bool progress;
-	bool timer_mon;
 	u16 win_sz;
 	u16 seq_next;
 	u32 hold_q_sz;
 	struct skb_hold_q *hold_q;
 	struct sk_buff_head q;
 	spinlock_t lock;
+	u16 timerwait_seq_num;		/* current wait seq_no next */
+	bool sync_next_seq;
+	struct timer_list tid_timer;
+	u8 tid_timer_scheduled;
+	u8	tid;
+	u16	issue_timer_seq;
+	struct aggr_conn_info *aggr_conn;
 };
 
 struct rxtid_stats {
@@ -523,12 +554,11 @@ struct aggr_info {
 
 struct aggr_conn_info {
 	u8 aggr_sz;
-	u8 timer_scheduled;
-	struct timer_list timer;
 	struct aggr_info *aggr_cntxt;
 	struct net_device *dev;
 	struct rxtid rx_tid[NUM_OF_TIDS];
 	struct rxtid_stats stat[NUM_OF_TIDS];
+	u32 tid_timeout_setting[NUM_OF_TIDS];
 	/* TX A-MSDU */
 	struct txtid tx_tid[NUM_OF_TIDS];
 };
@@ -772,7 +802,7 @@ enum ath6kl_chan_type {
  * Driver's maximum limit, note that some firmwares support only one vif
  * and the runtime (current) limit must be checked from ar->vif_max.
  */
-#define ATH6KL_VIF_MAX	3
+#define ATH6KL_VIF_MAX	8
 
 /* vif flags info */
 enum ath6kl_vif_state {
@@ -862,6 +892,7 @@ struct ath6kl_vif {
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
+	struct ap_acl_info *ap_acl_ctx;
 	struct timer_list sche_scan_timer;
 	int sche_scan_interval;			/* in ms. */
 
@@ -895,6 +926,23 @@ enum ath6kl_state {
 	ATH6KL_STATE_WOW,
 };
 
+#define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
+#define ATH6KL_VAPMODE_OFFSET	(4)
+
+enum ath6kl_vap_mode {
+	ATH6KL_VAPMODE_DISABLED = 0x0,
+	ATH6KL_VAPMODE_STA,
+	ATH6KL_VAPMODE_AP,	/* w/o 4 address */
+
+	/* NOT YET */
+	ATH6KL_VAPMODE_ADHOC,
+	ATH6KL_VAPMODE_WDS,	/* AP w/ 4 address */
+	ATH6KL_VAPMODE_P2PDEV,	/* Dedicaded P2P-Device */
+	ATH6KL_VAPMODE_P2P,	/* P2P-GO or P2P-Client */
+
+	ATH6KL_VAPMODE_LAST = 0xf,
+};
+
 struct ath6kl {
 	struct device *dev;
 	struct wiphy *wiphy;
@@ -919,6 +967,7 @@ struct ath6kl {
 	unsigned int vif_max;
 	u8 max_norm_iface;
 	u8 avail_idx_map;
+	enum ath6kl_vap_mode next_mode[ATH6KL_VIF_MAX];
 	spinlock_t lock;
 	struct semaphore sem;
 	struct semaphore wmi_evt_sem;
@@ -1014,8 +1063,11 @@ struct ath6kl {
 
 	struct dentry *debugfs_phy;
 
-	bool p2p;			/* Support P2P or not */
-	bool p2p_concurrent;		/* Support P2P-Concurrent or not */
+	/* Support P2P or not */
+	bool p2p;
+
+	/* Support P2P-Concurrent or not */
+	bool p2p_concurrent;
 
 	/* Support P2P-Multi-Channel-Concurrent or not */
 	bool p2p_multichan_concurrent;
@@ -1025,6 +1077,17 @@ struct ath6kl {
 
 	/* Support ath6kl-3.2's P2P-Concurrent or not */
 	bool p2p_compat;
+
+	/*
+	 * STA + AP is a special mode.
+	 * Reuse P2P framwork but no P2P function.
+	 * At least 4VAPs to support STA(1) + P2P(2) + AP(1) mode.
+	 */
+#define IS_STA_AP_ONLY(_ar)					\
+	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < TARGET_VIF_MAX))
+
+	/* Support P2P-Concurrent with softAP or not */
+	bool p2p_concurrent_ap;
 
 	bool sche_scan;
 
@@ -1292,6 +1355,7 @@ void ath6kl_sdio_exit_msm(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
+void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
 
 extern unsigned int htc_bundle_recv;
