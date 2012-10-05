@@ -24,14 +24,13 @@
 /* constants */
 #define TX_URB_COUNT            32
 #define RX_URB_COUNT            32
-#ifdef CONFIG_ANDROID
-#define ATH6KL_USB_RX_BUFFER_SIZE  1700
-#else
+
 #define ATH6KL_USB_RX_BUFFER_SIZE  2048
-#endif
 #define ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE  16896
 #define ATH6KL_USB_TX_BUNDLE_BUFFER_SIZE  16384
 #define WORKER_LOCK_BIT	0
+
+#define ATH6KL_MAX_AMSDU_SIZE  7935
 
 /* tx/rx pipes for usb */
 enum ATH6KL_USB_PIPE_ID {
@@ -95,7 +94,7 @@ struct ath6kl_usb_pipe {
 	struct sk_buff_head io_comp_queue;
 	struct usb_endpoint_descriptor *ep_desc;
 	struct ath6kl_usb_pipe_stat usb_pipe_stat;
-	volatile unsigned long worker_lock;
+	unsigned long worker_lock;
 };
 
 #define ATH6KL_USB_PIPE_FLAG_TX    (1 << 0)
@@ -274,8 +273,10 @@ static int ath6kl_usb_alloc_pipe_resources(struct ath6kl_usb_pipe *pipe,
 	for (i = 0; i < urb_cnt; i++) {
 		urb_context = (struct ath6kl_urb_context *)
 		    kzalloc(sizeof(struct ath6kl_urb_context), GFP_KERNEL);
-		if (urb_context == NULL)
-			break;
+		if (urb_context == NULL) {
+			status = -ENOMEM;
+			goto fail_alloc_pipe_resources;
+		}
 
 		memset(urb_context, 0, sizeof(struct ath6kl_urb_context));
 		urb_context->pipe = pipe;
@@ -311,6 +312,7 @@ static int ath6kl_usb_alloc_pipe_resources(struct ath6kl_usb_pipe *pipe,
 		   pipe->logical_pipe_num, pipe->usb_pipe_handle,
 		   pipe->urb_alloc);
 
+fail_alloc_pipe_resources:
 	return status;
 }
 
@@ -851,7 +853,7 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 					get_unaligned((u8 *)&htc_hdr->ctrl[1]);
 #endif
 
-			if (payload_len > ATH6KL_USB_RX_BUFFER_SIZE) {
+			if (payload_len > ATH6KL_MAX_AMSDU_SIZE) {
 				ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 					"athusb: payload_len too long %u\n",
 					payload_len);
@@ -1981,19 +1983,22 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 	struct ath6kl_usb *device;
 	struct ath6kl *ar;
 	struct ath6kl_vif *vif;
+	int ret;
 
 	device = (struct ath6kl_usb *)usb_get_intfdata(interface);
 	ar = device->ar;
 
 	vif = ath6kl_vif_first(ar);
 
-	if (test_bit(WLAN_WOW_ENABLE, &vif->flags))
-		ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
+	if (test_bit(WLAN_WOW_ENABLE, &vif->flags) &&
+	    test_bit(CONNECTED, &vif->flags))
+		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
 	else
-		ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_DEEPSLEEP, NULL);
+		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_DEEPSLEEP,
+						NULL);
 
 	ath6kl_usb_flush_all(device);
-	return 0;
+	return ret;
 }
 #else
 static int ath6kl_usb_pm_suspend(struct usb_interface *interface,

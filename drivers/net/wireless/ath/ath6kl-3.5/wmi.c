@@ -997,6 +997,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 
 			/* Start keep-alive if need. */
 			ath6kl_ap_keepalive_start(vif);
+
+			/* Start ACL if need. */
+			ath6kl_ap_acl_start(vif);
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WMI, "%s: aid %u mac_addr %pM "
 				   "auth=%u keymgmt=%u cipher=%u apsd_info=%u "
@@ -3697,6 +3700,33 @@ static int ath6kl_wmi_disc_peer_event_rx(u8 *datap,
 }
 #endif
 
+static int ath6kl_wmi_wmm_params_event_rx(struct wmi *wmi, u8 *datap,
+		int len)
+{
+	int i;
+	struct wmi_report_wmm_params *wmm_params =
+		(struct wmi_report_wmm_params *) datap;
+	bool change = false;
+
+	for (i = 0; i < WMM_NUM_AC; i++) {
+		ath6kl_dbg(ATH6KL_DBG_WMI, "(%d): acm: %d, aifsn: %d, "
+			"cwmin: %d, cwmax: %d, txop: %d\n",
+			i, wmm_params->wmm_params[i].acm,
+			wmm_params->wmm_params[i].aifsn,
+			wmm_params->wmm_params[i].logcwmin,
+			wmm_params->wmm_params[i].logcwmax,
+			wmm_params->wmm_params[i].txopLimit);
+	}
+
+	if (wmm_params->wmm_params[WMM_AC_BE].aifsn <
+			wmm_params->wmm_params[WMM_AC_VI].aifsn)
+		change = true;
+
+	ath6kl_indicate_wmm_schedule_change(wmi->parent_dev, change);
+
+	return 0;
+}
+
 /* Control Path */
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 {
@@ -3987,6 +4017,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ret = ath6kl_wmi_disc_peer_event_rx(datap, len, vif);
 		break;
 #endif
+	case WMI_REPORT_WMM_PARAMS_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_REPORT_WMM_PARAMS_EVENTID\n");
+		ret = ath6kl_wmi_wmm_params_event_rx(wmi, datap, len);
+		break;
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
 		ret = -EINVAL;
@@ -4822,5 +4856,54 @@ int ath6kl_wmi_ap_poll_sta(struct wmi *wmi, u8 if_idx, u8 aid)
 	cmd->aid = aid;
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_POLL_STA_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_ap_acl_policy(struct wmi *wmi, u8 if_idx, u8 policy)
+{
+	struct sk_buff *skb;
+	struct wmi_ap_acl_policy_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"acl_policy: policy %d\n", policy);
+
+	cmd = (struct wmi_ap_acl_policy_cmd *)skb->data;
+	cmd->policy = policy;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_ACL_POLICY_CMDID,
+				NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_ap_acl_mac_list(struct wmi *wmi, u8 if_idx,
+	u8 idx, u8 *mac_addr, u8 action)
+{
+	struct sk_buff *skb;
+	struct wmi_ap_acl_mac_list_cmd *cmd;
+
+	if (WARN_ON(idx >= AP_ACL_SIZE))
+		return -EINVAL;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"acl_policy: %d %02x:%02x:%02x:%02x:%02x:%02x %d\n",
+			idx,
+			mac_addr[0], mac_addr[1], mac_addr[2],
+			mac_addr[3], mac_addr[4], mac_addr[5],
+			action);
+
+	cmd = (struct wmi_ap_acl_mac_list_cmd *)skb->data;
+	cmd->action = action;
+	cmd->index = idx;
+	memcpy(cmd->mac, mac_addr, ETH_ALEN);
+	cmd->wildcard = 0;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_ACL_MAC_LIST_CMDID,
 				NO_SYNC_WMIFLAG);
 }
