@@ -77,6 +77,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 		/* hw2.0 needs override address hardcoded */
 		.app_start_override_addr	= 0x944C00,
+		.flags				= 0,
 
 		.fw = {
 			.dir		= AR6003_HW_2_0_FW_DIR,
@@ -98,6 +99,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0x542330,
 		.reserved_ram_size		= 512,
 		.testscript_addr		= 0x57ef74,
+		.flags				= 0,
 
 		.fw = {
 			.dir		= AR6003_HW_2_1_1_FW_DIR,
@@ -122,9 +124,12 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size	= 19456,
 		.board_addr		= 0x433900,
 		.testscript_addr	= 0x432900,
+		.flags			= ATH6KL_HW_TGT_ALIGN_PADDING |
+					ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_0_FW_DIR,
+			.otp		= AR6004_HW_1_0_OTP_FILE,
 			.fw		= AR6004_HW_1_0_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
 		},
@@ -141,9 +146,12 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x435400,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_1_FW_DIR,
+			.otp		= AR6004_HW_1_1_OTP_FILE,
 			.fw		= AR6004_HW_1_1_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_1_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
@@ -165,9 +173,12 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 9216,
 		.board_addr			= 0x435c00,
 		.testscript_addr		= 0x434c00,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_2_FW_DIR,
+			.otp		= AR6004_HW_1_2_OTP_FILE,
 			.fw		= AR6004_HW_1_2_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_2_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
@@ -189,8 +200,12 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x434c00,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
+
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
+			.otp		= AR6004_HW_1_3_OTP_FILE,
 			.fw		= AR6004_HW_1_3_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_3_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
@@ -212,9 +227,12 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x42e400,
 		.testscript_addr		= 0x434c00,
+		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
+						ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
+			.otp		= AR6004_HW_1_3_OTP_FILE,
 			.fw		= AR6004_HW_1_3_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_3_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
@@ -236,9 +254,11 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
 		.testscript_addr		= 0x43d400,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_1_6_FW_DIR,
+			.otp		= AR6004_HW_1_6_OTP_FILE,
 			.fw		= AR6004_HW_1_6_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_6_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
@@ -259,6 +279,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 11264,
 		.board_addr			= 0x45fc00,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6006_HW_1_0_FW_DIR,
@@ -310,7 +331,7 @@ struct sk_buff *ath6kl_buf_alloc(int size)
 
 	/* Add chacheline space at front and back of buffer */
 	reserved = (2 * L1_CACHE_BYTES) + ATH6KL_DATA_OFFSET +
-		   sizeof(struct htc_packet) + ATH6KL_HTC_ALIGN_BYTES;
+		   sizeof(struct htc_packet);
 	skb = dev_alloc_skb(size + reserved);
 
 	if (skb)
@@ -772,8 +793,15 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return -EIO;
 	}
 
-	if (ar->p2p_concurrent && !ar->p2p_dedicate) {
+	if (ar->p2p_concurrent && !ar->p2p_dedicate)
 		param |= HI_OPTION_DISABLE_P2P_DEDICATE;
+
+#ifndef CONFIG_ANDROID
+	param |= HI_OPTION_DISABLE_RTT;
+#endif
+
+	if (param & HI_OPTION_DISABLE_P2P_DEDICATE ||
+	    param & HI_OPTION_DISABLE_RTT) {
 		if (ath6kl_bmi_write(ar, ath6kl_get_hi_item_addr(ar,
 				HI_ITEM(hi_option_flag2)),
 				(u8 *)&param, 4) != 0) {
@@ -1145,6 +1173,9 @@ static int ath6kl_fetch_otp_file(struct ath6kl *ar)
 {
 	char filename[100];
 	int ret;
+
+	if ((ar->target_type == TARGET_TYPE_AR6004) && (ar->testmode == 0))
+		return 0;
 
 	if (ar->fw_otp != NULL)
 		return 0;
@@ -2074,14 +2105,14 @@ static int ath6kl_change_hw_params(struct ath6kl *ar)
 		return 0;
 	}
 
-	for (i = 0; i < ARRAY_SIZE(hw_list); i++) {
+	for (i = 0; i < ARRAY_SIZE(hw_list) - 1; i++) {
 		hw = &hw_list[i];
 
 		if (hw->id == ar->version.target_ver)
 			break;
 	}
 
-	if (i == ARRAY_SIZE(hw_list)) {
+	if (i == ARRAY_SIZE(hw_list) - 1) {
 		ath6kl_err("Unsupported hardware version: 0x%x\n",
 			   ar->version.target_ver);
 		return -EINVAL;
@@ -2541,6 +2572,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
+#ifdef CONFIG_ANDROID
+	ret = ath6kl_android_enable_wow_default(ar);
+	if (ret != 0)
+		goto err_rxbuf_cleanup;
+#endif
+
 	return ret;
 
 err_rxbuf_cleanup:
@@ -2650,6 +2687,4 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC,
 			"attempting to reset target on instance destroy\n");
 	ath6kl_reset_device(ar, ar->target_type, true, true);
-
-	clear_bit(WLAN_ENABLED, &ar->flag);
 }
