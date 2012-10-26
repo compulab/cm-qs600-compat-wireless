@@ -24,14 +24,13 @@
 /* constants */
 #define TX_URB_COUNT            32
 #define RX_URB_COUNT            32
-#ifdef CONFIG_ANDROID
-#define ATH6KL_USB_RX_BUFFER_SIZE  1700
-#else
+
 #define ATH6KL_USB_RX_BUFFER_SIZE  2048
-#endif
 #define ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE  16896
 #define ATH6KL_USB_TX_BUNDLE_BUFFER_SIZE  16384
 #define WORKER_LOCK_BIT	0
+
+#define ATH6KL_MAX_AMSDU_SIZE  7935
 
 /* tx/rx pipes for usb */
 enum ATH6KL_USB_PIPE_ID {
@@ -210,9 +209,6 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb);
 #define ATH6KL_USB_IS_ISOC_EP(attr)  (((attr) & 3) == 0x01)
 #define ATH6KL_USB_IS_DIR_IN(addr)  ((addr) & 0x80)
 
-/*TBD: change to AR6004 type only */
-#define AR6004_1_0_ALIGN_WAR 1
-
 /* pipe/urb operations */
 static struct ath6kl_urb_context *ath6kl_usb_alloc_urb_from_pipe(
 						struct ath6kl_usb_pipe *pipe)
@@ -274,8 +270,10 @@ static int ath6kl_usb_alloc_pipe_resources(struct ath6kl_usb_pipe *pipe,
 	for (i = 0; i < urb_cnt; i++) {
 		urb_context = (struct ath6kl_urb_context *)
 		    kzalloc(sizeof(struct ath6kl_urb_context), GFP_KERNEL);
-		if (urb_context == NULL)
-			break;
+		if (urb_context == NULL) {
+			status = -ENOMEM;
+			goto fail_alloc_pipe_resources;
+		}
 
 		memset(urb_context, 0, sizeof(struct ath6kl_urb_context));
 		urb_context->pipe = pipe;
@@ -311,6 +309,7 @@ static int ath6kl_usb_alloc_pipe_resources(struct ath6kl_usb_pipe *pipe,
 		   pipe->logical_pipe_num, pipe->usb_pipe_handle,
 		   pipe->urb_alloc);
 
+fail_alloc_pipe_resources:
 	return status;
 }
 
@@ -400,6 +399,7 @@ static u8 ath6kl_usb_get_logical_pipe_num(struct ath6kl_usb *device,
 	case ATH6KL_USB_EP_ADDR_APP_DATA_HP_OUT:
 		pipe_num = ATH6KL_USB_PIPE_TX_DATA_HP;
 		*urb_count = TX_URB_COUNT;
+		break;
 	case ATH6KL_USB_EP_ADDR_APP_DATA_VHP_OUT:
 		pipe_num = ATH6KL_USB_PIPE_TX_DATA_VHP;
 		*urb_count = TX_URB_COUNT;
@@ -779,6 +779,7 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 	struct htc_frame_hdr *htc_hdr;
 	u16 payload_len;
 	struct sk_buff *new_skb = NULL;
+	struct ath6kl *ar = pipe->ar_usb->ar;
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 		"%s: recv pipe: %d, stat:%d, len:%d urb:0x%p\n", __func__,
@@ -792,7 +793,7 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 			status = -EIO;
 			switch (urb->status) {
 			case -EOVERFLOW:
-				urb->actual_length = ATH6KL_USB_RX_BUFFER_SIZE;
+				urb->actual_length = ATH6KL_USB_RX_BUNDLE_BUFFER_SIZE;
 				status = 0;
 				break;
 			case -ECONNRESET:
@@ -821,10 +822,8 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 		netlen = urb->actual_length;
 
 		do {
-#if defined(AR6004_1_0_ALIGN_WAR)
 			u8 extra_pad = 0;
 			u16 act_frame_len = 0;
-#endif
 			u16 frame_len;
 
 			/* Hack into HTC header for bundle processing */
@@ -838,61 +837,63 @@ static void ath6kl_usb_recv_bundle_complete(struct urb *urb)
 			payload_len =
 			 le16_to_cpu(get_unaligned((u16 *)&htc_hdr->payld_len));
 
-#if defined(AR6004_1_0_ALIGN_WAR)
-			act_frame_len = (HTC_HDR_LENGTH + payload_len);
+			if (ar->hw.flags & ATH6KL_HW_TGT_ALIGN_PADDING) {
+				act_frame_len = (HTC_HDR_LENGTH + payload_len);
 
-			if (htc_hdr->eid == 0 || htc_hdr->eid == 1)
-				/* assumption: target won't pad on
-				* HTC endpoint 0 & 1.
-				*/
-				extra_pad = 0;
-			else
-				extra_pad =
-					get_unaligned((u8 *)&htc_hdr->ctrl[1]);
-#endif
+				if (htc_hdr->eid == 0 || htc_hdr->eid == 1)
+					/* assumption: target won't pad on
+					* HTC endpoint 0 & 1.
+					*/
+					extra_pad = 0;
+				else
+					extra_pad =
+					 get_unaligned((u8 *)&htc_hdr->ctrl[1]);
+			}
 
-			if (payload_len > ATH6KL_USB_RX_BUFFER_SIZE) {
+			if (payload_len > ATH6KL_MAX_AMSDU_SIZE) {
 				ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 					"athusb: payload_len too long %u\n",
 					payload_len);
 				break;
 			}
 
-#if defined(AR6004_1_0_ALIGN_WAR)
-			frame_len = (act_frame_len + extra_pad);
-#else
-			frame_len = (HTC_HDR_LENGTH + payload_len);
-#endif
+			if (ar->hw.flags & ATH6KL_HW_TGT_ALIGN_PADDING)
+				frame_len = (act_frame_len + extra_pad);
+			else
+				frame_len = (HTC_HDR_LENGTH + payload_len);
 
 			if (netlen >= frame_len) {
 				/* allocate a new skb and copy */
-#if defined(AR6004_1_0_ALIGN_WAR)
-				new_skb = dev_alloc_skb(act_frame_len);
-				if (new_skb == NULL) {
-					ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-						"athusb: allocate skb (len=%u) "
-						"failed\n", act_frame_len);
-					break;
+				if (ar->hw.flags &
+					ATH6KL_HW_TGT_ALIGN_PADDING) {
+					new_skb = dev_alloc_skb(act_frame_len);
+					if (new_skb == NULL) {
+						ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+						 "athusb: allocate skb (len=%u) "
+						 "failed\n", act_frame_len);
+						break;
+					}
+
+					netdata_new = new_skb->data;
+					netlen_new = new_skb->len;
+					memcpy(netdata_new,
+						netdata, act_frame_len);
+					skb_put(new_skb, act_frame_len);
+				} else {
+					new_skb = dev_alloc_skb(frame_len);
+					if (new_skb == NULL) {
+						ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+						 "athusb: allocate skb (len=%u) "
+						 "failed\n", frame_len);
+						break;
+					}
+
+					netdata_new = new_skb->data;
+					netlen_new = new_skb->len;
+					memcpy(netdata_new, netdata, frame_len);
+					skb_put(new_skb, frame_len);
 				}
 
-				netdata_new = new_skb->data;
-				netlen_new = new_skb->len;
-				memcpy(netdata_new, netdata, act_frame_len);
-				skb_put(new_skb, act_frame_len);
-#else
-				new_skb = dev_alloc_skb(frame_len);
-				if (new_skb == NULL) {
-					ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-						"athusb: allocate skb (len=%u) "
-						"failed\n", frame_len);
-					break;
-				}
-
-				netdata_new = new_skb->data;
-				netlen_new = new_skb->len;
-				memcpy(netdata_new, netdata, frame_len);
-				skb_put(new_skb, frame_len);
-#endif
 				skb_queue_tail(&pipe->io_comp_queue, new_skb);
 				new_skb = NULL;
 
@@ -1316,11 +1317,17 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	u32 len;
 	struct urb *urb;
 	int usb_status;
+#ifdef CONFIG_ANDROID
+	struct usb_interface *interface = device->interface;
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 			"+%s pipe : %d, buf:0x%p\n",
 			__func__, PipeID, buf);
-
+#ifdef CONFIG_ANDROID
+	if (PipeID != ATH6KL_USB_PIPE_TX_CTRL)
+		usb_autopm_get_interface_async(interface);
+#endif
 	urb_context = ath6kl_usb_alloc_urb_from_pipe(pipe);
 
 	if (urb_context == NULL) {
@@ -1389,6 +1396,11 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	pipe_st->num_tx++;
 
 fail_hif_send:
+
+#ifdef CONFIG_ANDROID
+	if (PipeID != ATH6KL_USB_PIPE_TX_CTRL)
+		usb_autopm_put_interface_async(interface);
+#endif
 	return status;
 }
 
@@ -1779,7 +1791,11 @@ int ath6kl_usb_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	pm_message_t message;
 	int ret;
 
+#ifdef CONFIG_ANDROID
+	if (ath6kl_android_need_wow_suspend(ar)) {
+#else
 	if (wow) {
+#endif
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, wow);
 		if (ret)
 			return ret;
@@ -1981,19 +1997,22 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 	struct ath6kl_usb *device;
 	struct ath6kl *ar;
 	struct ath6kl_vif *vif;
+	int ret;
 
 	device = (struct ath6kl_usb *)usb_get_intfdata(interface);
 	ar = device->ar;
 
 	vif = ath6kl_vif_first(ar);
 
-	if (test_bit(WLAN_WOW_ENABLE, &vif->flags))
-		ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
+	if (ath6kl_android_need_wow_suspend(ar))
+		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
 	else
-		ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_DEEPSLEEP, NULL);
+		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_DEEPSLEEP,
+						NULL);
+	if (ret == 0)
+		ath6kl_usb_flush_all(device);
 
-	ath6kl_usb_flush_all(device);
-	return 0;
+	return ret;
 }
 #else
 static int ath6kl_usb_pm_suspend(struct usb_interface *interface,

@@ -24,6 +24,7 @@
 #include <linux/sched.h>
 #include <linux/circ_buf.h>
 #include <net/cfg80211.h>
+#include <linux/wireless.h>
 #ifdef CONFIG_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
@@ -61,7 +62,10 @@
 
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
 #define MAX_DEF_COOKIE_NUM                180
-#define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+/* Reserved for data sync cmd to avoid htc dead lock */
+#define DATA_SYNC_RESERVED                10
+/* 10% of MAX_COOKIE_NUM(18) + DATA_SYNC_RESERVED(10) */
+#define MAX_HI_COOKIE_NUM                 28
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 #define WMI_MAX_COOKIE_NUM                80
 
@@ -402,6 +406,40 @@ struct ath6kl_bmi {
 	u32 max_cmd_size;
 };
 
+/* Same as struct target_stats, expect it trackes only few
+   stats in u32 variable. */
+struct target_stats_dup {
+	u32 tx_retry_cnt[4];
+	u32 tx_mult_retry_cnt[4];
+	u32 tx_pkt_per_ac[4];
+	u32 rx_pkt;
+	u32 rx_dupl_frame;
+	u32 tx_fail_cnt[4];
+	u32 tx_rts_fail_cnt;
+	u32 tx_err;
+	u32 tx_rts_success_cnt;
+	u32 rx_err;
+	u32 tx_byte;
+};
+
+enum ath6kl_wlan_stats {
+	WLAN_STATS_INVALID,
+	WLAN_STATS_RETRY_CNT,
+	WLAN_STATS_MUL_RETRY_CNT,
+	WLAN_STATS_TX_FRM_CNT,
+	WLAN_STATS_RX_FRM_CNT,
+	WLAN_STATS_FRM_DUP_CNT,
+	WLAN_STATS_FAIL_CNT,
+	WLAN_STATS_RTS_FAIL_CNT,
+	WLAN_STATS_ACK_FAIL_CNT,
+	WLAN_STATS_RTS_SUC_CNT,
+	WLAN_STATS_RX_DISCARD_CNT,
+	WLAN_STATS_RX_ERROR_CNT,
+	WLAN_STATS_TX_BYTE_CNT,
+};
+
+#define ATH6KL_PRI_IOCTL_REPLY_BUF_MAX 1024
+
 struct target_stats {
 	u64 tx_pkt;
 	u64 tx_byte;
@@ -612,6 +650,7 @@ struct ath6kl_vif {
 	u8 assoc_bss_dtim_period;
 	struct net_device_stats net_stats;
 	struct target_stats target_stats;
+	struct target_stats_dup target_stats_dup;
 	struct wmi_connect_cmd profile;
 	u16 rsn_capab;
 
@@ -622,6 +661,8 @@ struct ath6kl_vif {
 #define WOW_HOST_REQ_DELAY	500 /* ms */
 
 #define ATH6KL_SCHED_SCAN_RESULT_DELAY 5000 /* ms */
+
+#define ATH6KL_PRIV_GET_WLAN_STATS	(SIOCIWFIRSTPRIV + 21)
 
 /* Flag info */
 enum ath6kl_dev_state {
@@ -936,10 +977,8 @@ void ath6kl_sdio_init_platform(void);
 void ath6kl_sdio_exit_platform(void);
 void ath6kl_mangle_mac_address(struct ath6kl *ar, u8 locally_administered_bit);
 
-#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,4,0))
 int ath6kl_wait_for_init_comp(void);
 void ath6kl_notify_init_done(void);
-#endif
 
 /* Fw error recovery */
 void ath6kl_init_hw_restart(struct ath6kl *ar);

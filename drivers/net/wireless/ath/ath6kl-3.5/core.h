@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ 3.5.0.128
+#define __BUILD_VERSION_ (3.5.0.167)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -56,9 +56,22 @@
 #include "diagnose.h"
 #endif
 
+/* for WMM issues, we might need to enlarge the number of cookies */
+#define ATH6KL_USE_LARGE_COOKIE      1
+
 /* TODO : move to BSP, only for Android-JB now. */
+#ifdef CONFIG_ATH6KL_UB134
+#ifndef CONFIG_ATH6KL_MCC
+#define CONFIG_ATH6KL_MCC
+#endif
+#ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
+#define CONFIG_ATH6KL_UDP_TPUT_WAR
+#endif
+#undef ATH6KL_USE_LARGE_COOKIE
+#endif
+
 #ifdef CONFIG_ANDROID
-#ifdef ATH6KL_MCC
+#ifdef CONFIG_ATH6KL_MCC
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
@@ -87,6 +100,10 @@
 #define ATH6KL_MODULEP2P_DEF_MODE	(0)
 #endif
 
+#ifndef ATH6KL_MODULEVAP_DEF_MODE
+#define ATH6KL_MODULEVAP_DEF_MODE	(0)
+#endif
+
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
 #endif
@@ -97,6 +114,10 @@
 
 #ifndef ATH6KL_DEVNAME_DEF_AP
 #define ATH6KL_DEVNAME_DEF_AP		"ap%d"
+#endif
+
+#ifndef ATH6KL_DEVNAME_DEF_STA
+#define ATH6KL_DEVNAME_DEF_STA		"sta%d"
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -122,8 +143,14 @@
 #define ATH6KL_HTC_ALIGN_BYTES 3
 
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
+#ifdef ATH6KL_USE_LARGE_COOKIE
+#define MAX_DEF_COOKIE_NUM                270
+#define MAX_HI_COOKIE_NUM                 27	/* 10% of MAX_COOKIE_NUM */
+#else
 #define MAX_DEF_COOKIE_NUM                180
 #define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+#endif
+
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
@@ -273,6 +300,7 @@ struct ath6kl_android_wifi_priv_cmd {
 /* AR6004 1.0 definitions */
 #define AR6004_HW_1_0_VERSION                 0x30000623
 #define AR6004_HW_1_0_FW_DIR			"ath6k/AR6004/hw1.0"
+#define AR6004_HW_1_0_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_0_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_0_BOARD_DATA_FILE         "ath6k/AR6004/hw1.0/bdata.bin"
 #define AR6004_HW_1_0_DEFAULT_BOARD_DATA_FILE \
@@ -281,6 +309,7 @@ struct ath6kl_android_wifi_priv_cmd {
 /* AR6004 1.1 definitions */
 #define AR6004_HW_1_1_VERSION                 0x30000001
 #define AR6004_HW_1_1_FW_DIR			"ath6k/AR6004/hw1.1"
+#define AR6004_HW_1_1_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_1_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_1_TCMD_FIRMWARE_FILE           "utf.bin"
 #define AR6004_HW_1_1_UTF_FIRMWARE_FILE	"utf.bin"
@@ -294,6 +323,7 @@ struct ath6kl_android_wifi_priv_cmd {
 /* AR6004 1.2 definitions */
 #define AR6004_HW_1_2_VERSION                 0x300007e8
 #define AR6004_HW_1_2_FW_DIR			"ath6k/AR6004/hw1.2"
+#define AR6004_HW_1_2_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_2_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_2_FIRMWARE_FILE           "fw.ram.bin"
 #define AR6004_HW_1_2_TCMD_FIRMWARE_FILE      "utf.bin"
@@ -308,6 +338,7 @@ struct ath6kl_android_wifi_priv_cmd {
 /* AR6004 1.3 definitions */
 #define AR6004_HW_1_3_VERSION                 0x31c8088a
 #define AR6004_HW_1_3_FW_DIR			"ath6k/AR6004/hw1.3"
+#define AR6004_HW_1_3_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_3_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_3_FIRMWARE_FILE           "fw.ram.bin"
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE      "utf.bin"
@@ -322,6 +353,7 @@ struct ath6kl_android_wifi_priv_cmd {
 /* AR6004 1.6 definitions */
 #define AR6004_HW_1_6_VERSION                 0x31c80958
 #define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
+#define AR6004_HW_1_6_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_6_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_6_FIRMWARE_FILE           "fw.ram.bin"
 #define AR6004_HW_1_6_TCMD_FIRMWARE_FILE      "utf.bin"
@@ -334,7 +366,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
 
 /* AR6006 1.0 definitions */
-#define AR6006_HW_1_0_VERSION                 0x31c8097a
+#define AR6006_HW_1_0_VERSION                 0x31c80997
 #define AR6006_HW_1_0_FW_DIR			"ath6k/AR6006/hw1.0"
 #define AR6006_HW_1_0_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6006_HW_1_0_FIRMWARE_FILE           "fw.ram.bin"
@@ -380,7 +412,8 @@ struct ath6kl_android_wifi_priv_cmd {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
-#define AGGR_RX_TIMEOUT          50  /* in ms */
+#define AGGR_RX_TIMEOUT          100	/* in ms */
+#define AGGR_RX_TIMEOUT_VO       50 /* in ms */
 
 #define AGGR_GET_RXTID_STATS(_p, _x)     (&(_p->stat[(_x)]))
 #define AGGR_GET_RXTID(_p, _x)           (&(_p->rx_tid[(_x)]))
@@ -462,14 +495,19 @@ struct skb_hold_q {
 
 struct rxtid {
 	bool aggr;
-	bool progress;
-	bool timer_mon;
 	u16 win_sz;
 	u16 seq_next;
 	u32 hold_q_sz;
 	struct skb_hold_q *hold_q;
 	struct sk_buff_head q;
 	spinlock_t lock;
+	u16 timerwait_seq_num;		/* current wait seq_no next */
+	bool sync_next_seq;
+	struct timer_list tid_timer;
+	u8 tid_timer_scheduled;
+	u8	tid;
+	u16	issue_timer_seq;
+	struct aggr_conn_info *aggr_conn;
 };
 
 struct rxtid_stats {
@@ -531,12 +569,11 @@ struct aggr_info {
 
 struct aggr_conn_info {
 	u8 aggr_sz;
-	u8 timer_scheduled;
-	struct timer_list timer;
 	struct aggr_info *aggr_cntxt;
 	struct net_device *dev;
 	struct rxtid rx_tid[NUM_OF_TIDS];
 	struct rxtid_stats stat[NUM_OF_TIDS];
+	u32 tid_timeout_setting[NUM_OF_TIDS];
 	/* TX A-MSDU */
 	struct txtid tx_tid[NUM_OF_TIDS];
 };
@@ -730,6 +767,11 @@ struct ath6kl_mbox_info {
 	u32 gmbox_sz;
 };
 
+enum ath6kl_hw_flags {
+	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
+	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
+};
+
 /*
  * 802.11i defines an extended IV for use with non-WEP ciphers.
  * When the EXTIV bit is set in the key id byte an additional
@@ -780,7 +822,7 @@ enum ath6kl_chan_type {
  * Driver's maximum limit, note that some firmwares support only one vif
  * and the runtime (current) limit must be checked from ar->vif_max.
  */
-#define ATH6KL_VIF_MAX	3
+#define ATH6KL_VIF_MAX	8
 
 /* vif flags info */
 enum ath6kl_vif_state {
@@ -876,6 +918,7 @@ struct ath6kl_vif {
 
 	u8 last_pwr_mode;
 	u8 saved_pwr_mode;
+	u8 arp_offload_ip_set;
 };
 
 #define WOW_LIST_ID		0
@@ -904,6 +947,23 @@ enum ath6kl_state {
 	ATH6KL_STATE_WOW,
 };
 
+#define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
+#define ATH6KL_VAPMODE_OFFSET	(4)
+
+enum ath6kl_vap_mode {
+	ATH6KL_VAPMODE_DISABLED = 0x0,
+	ATH6KL_VAPMODE_STA,
+	ATH6KL_VAPMODE_AP,	/* w/o 4 address */
+
+	/* NOT YET */
+	ATH6KL_VAPMODE_ADHOC,
+	ATH6KL_VAPMODE_WDS,	/* AP w/ 4 address */
+	ATH6KL_VAPMODE_P2PDEV,	/* Dedicaded P2P-Device */
+	ATH6KL_VAPMODE_P2P,	/* P2P-GO or P2P-Client */
+
+	ATH6KL_VAPMODE_LAST = 0xf,
+};
+
 struct ath6kl {
 	struct device *dev;
 	struct wiphy *wiphy;
@@ -928,6 +988,7 @@ struct ath6kl {
 	unsigned int vif_max;
 	u8 max_norm_iface;
 	u8 avail_idx_map;
+	enum ath6kl_vap_mode next_mode[ATH6KL_VIF_MAX];
 	spinlock_t lock;
 	struct semaphore sem;
 	struct semaphore wmi_evt_sem;
@@ -974,6 +1035,7 @@ struct ath6kl {
 		u32 reserved_ram_size;
 		u32 board_addr;
 		u32 testscript_addr;
+		u32 flags;
 
 		struct ath6kl_hw_fw {
 			const char *dir;
@@ -1044,7 +1106,7 @@ struct ath6kl {
 	 * At least 4VAPs to support STA(1) + P2P(2) + AP(1) mode.
 	 */
 #define IS_STA_AP_ONLY(_ar)					\
-	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < 4))
+	((_ar)->p2p_concurrent_ap && ((_ar)->vif_max < TARGET_VIF_MAX))
 
 	/* Support P2P-Concurrent with softAP or not */
 	bool p2p_concurrent_ap;
@@ -1099,6 +1161,7 @@ struct ath6kl {
 			u8 lpl_policy;
 			u8 no_blocker_detect;
 			u8 no_rfb_detect;
+			u8 rsvd;
 		} lpl_force_enable_params;
 
 		struct power_param {
@@ -1187,6 +1250,13 @@ static inline bool ath6kl_is_p2p_ie(const u8 *pos)
 	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
 		pos[2] == 0x50 && pos[3] == 0x6f &&
 		pos[4] == 0x9a && pos[5] == 0x09;
+}
+
+static inline bool ath6kl_is_wfd_ie(const u8 *pos)
+{
+	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
+		pos[2] == 0x50 && pos[3] == 0x6f &&
+		pos[4] == 0x9a && pos[5] == 0x0a;
 }
 
 int ath6kl_configure_target(struct ath6kl *ar);
@@ -1315,7 +1385,13 @@ void ath6kl_sdio_exit_msm(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
+void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+
+#ifdef CONFIG_ANDROID
+int ath6kl_android_enable_wow_default(struct ath6kl *ar);
+bool ath6kl_android_need_wow_suspend(struct ath6kl *ar);
+#endif
 
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
