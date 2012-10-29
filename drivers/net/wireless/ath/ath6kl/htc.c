@@ -2474,7 +2474,8 @@ int ath6kl_htc_conn_service(struct htc_target *target,
 		max_msg_sz = le16_to_cpu(resp_msg->max_msg_sz);
 	}
 
-	if (assigned_ep >= ENDPOINT_MAX || !max_msg_sz) {
+	if (WARN_ON_ONCE(assigned_ep == ENDPOINT_UNUSED ||
+			 assigned_ep >= ENDPOINT_MAX || !max_msg_sz)) {
 		status = -ENOMEM;
 		goto fail_tx;
 	}
@@ -2506,6 +2507,9 @@ int ath6kl_htc_conn_service(struct htc_target *target,
 	switch (endpoint->svc_id) {
 	case WMI_DATA_BK_SVC:
 		endpoint->tx_drop_packet_threshold = MAX_DEF_COOKIE_NUM / 3;
+		break;
+	case WMI_DATA_VO_SVC:
+		endpoint->tx_drop_packet_threshold = DATA_SYNC_RESERVED;
 		break;
 	default:
 		endpoint->tx_drop_packet_threshold = MAX_HI_COOKIE_NUM;
