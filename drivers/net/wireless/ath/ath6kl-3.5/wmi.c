@@ -876,30 +876,6 @@ static int ath6kl_wmi_ready_event_rx(struct wmi *wmi, u8 *datap, int len)
  * WMI_SET_LRSSI_SCAN_PARAMS. Subtract 96 from RSSI to get the signal level
  * in dBm.
  */
-int ath6kl_wmi_set_roam_lrssi_cmd(struct wmi *wmi, u8 lrssi)
-{
-	struct sk_buff *skb;
-	struct roam_ctrl_cmd *cmd;
-
-	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
-	if (!skb)
-		return -ENOMEM;
-
-	cmd = (struct roam_ctrl_cmd *) skb->data;
-
-	cmd->info.params.lrssi_scan_period = cpu_to_le16(DEF_LRSSI_SCAN_PERIOD);
-	cmd->info.params.lrssi_scan_threshold = a_cpu_to_sle16(lrssi +
-						       DEF_SCAN_FOR_ROAM_INTVL);
-	cmd->info.params.lrssi_roam_threshold = a_cpu_to_sle16(lrssi);
-	cmd->info.params.roam_rssi_floor = DEF_LRSSI_ROAM_FLOOR;
-	cmd->roam_ctrl = WMI_SET_LRSSI_SCAN_PARAMS;
-
-	ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
-			    NO_SYNC_WMIFLAG);
-
-	return 0;
-}
-
 int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
 	u16  lowrssi_scan_period,
 	u16  lowrssi_scan_threshold,
@@ -5003,4 +4979,20 @@ int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs)
 	ret = ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ARP_NS_OFFLOAD_CMDID,
 					NO_SYNC_WMIFLAG);
 	return ret;
+}
+
+int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u8 mcc_profile)
+{
+	struct sk_buff *skb;
+	struct wmi_set_mcc_profile_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_set_mcc_profile_cmd *)skb->data;
+	cmd->mcc_profile = mcc_profile;
+
+	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_MCC_PROFILE_CMDID,
+				NO_SYNC_WMIFLAG);
 }
