@@ -61,7 +61,7 @@
 
 #define DISCON_TIMER_INTVAL               10000  /* in msec */
 
-#define AP_RESTART_TIMER_INVAL		  10000  /* in msec */
+#define AP_RESTART_TIMER_INVAL		  1000  /* in msec */
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL		50 /* in ms */
 
@@ -153,7 +153,8 @@ struct ath6kl_fw_ie {
 };
 
 enum ath6kl_hw_flags {
-	ATH6KL_HW_FLAG_64BIT_RATES	= BIT(0),
+	ATH6KL_HW_FLAG_64BIT_RATES		= BIT(0),
+	ATH6KL_HW_FLAG_AP_INACTIVITY_MINS	= BIT(1),
 };
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"

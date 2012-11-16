@@ -760,12 +760,13 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 				   "%s: ath6k not in station mode\n", __func__);
 			return;
 		}
-		list_for_each_entry(vif_tmp, &ar->vif_list, list)
-			if(vif_tmp->nw_type == AP_NETWORK) break;
-
-		if (vif_tmp->ap_hold_conn) {
-			mod_timer(&vif_tmp->ap_restart_timer,
+		list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+			if(vif_tmp->nw_type == AP_NETWORK) {
+				if (vif_tmp->ap_hold_conn) {
+					mod_timer(&vif_tmp->ap_restart_timer,
 			jiffies + msecs_to_jiffies(1 * AP_RESTART_TIMER_INVAL));
+				}
+			}
 		}
 	}
 
@@ -871,12 +872,13 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 			return;
 		}
 
-		list_for_each_entry(vif_tmp, &ar->vif_list, list)
-			if(vif_tmp->nw_type == AP_NETWORK) break;
-
-		if (vif_tmp->ap_hold_conn) {
-			mod_timer(&vif_tmp->ap_restart_timer,
+		list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+			if(vif_tmp->nw_type == AP_NETWORK) {
+				if (vif_tmp->ap_hold_conn) {
+					mod_timer(&vif_tmp->ap_restart_timer,
 			jiffies + msecs_to_jiffies(2 * AP_RESTART_TIMER_INVAL));
+				}
+			}
 		}
 	}
 
@@ -895,9 +897,6 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 
 	vif->sme_state = SME_DISCONNECTED;
 
-	if (proto_reason == WMI_AP_REASON_STA_ROAM) {
-		vif->ap_hold_conn = 1;
-	}
 
 	/*
 	 * Send a disconnect command to target when a disconnect event is
@@ -2782,6 +2781,7 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	int i, ret;
 	u16 rsn_capab = 0;
 	struct ath6kl_htcap *htcap;
+	int inactivity_timeout = 0;
 
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:\n", __func__);
@@ -2921,8 +2921,14 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (info->inactivity_timeout) {
+
+		inactivity_timeout = info->inactivity_timeout;
+
+		if (ar->hw.flags & ATH6KL_HW_FLAG_AP_INACTIVITY_MINS)
+			inactivity_timeout = DIV_ROUND_UP(info->inactivity_timeout, 60);
+
 		res = ath6kl_wmi_set_inact_period(ar->wmi, vif->fw_vif_idx,
-						  info->inactivity_timeout);
+						  inactivity_timeout);
 		if (res < 0)
 			return res;
 	}
@@ -3660,7 +3666,7 @@ static int ath6kl_cfg80211_vif_init(struct ath6kl_vif *vif)
 		    (unsigned long) vif->ndev);
 	setup_timer(&vif->sched_scan_timer, ath6kl_wmi_sscan_timer,
 		    (unsigned long) vif);
-        setup_timer(&vif->ap_restart_timer, ath6kl_ap_restart_timer,
+	setup_timer(&vif->ap_restart_timer, ath6kl_ap_restart_timer,
 		    (unsigned long) vif->ndev);
 
 	set_bit(WMM_ENABLED, &vif->flags);
@@ -3778,7 +3784,7 @@ static const struct ieee80211_iface_combination ath6kl_dualmode_if_comb = {
 	.limits = ath6kl_dualmode_if_limits,
 	.n_limits = ARRAY_SIZE(ath6kl_dualmode_if_limits),
 	.max_interfaces = ATH6KL_VIF_MAX,
-	.num_different_channels = 1,
+	.num_different_channels = 2,
 };
 
 static const struct ieee80211_iface_combination ath6kl_p2p_if_comb = {
