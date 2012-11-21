@@ -231,11 +231,6 @@ enum WMI_DATA_HDR_FLAGS {
 #define WMI_DATA_HDR_HAS_PSPOLLED_BIT(h)	((h)->info3 & \
 	(WMI_DATA_HDR_PSPOLLED_MASK << WMI_DATA_HDR_PSPOLLED_SHIFT))
 
-#define WMI_ROAM_LRSSI_SCAN_PERIOD		(30 * 1000) /* secs */
-#define WMI_ROAM_LRSSI_SCAN_THRESHOLD		25 /* rssi */
-#define WMI_ROAM_LRSSI_ROAM_THRESHOLD		18 /* rssi */
-#define WMI_ROAM_LRSSI_ROAM_FLOOR		80 /* rssi */
-
 struct wmi_data_hdr {
 	s8 rssi;
 
@@ -714,6 +709,7 @@ enum wmi_cmd_id {
 	WMI_AP_PSBUF_OFFLOAD_CMDID,
 	WMI_SET_REGDOMAIN_CMDID,
 	WMI_SET_CREDIT_BYPASS_CMDID,
+	WMI_SET_MCC_PROFILE_CMDID,
 };
 
 enum wmi_mgmt_frame_type {
@@ -1567,10 +1563,12 @@ enum wmi_bi_ftype {
 	PROBEREQ_FTYPE,
 };
 
-#define DEF_LRSSI_SCAN_PERIOD		 5
-#define DEF_LRSSI_ROAM_THRESHOLD	20
-#define DEF_LRSSI_ROAM_FLOOR		60
-#define DEF_SCAN_FOR_ROAM_INTVL		 2
+#define DEF_SCAN_FOR_ROAM_INTVL			7
+#define WMI_ROAM_LRSSI_SCAN_PERIOD		(15 * 1000)	/* secs */
+#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	30	/* rssi */
+#define WMI_ROAM_LRSSI_SCAN_THRESHOLD (WMI_ROAM_LRSSI_ROAM_THRESHOLD + \
+	DEF_SCAN_FOR_ROAM_INTVL)	/* rssi */
+#define WMI_ROAM_LRSSI_ROAM_FLOOR		60	/* rssi */
 
 enum wmi_roam_ctrl {
 	WMI_FORCE_ROAM = 1,
@@ -2968,6 +2966,21 @@ struct wmi_set_arp_ns_offload_cmd {
 	struct wmi_arp_offload_tuple arp_tuples[WMI_MAX_ARP_OFFLOADS];
 } __packed;
 
+/* MCC profile setting
+ *
+ */
+enum WMI_MCC_PROFILE {
+	WMI_MCC_PROFILE_STA50 = 0,
+	WMI_MCC_PROFILE_STA20 = 1,
+	WMI_MCC_PROFILE_STA80 = 2,
+	WMI_MCC_PROFILE_MAX = 3,
+};
+
+struct wmi_set_mcc_profile_cmd {
+	u8 mcc_profile;
+} __packed;
+
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -3082,7 +3095,6 @@ int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 				u8 *kek, u8 *kck, u8 *replay_ctr);
 
-int ath6kl_wmi_set_roam_lrssi_cmd(struct wmi *wmi, u8 lrssi);
 int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
 	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
 	u16  lowrssi_roam_threshold,
@@ -3226,4 +3238,5 @@ int ath6kl_wmi_allow_aggr_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
 	u8 restore, u16 threshold);
 int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
+int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u8 mcc_profile);
 #endif /* WMI_H */
