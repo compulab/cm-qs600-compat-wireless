@@ -38,6 +38,14 @@ struct ath6kl_fwlog_slot {
 	u8 payload[0];
 };
 
+#define SKIP_SPACE                         \
+	while (*p == ' ' && *p != '\0')        \
+		p++;
+
+#define SEEK_SPACE                         \
+	while (*p != ' ' && *p != '\0')        \
+		p++;
+
 #define ATH6KL_FWLOG_MAX_ENTRIES 20
 #define ATH6KL_FWLOG_VALID_MASK 0x1ffff
 
@@ -67,16 +75,17 @@ int ath6kl_printk(const char *level, const char *fmt, ...)
 }
 
 #define EVENT_ID_LEN 2
+#define INTF_ID_LEN 1
 
 void ath6kl_send_genevent_to_app(struct net_device *dev,
-					u16 event_id,
+					u16 event_id, u8 ifid,
 					u8 *datap, int len)
 {
 	char *buf;
 	u16 size;
 	union iwreq_data wrqu;
 
-	size = len + EVENT_ID_LEN;
+	size = len + EVENT_ID_LEN + INTF_ID_LEN;
 
 	if (size > IW_GENERIC_IE_MAX)
 		return;
@@ -87,23 +96,25 @@ void ath6kl_send_genevent_to_app(struct net_device *dev,
 
 	memset(buf, 0, size);
 	memcpy(buf, &event_id, EVENT_ID_LEN);
-	memcpy(buf + EVENT_ID_LEN, datap, len);
+	memcpy(buf + EVENT_ID_LEN, &ifid, INTF_ID_LEN);
+	memcpy(buf + EVENT_ID_LEN + INTF_ID_LEN, datap, len);
 
 	memset(&wrqu, 0, sizeof(wrqu));
 	wrqu.data.length = size;
 	wireless_send_event(dev, IWEVGENIE, &wrqu, buf);
 	kfree(buf);
+
 }
 
 void ath6kl_send_event_to_app(struct net_device *dev,
-					u16 event_id,
+					u16 event_id, u8 ifid,
 					u8 *datap, int len)
 {
 	char *buf;
 	u16 size;
 	union iwreq_data wrqu;
 
-	size = len + EVENT_ID_LEN;
+	size = len + EVENT_ID_LEN + INTF_ID_LEN;
 
 	if (size > IW_CUSTOM_MAX)
 		return;
@@ -114,7 +125,8 @@ void ath6kl_send_event_to_app(struct net_device *dev,
 
 	memset(buf, 0, size);
 	memcpy(buf, &event_id, EVENT_ID_LEN);
-	memcpy(buf + EVENT_ID_LEN, datap, len);
+	memcpy(buf + EVENT_ID_LEN, &ifid, INTF_ID_LEN);
+	memcpy(buf + EVENT_ID_LEN + INTF_ID_LEN, datap, len);
 
 	memset(&wrqu, 0, sizeof(wrqu));
 	wrqu.data.length = size;
@@ -363,7 +375,7 @@ ath6kl_debug_fwlog_event_send(struct ath6kl *ar, const u8 *buffer, u32 length)
 			MAX_WIRELESS_EVENT_SIZE);
 	while (send) {
 		ath6kl_send_event_to_app(dev, WMIX_DBGLOG_EVENTID,
-			(u8 *)&buffer[sent], send);
+			vif->fw_vif_idx, (u8 *)&buffer[sent], send);
 		sent += send;
 		send = ath6kl_fwlog_fragment(&buffer[sent], length - sent,
 				MAX_WIRELESS_EVENT_SIZE);
@@ -1106,26 +1118,67 @@ static const struct file_operations fops_reg_dump = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath6kl_lrssi_roam_write(struct file *file,
-				       const char __user *user_buf,
-				       size_t count, loff_t *ppos)
+static int ath6kl_set_roam_params(const char __user *user_buf,
+			size_t count,
+			struct low_rssi_scan_params *low_rssi_roam_params)
 {
-	struct ath6kl *ar = file->private_data;
-	unsigned long lrssi_roam_threshold;
-	char buf[32];
-	ssize_t len;
+	char buf[64];
+	char *p;
+	unsigned int len;
+	int value;
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
 
-	buf[len] = '\0';
-	if (kstrtoul(buf, 0, &lrssi_roam_threshold))
-		return -EINVAL;
+	p = buf;
 
-	ar->lrssi_roam_threshold = lrssi_roam_threshold;
+	SKIP_SPACE;
 
-	ath6kl_wmi_set_roam_lrssi_cmd(ar->wmi, ar->lrssi_roam_threshold);
+	sscanf(p, "%d", &value);
+	low_rssi_roam_params->lrssi_scan_period = (u16) value;
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &value);
+	low_rssi_roam_params->lrssi_scan_threshold = (u16) value;
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &value);
+	low_rssi_roam_params->lrssi_roam_threshold = (u16) value;
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &value);
+	low_rssi_roam_params->roam_rssi_floor = (u8) value;
+
+	return 0;
+}
+
+
+static ssize_t ath6kl_lrssi_roam_write(struct file *file,
+						const char __user *user_buf,
+						size_t count,
+						loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int ret;
+
+	ret = ath6kl_set_roam_params(user_buf, count,
+		&ar->low_rssi_roam_params);
+
+	if (ret)
+		return ret;
+
+	ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+			ar->low_rssi_roam_params.lrssi_scan_period,
+			ar->low_rssi_roam_params.lrssi_scan_threshold,
+			ar->low_rssi_roam_params.lrssi_roam_threshold,
+			ar->low_rssi_roam_params.roam_rssi_floor);
 
 	return count;
 }
@@ -1134,16 +1187,32 @@ static ssize_t ath6kl_lrssi_roam_read(struct file *file,
 				      char __user *user_buf,
 				      size_t count, loff_t *ppos)
 {
+#define _BUF_SIZE	(128)
 	struct ath6kl *ar = file->private_data;
-	char buf[32];
-	unsigned int len;
+	u8 *buf;
+	unsigned int len = 0;
+	ssize_t ret_cnt;
 
-	len = snprintf(buf, sizeof(buf), "%u\n", ar->lrssi_roam_threshold);
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
 
-	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+		"scan_period(%d ms, scan_th %d, roam_th %d, rssi_flo %d)\n ",
+		ar->low_rssi_roam_params.lrssi_scan_period,
+		ar->low_rssi_roam_params.lrssi_scan_threshold,
+		ar->low_rssi_roam_params.lrssi_roam_threshold,
+		ar->low_rssi_roam_params.roam_rssi_floor);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
 }
 
-static const struct file_operations fops_lrssi_roam_threshold = {
+static const struct file_operations fops_lrssi_roam_param = {
 	.read = ath6kl_lrssi_roam_read,
 	.write = ath6kl_lrssi_roam_write,
 	.open = ath6kl_debugfs_open,
@@ -1977,14 +2046,6 @@ static const struct file_operations fops_power_params = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
-
-#define SKIP_SPACE                         \
-	while (*p == ' ' && *p != '\0')        \
-		p++;
-
-#define SEEK_SPACE                         \
-	while (*p != ' ' && *p != '\0')        \
-		p++;
 
 static int ath6kl_parse_lpl_force_enable_params(const char __user *user_buf,
 				size_t count,
@@ -4226,6 +4287,40 @@ static const struct file_operations fops_mcc_profile = {
 	.llseek = default_llseek,
 };
 
+/* File operation for P2P Frame Retry */
+static ssize_t ath6kl_p2p_frame_retry_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 p2p_frame_retry;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &p2p_frame_retry))
+		return -EINVAL;
+
+	if (p2p_frame_retry)
+		ar->p2p_frame_retry = true;
+	else
+		ar->p2p_frame_retry = false;
+
+	return count;
+}
+
+/* debug fs for P2P Frame Retry */
+static const struct file_operations fops_p2p_frame_retry = {
+	.write = ath6kl_p2p_frame_retry_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -4266,8 +4361,8 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("reg_dump", S_IRUSR, ar->debugfs_phy, ar,
 			    &fops_reg_dump);
 
-	debugfs_create_file("lrssi_roam_threshold", S_IRUSR | S_IWUSR,
-			    ar->debugfs_phy, ar, &fops_lrssi_roam_threshold);
+	debugfs_create_file("lrssi_roam_param", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_lrssi_roam_param);
 
 	debugfs_create_file("driver_version", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_driver_version);
@@ -4394,6 +4489,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("mcc_profile", S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_mcc_profile);
+
+	debugfs_create_file("p2p_frame_retry", S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_p2p_frame_retry);
 
 	return 0;
 }

@@ -105,6 +105,9 @@ struct wmi_mgmt_tx_frame {
 	u8 *mgmt_tx_frame;
 	size_t mgmt_tx_frame_len;
 	int mgmt_tx_frame_idx;
+	u32 mgmt_tx_frame_freq;
+#define WMI_TX_MGMT_RETRY_MAX	(3)
+	int mgmt_tx_frame_retry;
 };
 
 /* WMM stream classes */
@@ -230,11 +233,6 @@ enum WMI_DATA_HDR_FLAGS {
 	(WMI_DATA_HDR_PSPOLLED_MASK << WMI_DATA_HDR_PSPOLLED_SHIFT))
 #define WMI_DATA_HDR_HAS_PSPOLLED_BIT(h)	((h)->info3 & \
 	(WMI_DATA_HDR_PSPOLLED_MASK << WMI_DATA_HDR_PSPOLLED_SHIFT))
-
-#define WMI_ROAM_LRSSI_SCAN_PERIOD		(30 * 1000) /* secs */
-#define WMI_ROAM_LRSSI_SCAN_THRESHOLD		25 /* rssi */
-#define WMI_ROAM_LRSSI_ROAM_THRESHOLD		18 /* rssi */
-#define WMI_ROAM_LRSSI_ROAM_FLOOR		80 /* rssi */
 
 struct wmi_data_hdr {
 	s8 rssi;
@@ -1096,6 +1094,28 @@ struct wmi_power_params_cmd {
 	__le16 ps_fail_event_policy;
 } __packed;
 
+/* Adhoc power save types */
+enum wmi_adhoc_ps_type {
+	ADHOC_PS_DISABLE = 1,
+	ADHOC_PS_ATH = 2,
+	ADHOC_PS_IEEE = 3,
+	ADHOC_PS_OTHER = 4,
+};
+
+struct wmi_ibss_pm_caps_cmd {
+	/* see, enum wmi_adhoc_ps_type */
+	u8 power_saving;
+
+	/* number of beacon periods */
+	u8 ttl;
+
+	/* msec */
+	__le16 atim_windows;
+
+	/* msec */
+	__le16 timeout_value;
+} __packed;
+
 /* WMI_SET_DISC_TIMEOUT_CMDID */
 struct wmi_disc_timeout_cmd {
 	/* seconds */
@@ -1568,10 +1588,12 @@ enum wmi_bi_ftype {
 	PROBEREQ_FTYPE,
 };
 
-#define DEF_LRSSI_SCAN_PERIOD		 5
-#define DEF_LRSSI_ROAM_THRESHOLD	20
-#define DEF_LRSSI_ROAM_FLOOR		60
-#define DEF_SCAN_FOR_ROAM_INTVL		 2
+#define DEF_SCAN_FOR_ROAM_INTVL			7
+#define WMI_ROAM_LRSSI_SCAN_PERIOD		(15 * 1000)	/* secs */
+#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	30	/* rssi */
+#define WMI_ROAM_LRSSI_SCAN_THRESHOLD (WMI_ROAM_LRSSI_ROAM_THRESHOLD + \
+	DEF_SCAN_FOR_ROAM_INTVL)	/* rssi */
+#define WMI_ROAM_LRSSI_ROAM_FLOOR		60	/* rssi */
 
 enum wmi_roam_ctrl {
 	WMI_FORCE_ROAM = 1,
@@ -3046,7 +3068,7 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 				  u8 tsid);
 int ath6kl_wmi_disctimeout_cmd(struct wmi *wmi, u8 if_idx, u8 timeout);
 
-int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u16 threshold);
+int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u8 if_idx, u16 threshold);
 int ath6kl_wmi_set_lpreamble_cmd(struct wmi *wmi, u8 if_idx, u8 status,
 				 u8 preamble_policy);
 
@@ -3098,7 +3120,6 @@ int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 				u8 *kek, u8 *kck, u8 *replay_ctr);
 
-int ath6kl_wmi_set_roam_lrssi_cmd(struct wmi *wmi, u8 lrssi);
 int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
 	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
 	u16  lowrssi_roam_threshold,

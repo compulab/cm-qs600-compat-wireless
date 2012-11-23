@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.175)
+#define __BUILD_VERSION_ (3.5.0.204)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -59,11 +59,14 @@
 /* for WMM issues, we might need to enlarge the number of cookies */
 #define ATH6KL_USE_LARGE_COOKIE      1
 
-/* TODO : move to BSP, only for Android-JB now. */
-#ifdef CONFIG_ATH6KL_UB134
+/*only for Android-JB now. */
+#ifdef CONFIG_ANDROID
 #ifndef CONFIG_ATH6KL_MCC
 #define CONFIG_ATH6KL_MCC
 #endif
+#endif
+
+#ifdef CONFIG_ATH6KL_UB134
 #ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
 #define CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
@@ -121,6 +124,7 @@
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
+#define ATH6KL_SUPPORT_WIFI_KTK  1
 #define ATH6KL_SUPPORT_WLAN_HB   1
 
 #define MAX_ATH6KL                        1
@@ -160,6 +164,7 @@
 #define A_MAX_WOW_LISTEN_INTERVAL         1000
 
 #define ATH6KL_DISCONNECT_TIMEOUT	  3
+#define ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT	10
 
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL           100 /* in msec */
@@ -341,6 +346,8 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_3_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_3_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_3_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_1_3_FIRMWARE_EXT_FILE       "fw_ext.ram.bin"
+#define AR6004_HW_1_3_MOCHA_FIRMWARE_FILE     "fw.ram_mocha.bin"
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE      "utf.bin"
 #define AR6004_HW_1_3_UTF_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_1_3_TESTSCRIPT_FILE	"nullTestFlow.bin"
@@ -350,20 +357,35 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_1_3_EPPING_FILE             "ath6k/AR6004/hw1.3/epping.bin"
 #define AR6004_HW_1_3_SOFTMAC_FILE            "ath6k/AR6004/hw1.3/softmac.bin"
 
-/* AR6004 1.6 definitions */
-#define AR6004_HW_1_6_VERSION                 0x31c80958
-#define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
-#define AR6004_HW_1_6_OTP_FILE			"otp.bin"
-#define AR6004_HW_1_6_FIRMWARE_2_FILE         "fw-2.bin"
-#define AR6004_HW_1_6_FIRMWARE_FILE           "fw.ram.bin"
-#define AR6004_HW_1_6_TCMD_FIRMWARE_FILE      "utf.bin"
-#define AR6004_HW_1_6_UTF_FIRMWARE_FILE	"utf.bin"
-#define AR6004_HW_1_6_TESTSCRIPT_FILE	"nullTestFlow.bin"
-#define AR6004_HW_1_6_BOARD_DATA_FILE         "ath6k/AR6004/hw1.6/bdata.bin"
-#define AR6004_HW_1_6_DEFAULT_BOARD_DATA_FILE \
-	"ath6k/AR6004/hw1.6/bdata.bin"
-#define AR6004_HW_1_6_EPPING_FILE             "ath6k/AR6004/hw1.6/epping.bin"
-#define AR6004_HW_1_6_SOFTMAC_FILE            "ath6k/AR6004/hw1.6/softmac.bin"
+/* AR6004 2.0 definitions */
+#define AR6004_HW_2_0_VERSION                 0x31c80958
+#define AR6004_HW_2_0_FW_DIR			"ath6k/AR6004/hw2.0"
+#define AR6004_HW_2_0_OTP_FILE			"otp.bin"
+#define AR6004_HW_2_0_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6004_HW_2_0_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_2_0_TCMD_FIRMWARE_FILE      "utf.bin"
+#define AR6004_HW_2_0_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_2_0_TESTSCRIPT_FILE	"nullTestFlow.bin"
+#define AR6004_HW_2_0_BOARD_DATA_FILE         "ath6k/AR6004/hw2.0/bdata.bin"
+#define AR6004_HW_2_0_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6004/hw2.0/bdata.bin"
+#define AR6004_HW_2_0_EPPING_FILE             "ath6k/AR6004/hw2.0/epping.bin"
+#define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
+
+/* AR6004 2.1 definitions */
+#define AR6004_HW_2_1_VERSION			0x31c80014
+#define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
+#define AR6004_HW_2_1_OTP_FILE			"otp.bin"
+#define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6004_HW_2_1_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_2_1_TCMD_FIRMWARE_FILE      "utf.bin"
+#define AR6004_HW_2_1_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_2_1_TESTSCRIPT_FILE	"nullTestFlow.bin"
+#define AR6004_HW_2_1_BOARD_DATA_FILE         "ath6k/AR6004/hw2.1/bdata.bin"
+#define AR6004_HW_2_1_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6004/hw2.1/bdata.bin"
+#define AR6004_HW_2_1_EPPING_FILE             "ath6k/AR6004/hw2.1/epping.bin"
+#define AR6004_HW_2_1_SOFTMAC_FILE            "ath6k/AR6004/hw2.1/softmac.bin"
 
 /* AR6006 1.0 definitions */
 #define AR6006_HW_1_0_VERSION                 0x31c80997
@@ -770,6 +792,7 @@ struct ath6kl_mbox_info {
 enum ath6kl_hw_flags {
 	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
 	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
+	ATH6KL_HW_FIRMWARE_EXT_SUPPORT = BIT(2),
 };
 
 /*
@@ -828,6 +851,7 @@ enum ath6kl_chan_type {
 enum ath6kl_vif_state {
 	CONNECTED,
 	CONNECT_PEND,
+	CONNECT_HANDSHAKE_PROTECT,
 	WMM_ENABLED,
 	NETQ_STOPPED,
 	DTIM_EXPIRED,
@@ -937,6 +961,7 @@ enum ath6kl_dev_state {
 	FIRST_BOOT,
 	USB_REMOTE_WKUP,
 	INIT_DEFER_PROGRESS,
+	DOWNLOAD_FIRMWARE_EXT,
 };
 
 enum ath6kl_state {
@@ -994,7 +1019,7 @@ struct ath6kl {
 	struct semaphore wmi_evt_sem;
 	u16 listen_intvl_b;
 	u16 listen_intvl_t;
-	u8 lrssi_roam_threshold;
+	struct low_rssi_scan_params low_rssi_roam_params;
 	struct ath6kl_version version;
 	u32 target_type;
 	u32 target_subtype;
@@ -1031,6 +1056,7 @@ struct ath6kl {
 		u32 dataset_patch_addr;
 		u32 app_load_addr;
 		u32 app_start_override_addr;
+		u32 app_load_ext_addr;
 		u32 board_ext_data_addr;
 		u32 reserved_ram_size;
 		u32 board_addr;
@@ -1046,6 +1072,7 @@ struct ath6kl {
 			const char *api2;
 			const char *utf;
 			const char *testscript;
+			const char *fw_ext;
 		} fw;
 
 		const char *fw_board;
@@ -1079,6 +1106,9 @@ struct ath6kl {
 	u8 *fw_softmac;
 	size_t fw_softmac_len;
 
+	u8 *fw_ext;
+	size_t fw_ext_len;
+
 	unsigned long fw_capabilities[ATH6KL_CAPABILITY_LEN];
 
 	struct workqueue_struct *ath6kl_wq;
@@ -1111,7 +1141,21 @@ struct ath6kl {
 	/* Support P2P-Concurrent with softAP or not */
 	bool p2p_concurrent_ap;
 
+	/* Retry P2P Action frame or not */
+	bool p2p_frame_retry;
+
 	bool sche_scan;
+
+#ifdef ATH6KL_SUPPORT_WIFI_KTK
+	/* ktk feature is enabled or not */
+	bool ktk_enable;
+
+	/* ktk feature is started ot not */
+	bool ktk_active;
+
+	/* ktk cipher key */
+	u8 ktk_passphrase[16];
+#endif
 
 	struct ath6kl_btcoex btcoex_info;
 	u32 mod_debug_quirks;
