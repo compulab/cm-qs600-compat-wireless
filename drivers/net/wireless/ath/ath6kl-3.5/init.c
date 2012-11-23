@@ -65,6 +65,10 @@ module_param(ath6kl_wow_gpio, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
 module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
+#ifdef ATH6KL_SUPPORT_WIFI_KTK
+bool ktk_enable;
+module_param(ktk_enable, bool, 0644);
+#endif
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -196,6 +200,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.name				= "ar6004 hw 1.3",
 		.dataset_patch_addr		= 0x437860,
 		.app_load_addr			= 0x1234,
+		.app_load_ext_addr		= 0x9a7000,
 		.board_ext_data_addr		= 0x437000,
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
@@ -211,6 +216,7 @@ static const struct ath6kl_hw hw_list[] = {
 			.api2		= ATH6KL_FW_API2_FILE,
 			.utf		= AR6004_HW_1_3_UTF_FIRMWARE_FILE,
 			.testscript	= AR6004_HW_1_3_TESTSCRIPT_FILE,
+			.fw_ext		= AR6004_HW_1_3_FIRMWARE_EXT_FILE,
 		},
 
 		.fw_board		= AR6004_HW_1_3_BOARD_DATA_FILE,
@@ -246,8 +252,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_softmac		= AR6004_HW_1_3_SOFTMAC_FILE,
 	},
 	{
-		.id				= AR6004_HW_1_6_VERSION,
-		.name				= "ar6004 hw 1.6",
+		.id				= AR6004_HW_2_0_VERSION,
+		.name				= "ar6004 hw 2.0",
 		.dataset_patch_addr		= 0,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
@@ -257,19 +263,41 @@ static const struct ath6kl_hw hw_list[] = {
 		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
-			.dir		= AR6004_HW_1_6_FW_DIR,
-			.otp		= AR6004_HW_1_6_OTP_FILE,
-			.fw		= AR6004_HW_1_6_FIRMWARE_FILE,
-			.tcmd	        = AR6004_HW_1_6_TCMD_FIRMWARE_FILE,
+			.dir		= AR6004_HW_2_0_FW_DIR,
+			.otp		= AR6004_HW_2_0_OTP_FILE,
+			.fw		= AR6004_HW_2_0_FIRMWARE_FILE,
+			.tcmd	        = AR6004_HW_2_0_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
-			.utf		= AR6004_HW_1_6_UTF_FIRMWARE_FILE,
-			.testscript	= AR6004_HW_1_6_TESTSCRIPT_FILE,
+			.utf		= AR6004_HW_2_0_UTF_FIRMWARE_FILE,
+			.testscript	= AR6004_HW_2_0_TESTSCRIPT_FILE,
 		},
 
-		.fw_board		= AR6004_HW_1_6_BOARD_DATA_FILE,
-		.fw_default_board	= AR6004_HW_1_6_DEFAULT_BOARD_DATA_FILE,
-		.fw_epping		= AR6004_HW_1_6_EPPING_FILE,
-		.fw_softmac		= AR6004_HW_1_6_SOFTMAC_FILE,
+		.fw_board		= AR6004_HW_2_0_BOARD_DATA_FILE,
+		.fw_default_board	= AR6004_HW_2_0_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6004_HW_2_0_EPPING_FILE,
+		.fw_softmac		= AR6004_HW_2_0_SOFTMAC_FILE,
+	},
+	{
+		.id				= AR6004_HW_2_1_VERSION,
+		.name				= "ar6004 hw 2.1",
+		.dataset_patch_addr		= 0,
+		.app_load_addr			= 0x1234,
+		.board_ext_data_addr		= 0,
+		.reserved_ram_size		= 11264,
+		.board_addr			= 0x43e400,
+		.testscript_addr		= 0x43d400,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+
+		.fw = {
+			.dir		= AR6004_HW_2_1_FW_DIR,
+			.fw		= AR6004_HW_2_1_FIRMWARE_FILE,
+			.api2		= ATH6KL_FW_API2_FILE,
+		},
+
+		.fw_board		= AR6004_HW_2_1_BOARD_DATA_FILE,
+		.fw_default_board	= AR6004_HW_2_1_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6004_HW_2_1_EPPING_FILE,
+		.fw_softmac		= AR6004_HW_2_1_SOFTMAC_FILE,
 	},
 	{
 		.id				= AR6006_HW_1_0_VERSION,
@@ -277,8 +305,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.dataset_patch_addr		= 0,
 		.app_load_addr			= 0x1234,
 		.board_ext_data_addr		= 0,
-		.reserved_ram_size		= 11264,
-		.board_addr			= 0x45fc00,
+		.reserved_ram_size		= 7168,
+		.board_addr			= 0x46E400,
 		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
@@ -321,7 +349,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 #define CONFIG_AR600x_DEBUG_UART_TX_PIN 8
 #define CONFIG_AR6004_DEBUG_UART_TX_PIN 11
-#define CONFIG_AR6006_DEBUG_UART_TX_PIN 24
+#define CONFIG_AR6006_DEBUG_UART_TX_PIN 11
 
 #define ATH6KL_DATA_OFFSET    64
 struct sk_buff *ath6kl_buf_alloc(int size)
@@ -436,7 +464,8 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 
 	memset(&connect, 0, sizeof(connect));
 
-	if (ar->version.target_ver == AR6004_HW_1_6_VERSION ||
+	if (ar->version.target_ver == AR6004_HW_2_0_VERSION ||
+	    ar->version.target_ver == AR6004_HW_2_1_VERSION ||
 	    ar->version.target_ver == AR6006_HW_1_0_VERSION) {
 		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
 	}
@@ -1277,6 +1306,19 @@ get_fw:
 		return ret;
 	}
 
+	if (ar->hw.flags & ATH6KL_HW_FIRMWARE_EXT_SUPPORT) {
+		snprintf(filename, sizeof(filename), "%s/%s",
+			 ar->hw.fw.dir, ar->hw.fw.fw_ext);
+		ret = ath6kl_get_fw(ar, filename, &ar->fw_ext, &ar->fw_ext_len);
+		if (ret) {
+			ath6kl_err("Failed to get firmware ext file %s: %d\n",
+				   filename, ret);
+			return ret;
+		}
+
+		set_bit(DOWNLOAD_FIRMWARE_EXT, &ar->flag);
+	}
+
 	return 0;
 }
 
@@ -1643,9 +1685,8 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 				 (unsigned char *) &param, 4);
 	}
 
-	/* AR6006 are loading fake board data,
-	   ignore checking */
-	if (!(ar->target_type == TARGET_TYPE_AR6006)) {
+	/* AR6004 hw2.1 are loading fake board data ignore checking */
+	if (!(ar->version.target_ver == AR6004_HW_2_1_VERSION)) {
 		if (ar->fw_board_len < board_data_size) {
 			ath6kl_err("Too small board file: %zu, need: %zu\n",
 				ar->fw_board_len, board_data_size);
@@ -1754,6 +1795,107 @@ static int ath6kl_upload_firmware(struct ath6kl *ar)
 		address = ar->hw.app_start_override_addr;
 		ath6kl_bmi_set_app_start(ar, address);
 	}
+	return ret;
+}
+
+static int ath6kl_upload_firmware_ext(struct ath6kl *ar)
+{
+	u32 address;
+	int ret;
+	u32 param;
+	u32 fileSize = 0, sectionAddr = 0, sectionLen = 0, readLen = 0;
+	u32 i;
+	u32 value;
+
+	if (WARN_ON(ar->fw_ext == NULL))
+		return 0;
+
+	address = ar->hw.app_load_ext_addr;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "writing firmware ext to 0x%x (%zd B)\n",
+		   address, ar->fw_len);
+
+	fileSize = ar->fw_ext_len;
+	while (readLen < fileSize) {
+		sectionAddr = ar->fw_ext[readLen]		       |
+			      ((ar->fw_ext[readLen+1]<<8)&0x0000ff00)  |
+			      ((ar->fw_ext[readLen+2]<<16)&0x00ff0000) |
+			      ((ar->fw_ext[readLen+3]<<24)&0xff000000);
+		sectionLen  = ar->fw_ext[readLen+4] |
+			      ((ar->fw_ext[readLen+5]<<8)&0x0000ff00)  |
+			      ((ar->fw_ext[readLen+6]<<16)&0x00ff0000) |
+			      ((ar->fw_ext[readLen+7]<<24)&0xff000000);
+
+		for (i = (readLen+8); i < (readLen+8+sectionLen); i += 4) {
+			value = 0;
+			if ((readLen+8+sectionLen-i)/4 > 0) {
+				value = ar->fw_ext[i]|
+					((ar->fw_ext[i+1]<<8)&0x0000ff00)  |
+					((ar->fw_ext[i+2]<<16)&0x00ff0000) |
+					((ar->fw_ext[i+3]<<24)&0xff000000);
+			} else {
+				switch (readLen+8+sectionLen-i) {
+				case 1:
+					value = ar->fw_ext[i];
+					break;
+				case 2:
+					value = ar->fw_ext[i] |
+					    ((ar->fw_ext[i+1]<<8)&0x0000ff00);
+					break;
+				case 3:
+					value = ar->fw_ext[i] |
+					    ((ar->fw_ext[i+1]<<8)&0x0000ff00) |
+					    ((ar->fw_ext[i+2]<<16)&0x00ff0000);
+					break;
+				default:
+					break;
+				}
+			}
+
+			ret = ath6kl_diag_write32(ar, sectionAddr, value);
+
+			if (ret)
+				break;
+
+			sectionAddr += 4;
+		}
+
+		if (ret)
+			break;
+
+		readLen += (sectionLen+8);
+	}
+
+	if (ret) {
+		ath6kl_err("Failed to write firmware ext: %d\n", ret);
+		return ret;
+	}
+
+	param = 0;
+	if (ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param) != 0) {
+		ath6kl_err("read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+
+	param |= HI_OPTION_EXT_FW_DOWNLOAD_DONE;
+	if (ath6kl_diag_write32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		param) != 0) {
+		ath6kl_err("write_memory for "
+			   "hi_option_flag2 failed\n");
+		return -EIO;
+	}
+
+	param = 0;
+	if (ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param) != 0) {
+		ath6kl_err("read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+
 	return ret;
 }
 
@@ -1886,8 +2028,7 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		status = ath6kl_bmi_reg_write(ar, address, param);
 		if (status)
 			return status;
-	} else if ((ar->target_type == TARGET_TYPE_AR6006)) {
-		ath6kl_dbg(ATH6KL_DBG_BOOT, "FPGA is running at 40/44MHz\n");
+	} else if (ar->version.target_ver == AR6004_HW_2_1_VERSION) {
 		param = 0;
 		address = RTC_BASE_ADDRESS + CPU_CLOCK_ADDRESS;
 		status = ath6kl_bmi_reg_write(ar, address, param);
@@ -2080,6 +2221,11 @@ static int ath6kl_init_hw_params(struct ath6kl *ar)
 
 	ar->hw = *hw;
 
+#ifdef ATH6KL_SUPPORT_WIFI_KTK
+	if (ktk_enable)
+		ar->hw.fw.fw = AR6004_HW_1_3_MOCHA_FIRMWARE_FILE;
+#endif
+
 	ath6kl_dbg(ATH6KL_DBG_BOOT,
 		   "target_ver 0x%x target_type 0x%x dataset_patch "
 		   "0x%x app_load_addr 0x%x\n",
@@ -2243,6 +2389,12 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 		}
 
 		ath6kl_dbg(ATH6KL_DBG_TRC, "%s: wmi is ready\n", __func__);
+		if (test_bit(DOWNLOAD_FIRMWARE_EXT, &ar->flag)) {
+			ret = ath6kl_upload_firmware_ext(ar);
+			if (ret)
+				goto err_htc_stop;
+		}
+
 		rttm_init(ar);
 		/* communicate the wmi protocol verision to the target */
 		/* FIXME: return error */
@@ -2411,6 +2563,11 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ret = -ENOMEM;
 		goto err_power_off;
 	}
+
+#ifdef ATH6KL_SUPPORT_WIFI_KTK
+	ar->ktk_enable = ktk_enable;
+	ar->ktk_active = false;
+#endif
 
 /*
  * For backward compatible, keep ATH6KL_MODULE_TESTMODE_ENABLE as testmode = 1.
