@@ -287,10 +287,15 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	int status = 0;
 	struct ath6kl_cookie *cookie = NULL;
 
-	if (WARN_ON_ONCE(ar->state == ATH6KL_STATE_WOW) ||
-	    test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag)) {
+	if (WARN_ON_ONCE(ar->state == ATH6KL_STATE_WOW)) {
 		dev_kfree_skb(skb);
 		return -EACCES;
+	}
+
+	if (WARN_ON_ONCE(eid == ENDPOINT_UNUSED ||
+			 eid >= ENDPOINT_MAX)) {
+		status = -EINVAL;
+		goto fail_ctrl_tx;
 	}
 
 	spin_lock_bh(&ar->lock);
@@ -363,8 +368,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		   skb, skb->data, skb->len);
 
 	/* If target is not associated */
-	if (!test_bit(CONNECTED, &vif->flags) ||
-	    test_bit(FW_ERR_RECOVERY_IN_PROGRESS, &ar->flag)) {
+	if (!test_bit(CONNECTED, &vif->flags)) {
 		dev_kfree_skb(skb);
 		return 0;
 	}
@@ -596,7 +600,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
-		ath6kl_fw_err_notify(ar, ATH6KL_FW_EP_FULL);
+		ath6kl_recovery_err_notify(ar, ATH6KL_FW_EP_FULL);
 		return action;
 	}
 
@@ -699,6 +703,10 @@ void ath6kl_tx_complete(void *context, struct list_head *packet_queue)
 		packet = list_first_entry(packet_queue, struct htc_packet,
 					  list);
 		list_del(&packet->list);
+
+		if (WARN_ON_ONCE(packet->endpoint == ENDPOINT_UNUSED ||
+				 packet->endpoint >= ENDPOINT_MAX))
+			continue;
 
 		ath6kl_cookie = (struct ath6kl_cookie *)packet->pkt_cntxt;
 		if (WARN_ON_ONCE(!ath6kl_cookie))
@@ -893,8 +901,11 @@ void ath6kl_rx_refill(struct htc_target *target, enum htc_endpoint_id endpoint)
 			break;
 
 		packet = (struct htc_packet *) skb->head;
-		if (!IS_ALIGNED((unsigned long) skb->data, 4))
+		if (!IS_ALIGNED((unsigned long) skb->data, 4)) {
+			size_t len = skb_headlen(skb);
 			skb->data = PTR_ALIGN(skb->data - 4, 4);
+			skb_set_tail_pointer(skb, len);
+		}
 		set_htc_rxpkt_info(packet, skb, skb->data,
 				ATH6KL_BUFFER_SIZE, endpoint);
 		list_add_tail(&packet->list, &queue);
@@ -915,8 +926,11 @@ void ath6kl_refill_amsdu_rxbufs(struct ath6kl *ar, int count)
 			return;
 
 		packet = (struct htc_packet *) skb->head;
-		if (!IS_ALIGNED((unsigned long) skb->data, 4))
+		if (!IS_ALIGNED((unsigned long) skb->data, 4)) {
+			size_t len = skb_headlen(skb);
 			skb->data = PTR_ALIGN(skb->data - 4, 4);
+			skb_set_tail_pointer(skb, len);
+		}
 		set_htc_rxpkt_info(packet, skb, skb->data,
 				   ATH6KL_AMSDU_BUFFER_SIZE, 0);
 		spin_lock_bh(&ar->lock);
