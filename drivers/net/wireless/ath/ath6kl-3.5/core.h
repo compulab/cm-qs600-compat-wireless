@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.213)
+#define __BUILD_VERSION_ (3.5.0.222)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -59,21 +59,16 @@
 /* for WMM issues, we might need to enlarge the number of cookies */
 #define ATH6KL_USE_LARGE_COOKIE      1
 
-/*only for Android-JB now. */
-#ifdef CONFIG_ANDROID
 #ifndef CONFIG_ATH6KL_MCC
 #define CONFIG_ATH6KL_MCC
-#endif
 #endif
 
 #ifdef CONFIG_ATH6KL_UB134
 #ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
 #define CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
-#undef ATH6KL_USE_LARGE_COOKIE
 #endif
 
-#ifdef CONFIG_ANDROID
 #ifdef CONFIG_ATH6KL_MCC
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
@@ -96,7 +91,6 @@
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	0)
-#endif
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -177,6 +171,12 @@
 /* Remain-on-channel */
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
+/* scan time out */
+#define ATH6KL_SCAN_TIMEOUT (8 * HZ)  /* in sec. */
+
+/* 4 way-handshake protect */
+#define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
+
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
 
@@ -188,6 +188,11 @@
 #define ATH6KL_5GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
 #define ATH6KL_5GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
 #define ATH6KL_5GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
+
+/* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
+* event in certain platform
+*/
+#define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
@@ -373,7 +378,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
 
 /* AR6004 2.1 definitions */
-#define AR6004_HW_2_1_VERSION			0x31c809da
+#define AR6004_HW_2_1_VERSION			0x31c809f0
 #define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
 #define AR6004_HW_2_1_OTP_FILE			"otp.bin"
 #define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
@@ -852,6 +857,7 @@ enum ath6kl_vif_state {
 	CONNECTED,
 	CONNECT_PEND,
 	CONNECT_HANDSHAKE_PROTECT,
+	FIRST_EAPOL_PENDSENT,
 	WMM_ENABLED,
 	NETQ_STOPPED,
 	DTIM_EXPIRED,
@@ -905,6 +911,8 @@ struct ath6kl_vif {
 	u32 connect_ctrl_flags;
 	u8 usr_bss_filter;
 	struct cfg80211_scan_request *scan_req;
+	struct timer_list vifscan_timer;
+	struct timer_list shprotect_timer;
 	enum sme_state sme_state;
 	u8 intra_bss;
 	u8 ap_apsd;
@@ -944,6 +952,8 @@ struct ath6kl_vif {
 	u8 last_pwr_mode;
 	u8 saved_pwr_mode;
 	u8 arp_offload_ip_set;
+	struct delayed_work work_eapol_send;
+	struct sk_buff *pend_skb;
 };
 
 #define WOW_LIST_ID		0
@@ -1384,7 +1394,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid);
 
 void ath6kl_dtimexpiry_event(struct ath6kl_vif *vif);
 int ath6kl_disconnect(struct ath6kl_vif *vif);
-void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid);
+void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid, u8 initiator);
 void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 			     u8 win_sz);
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
