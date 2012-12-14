@@ -1238,6 +1238,16 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 	 */
 	if (ar->hw.board_addr != 0) {
 		board_address = ar->hw.board_addr;
+
+        /* Setting board address to 0x436400 for getting the UTF mode working.
+         * Since UTF firmware size is more so board data needs to be written to
+         * 0x436400. Without this change, UTF firmware download will overwrite
+         * the board data section.
+         */
+        if (ar->testmode && ar->target_type == TARGET_TYPE_AR6004) {
+            board_address = 0x436400;
+        }
+
 		ath6kl_bmi_write_hi32(ar, hi_board_data,
 				      board_address);
 	} else {
