@@ -34,8 +34,8 @@
 #include "hif-ops.h"
 #include "htc-ops.h"
 
-/* assume string is "00:11:22:33:44:55".  used to override the default MAC of MAC from softmac.bin file*/
-char *ath6kl_wifi_mac = "00:11:22:33:44:55";
+/* Used to override the default MAC of MAC from softmac.bin file*/
+char *ath6kl_wifi_mac = NULL;
 
 module_param(ath6kl_wifi_mac, charp, 0000);
 
@@ -663,6 +663,15 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	if (status)
 		return status;
 
+        /* set the max number of sta-s(for AP mode) to 15 */
+	param = (AP_MAX_NUM_STA << HI_OPTION_AP_CLIENT_CNT_SHIFT);
+
+	status = ath6kl_bmi_write_hi32(ar, hi_option_flag2, param);
+
+	if(status) {
+		return status;
+	}
+
 	return 0;
 }
 
@@ -748,7 +757,7 @@ static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 
 	/*generate locally adminstered mac*/
 	if (strcmp(str_mac, "00:11:22:33:44:55") == 0)
-		sprintf(str_mac, "02:03:7F:%d:%d:%d", random32() & 0xff, random32() & 0xff, random32() & 0xff);
+		sprintf(str_mac, "00:03:7F:%02X:%02X:%02X", random32() & 0xff, random32() & 0xff, random32() & 0xff);
 
 	if (_string_to_mac(str_mac, strlen(str_mac), macaddr) < 0)
 		return -1;
