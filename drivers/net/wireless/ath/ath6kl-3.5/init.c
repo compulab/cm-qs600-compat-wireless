@@ -41,6 +41,8 @@ unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
 unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
 unsigned int ath6kl_scan_timeout;
+unsigned int ath6kl_roam_mode = ATH6KL_MODULEROAM_DEFAULT;
+static unsigned int recovery_enable_mode = ATH6KL_RECOVERY_MODE_NONE;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -67,10 +69,12 @@ module_param(ath6kl_p2p, uint, 0644);
 module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
 module_param(ath6kl_scan_timeout, uint, 0644);
+module_param(ath6kl_roam_mode, uint, 0644);
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
 bool ktk_enable;
 module_param(ktk_enable, bool, 0644);
 #endif
+module_param(recovery_enable_mode, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -617,10 +621,18 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
 						 SCAN_CONNECTED_CTRL_FLAGS |
 						 ACTIVE_SCAN_CTRL_FLAGS |
-						 ROAM_SCAN_CTRL_FLAGS |
 						 ENABLE_AUTO_CTRL_FLAGS);
 	}
+
+	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
+		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
+
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
+
+	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
+		vif->sc_params.pas_chdwell_time =
+			ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM;
+
 }
 
 /*
@@ -2310,6 +2322,25 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "hw start\n");
 
+	if (recovery_enable_mode == ATH6KL_RECOVERY_MODE_COLD) {
+
+		ath6kl_info("Firmware recovery mode cold\n");
+
+		ret = ath6kl_fw_watchdog_enable(ar);
+		if (ret != 0) {
+			ath6kl_err("Failed enable fw watchdog%d\n",
+				ret);
+			return ret;
+		}
+
+		ret = ath6kl_fw_crash_cold_reset_enable(ar);
+		if (ret != 0) {
+			ath6kl_err("Failed enable fw code reset %d\n",
+				ret);
+			return ret;
+		}
+	}
+
 	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB) &&
 	     ath6kl_hif_bus_config(ar)) {
 		set_bit(USB_REMOTE_WKUP, &ar->flag);
@@ -2734,6 +2765,19 @@ int ath6kl_core_init(struct ath6kl *ar)
 		wifi_diag_init();
 #endif
 
+#ifdef CONFIG_ANDROID
+	ret = ath6kl_android_enable_wow_default(ar);
+	if (ret != 0)
+		goto err_rxbuf_cleanup;
+#endif
+
+#ifndef CONFIG_ANDROID
+	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
+		if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi,
+			WMI_MCC_PROFILE_STA50 | WMI_MCC_CTS_ENABLE))
+			ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
+#endif
+
 	/* Defer some tasks to worker after driver init. */
 	if (!ret) {
 		init_waitqueue_head(&ar->init_defer_wait_wq);
@@ -2758,11 +2802,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
-#ifdef CONFIG_ANDROID
-	ret = ath6kl_android_enable_wow_default(ar);
-	if (ret != 0)
-		goto err_rxbuf_cleanup;
-#endif
 
 	return ret;
 
