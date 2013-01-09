@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.213)
+#define __BUILD_VERSION_ (3.5.0.238)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -59,21 +59,16 @@
 /* for WMM issues, we might need to enlarge the number of cookies */
 #define ATH6KL_USE_LARGE_COOKIE      1
 
-/*only for Android-JB now. */
-#ifdef CONFIG_ANDROID
 #ifndef CONFIG_ATH6KL_MCC
 #define CONFIG_ATH6KL_MCC
-#endif
 #endif
 
 #ifdef CONFIG_ATH6KL_UB134
 #ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
 #define CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
-#undef ATH6KL_USE_LARGE_COOKIE
 #endif
 
-#ifdef CONFIG_ANDROID
 #ifdef CONFIG_ATH6KL_MCC
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
@@ -96,7 +91,6 @@
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
 	0)
-#endif
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -155,7 +149,8 @@
 #define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
 #endif
 
-#define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
+#define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
+#define MAX_COOKIE_CTRL_NUM	((MAX_DEF_COOKIE_NUM / WMM_NUM_AC) + 2)
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
 
@@ -173,9 +168,18 @@
 #define ATH6KL_SCAN_PAS_DEWELL_TIME	50 /* in ms. */
 #define ATH6KL_SCAN_PROBE_PER_SSID	1
 #define ATH6KL_SCAN_FG_MAX_PERIOD	(5)	/* in sec. */
+#define ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM 100 /* in ms. */
 
 /* Remain-on-channel */
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
+
+/* scan time out */
+#define ATH6KL_SCAN_TIMEOUT_LONG (8 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_SHORT (5 * HZ) /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM (20 * HZ)  /* in sec. */
+
+/* 4 way-handshake protect */
+#define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
 
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
@@ -188,6 +192,21 @@
 #define ATH6KL_5GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
 #define ATH6KL_5GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
 #define ATH6KL_5GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
+
+/* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
+* event in certain platform
+*/
+#define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
+
+/* default roam mode for different situation */
+#ifdef CONFIG_ANDROID
+#define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
+	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
+#else
+#define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
+	ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN
+#endif
+#define ATH6KL_USB_DEFAULT_ROAM_MODE ATH6KL_MODULEROAM_DISABLE
 
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
@@ -270,6 +289,12 @@ struct ath6kl_android_wifi_priv_cmd {
 	char *buf;
 	int used_len;
 	int total_len;
+};
+
+enum ath6kl_recovery_mode {
+	ATH6KL_RECOVERY_MODE_NONE = 0,
+	ATH6KL_RECOVERY_MODE_WARM,
+	ATH6KL_RECOVERY_MODE_COLD,
 };
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
@@ -373,7 +398,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
 
 /* AR6004 2.1 definitions */
-#define AR6004_HW_2_1_VERSION			0x31c809da
+#define AR6004_HW_2_1_VERSION			0x31c809f0
 #define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
 #define AR6004_HW_2_1_OTP_FILE			"otp.bin"
 #define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
@@ -411,6 +436,7 @@ struct ath6kl_android_wifi_priv_cmd {
 #define	STA_PS_POLLED		BIT(2)
 #define STA_PS_APSD_TRIGGER	BIT(3)
 #define STA_PS_APSD_EOSP	BIT(4)
+#define STA_HT_SUPPORT		BIT(5)
 
 /* HTC TX packet tagging definitions */
 #define ATH6KL_CONTROL_PKT_TAG    HTC_TX_PACKET_TAG_USER_DEFINED
@@ -436,6 +462,8 @@ struct ath6kl_android_wifi_priv_cmd {
 
 #define AGGR_RX_TIMEOUT          100	/* in ms */
 #define AGGR_RX_TIMEOUT_VO       50 /* in ms */
+#define MCC_AGGR_RX_TIMEOUT		300 /* in ms */
+#define MCC_AGGR_RX_TIMEOUT_VO	150 /* in ms */
 
 #define AGGR_GET_RXTID_STATS(_p, _x)     (&(_p->stat[(_x)]))
 #define AGGR_GET_RXTID(_p, _x)           (&(_p->rx_tid[(_x)]))
@@ -515,6 +543,14 @@ struct skb_hold_q {
 	u16 seq_no;
 };
 
+/*
+ * ATH6KL_MAX_WAIT_CONTINUS_PKT: the maximum number of rx
+ * continuous packets to be waited, the first packet will
+ * wait tid_timeout_setting time, the second will wait
+ * tid_timeout_setting / 2 etc.
+*/
+#define ATH6KL_MAX_WAIT_CONTINUOUS_PKT		3
+
 struct rxtid {
 	bool aggr;
 	u16 win_sz;
@@ -530,6 +566,7 @@ struct rxtid {
 	u8	tid;
 	u16	issue_timer_seq;
 	struct aggr_conn_info *aggr_conn;
+	u8 continuous_count;
 };
 
 struct rxtid_stats {
@@ -622,11 +659,33 @@ struct ath6kl_node_mapping {
 	u8 tx_pend;
 };
 
+enum cookie_type {
+	COOKIE_TYPE_NONE,
+	COOKIE_TYPE_DATA,
+	COOKIE_TYPE_CTRL,
+};
+
 struct ath6kl_cookie {
+	struct ath6kl_cookie_pool *cookie_pool;
 	struct sk_buff *skb;
 	u32 map_no;
 	struct htc_packet htc_pkt;
 	struct ath6kl_cookie *arc_list_next;
+};
+
+struct ath6kl_cookie_pool {
+	enum cookie_type cookie_type;
+	u32 cookie_num;		/* total number */
+
+	struct ath6kl_cookie *cookie_list;
+	u32 cookie_count;	/* current available number */
+	struct ath6kl_cookie *cookie_mem;
+
+	/* stats */
+	u32 cookie_alloc_cnt;
+	u32 cookie_alloc_fail_cnt;
+	u32 cookie_free_cnt;
+	u32 cookie_peak_cnt;
 };
 
 struct ath6kl_ps_buf_desc {
@@ -852,6 +911,7 @@ enum ath6kl_vif_state {
 	CONNECTED,
 	CONNECT_PEND,
 	CONNECT_HANDSHAKE_PROTECT,
+	FIRST_EAPOL_PENDSENT,
 	WMM_ENABLED,
 	NETQ_STOPPED,
 	DTIM_EXPIRED,
@@ -905,11 +965,14 @@ struct ath6kl_vif {
 	u32 connect_ctrl_flags;
 	u8 usr_bss_filter;
 	struct cfg80211_scan_request *scan_req;
+	struct timer_list vifscan_timer;
+	struct timer_list shprotect_timer;
 	enum sme_state sme_state;
 	u8 intra_bss;
 	u8 ap_apsd;
 	struct wmi_ap_mode_stat ap_stats;
 	u8 ap_country_code[3];
+	int sta_no_ht_num;
 	struct ath6kl_sta sta_list[AP_MAX_NUM_STA];
 	u16 sta_list_index;	/* at least AP_MAX_NUM_STA bits */
 	struct ath6kl_req_key ap_mode_bkey;
@@ -917,6 +980,7 @@ struct ath6kl_vif {
 	spinlock_t psq_mcast_lock;
 	int reconnect_flag;
 	u32 last_roc_id;
+	struct ieee80211_channel *last_roc_channel;
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
@@ -944,6 +1008,9 @@ struct ath6kl_vif {
 	u8 last_pwr_mode;
 	u8 saved_pwr_mode;
 	u8 arp_offload_ip_set;
+	struct delayed_work work_eapol_send;
+	struct sk_buff *pend_skb;
+	spinlock_t pend_skb_lock;
 };
 
 #define WOW_LIST_ID		0
@@ -963,6 +1030,7 @@ enum ath6kl_dev_state {
 	USB_REMOTE_WKUP,
 	INIT_DEFER_PROGRESS,
 	DOWNLOAD_FIRMWARE_EXT,
+	MCC_ENABLED,
 };
 
 enum ath6kl_state {
@@ -1030,8 +1098,8 @@ struct ath6kl {
 	bool ibss_if_active;
 	u8 node_num;
 	u8 next_ep_id;
-	struct ath6kl_cookie *cookie_list;
-	u32 cookie_count;
+	struct ath6kl_cookie_pool cookie_data;
+	struct ath6kl_cookie_pool cookie_ctrl;
 	enum htc_endpoint_id ac2ep_map[WMM_NUM_AC];
 	bool ac_stream_active[WMM_NUM_AC];
 	u8 ac_stream_pri_map[WMM_NUM_AC];
@@ -1086,7 +1154,6 @@ struct ath6kl {
 	wait_queue_head_t event_wq;
 	struct ath6kl_mbox_info mbox_info;
 
-	struct ath6kl_cookie cookie_mem[MAX_COOKIE_NUM];
 	unsigned long flag;
 
 	u8 *fw_board;
@@ -1144,6 +1211,9 @@ struct ath6kl {
 
 	/* Retry P2P Action frame or not */
 	bool p2p_frame_retry;
+
+	/* Not to report P2P Frame to user if not in RoC period */
+	bool p2p_frame_not_report;
 
 	bool sche_scan;
 
@@ -1250,6 +1320,8 @@ struct ath6kl {
 	struct country_code_to_enum_rd *current_reg_domain;
 
 	void (*fw_crash_notify)(struct ath6kl *ar);
+
+	u32 roam_mode;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1325,7 +1397,8 @@ int ath6kl_read_fwlogs(struct ath6kl *ar);
 void ath6kl_init_profile_info(struct ath6kl_vif *vif);
 void ath6kl_tx_data_cleanup(struct ath6kl *ar);
 
-struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar);
+struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
+	enum cookie_type cookie_type);
 void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie);
 bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif, u32 id, u32 freq,
 	u32 wait, const u8 *buf, size_t len, bool no_cck,
@@ -1384,7 +1457,7 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid);
 
 void ath6kl_dtimexpiry_event(struct ath6kl_vif *vif);
 int ath6kl_disconnect(struct ath6kl_vif *vif);
-void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid);
+void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid, u8 initiator);
 void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 			     u8 win_sz);
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
@@ -1438,8 +1511,10 @@ int ath6kl_android_enable_wow_default(struct ath6kl *ar);
 bool ath6kl_android_need_wow_suspend(struct ath6kl *ar);
 #endif
 
+int ath6kl_fw_watchdog_enable(struct ath6kl *ar);
+int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar);
+
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
 extern unsigned int htc_bundle_send_timer;
-
 #endif /* CORE_H */

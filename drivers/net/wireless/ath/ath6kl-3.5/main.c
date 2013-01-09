@@ -86,7 +86,7 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 
 static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 				u8 *wpaie, u8 ielen, u8 keymgmt, u8 ucipher,
-				u8 auth, u8 apsd_info)
+				u8 auth, u8 apsd_info, bool ht_support)
 {
 	struct ath6kl_sta *sta;
 	u8 free_slot;
@@ -116,6 +116,11 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 
 	vif->sta_list_index = vif->sta_list_index | (1 << free_slot);
 	vif->ap_stats.sta[free_slot].aid = aid;
+
+	if (ht_support)
+		sta->sta_flags |= STA_HT_SUPPORT;
+	else
+		vif->sta_no_ht_num++;
 	spin_unlock_bh(&sta->lock);
 }
 
@@ -136,6 +141,8 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 	       sizeof(struct wmi_per_sta_stat));
 	memset(sta->mac, 0, ETH_ALEN);
 	memset(sta->wpa_ie, 0, ATH6KL_MAX_IE);
+	if (!(sta->sta_flags & STA_HT_SUPPORT))
+		vif->sta_no_ht_num--;
 	sta->aid = 0;
 	sta->sta_flags = 0;
 	aggr_reset_state(sta->aggr_conn_cntxt);
@@ -507,48 +514,148 @@ enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 	return ar->ac2ep_map[ac];
 }
 
-struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar)
+static void ath6kl_cookie_pool_init(struct ath6kl *ar,
+	struct ath6kl_cookie_pool *cookie_pool,
+	enum cookie_type cookie_type,
+	u32 cookie_num)
 {
-	struct ath6kl_cookie *cookie;
+	u32 i, mem_size;
 
-	cookie = ar->cookie_list;
-	if (cookie != NULL) {
-		ar->cookie_list = cookie->arc_list_next;
-		ar->cookie_count--;
+	WARN_ON(!cookie_num);
+
+	cookie_pool->cookie_num = cookie_num;
+	cookie_pool->cookie_type = cookie_type;
+
+	cookie_pool->cookie_list = NULL;
+	cookie_pool->cookie_count = 0;
+
+	mem_size = sizeof(struct ath6kl_cookie) * cookie_num;
+	cookie_pool->cookie_mem = kzalloc(mem_size, GFP_ATOMIC);
+	if (!cookie_pool->cookie_mem) {
+		ath6kl_err("unable to allocate cookie, type %d num %d\n",
+				cookie_type,
+				cookie_num);
+		BUG_ON(1);
 	}
+
+	for (i = 0; i < cookie_num; i++) {
+		/* Assign the parent then insert to free queue */
+		cookie_pool->cookie_mem[i].cookie_pool = cookie_pool;
+		ath6kl_free_cookie(ar, &cookie_pool->cookie_mem[i]);
+	}
+
+	/* Reset stats */
+	cookie_pool->cookie_alloc_cnt = 0;
+	cookie_pool->cookie_alloc_fail_cnt = 0;
+	cookie_pool->cookie_free_cnt = 0;
+	cookie_pool->cookie_peak_cnt = 0;
+
+	ath6kl_info("Create HTC cookie, type %d num %d\n",
+			cookie_type,
+			cookie_num);
+	return;
+}
+
+static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
+	struct ath6kl_cookie_pool *cookie_pool)
+{
+	if (cookie_pool->cookie_num != cookie_pool->cookie_count)
+		ath6kl_err("Cookie unmber unsync, type %d num %d, %d\n",
+				cookie_pool->cookie_type,
+				cookie_pool->cookie_num,
+				cookie_pool->cookie_count);
+
+	ath6kl_info("Free HTC cookie, type %d curr_num %d\n",
+			cookie_pool->cookie_type,
+			cookie_pool->cookie_count);
+
+	cookie_pool->cookie_list = NULL;
+	cookie_pool->cookie_count = 0;
+
+	kfree(cookie_pool->cookie_mem);
+	cookie_pool->cookie_mem = NULL;
+
+	cookie_pool->cookie_alloc_cnt = 0;
+	cookie_pool->cookie_alloc_fail_cnt = 0;
+	cookie_pool->cookie_free_cnt = 0;
+	cookie_pool->cookie_peak_cnt = 0;
+
+	return;
+}
+
+struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
+	enum cookie_type cookie_type)
+{
+	struct ath6kl_cookie_pool *cookie_pool;
+	struct ath6kl_cookie *cookie;
+	u32 alloced;
+
+	if (cookie_type == COOKIE_TYPE_DATA)
+		cookie_pool = &ar->cookie_data;
+	else if (cookie_type == COOKIE_TYPE_CTRL)
+		cookie_pool = &ar->cookie_ctrl;
+	else
+		BUG_ON(1);
+
+	cookie = cookie_pool->cookie_list;
+	if (cookie != NULL) {
+		cookie_pool->cookie_list = cookie->arc_list_next;
+		cookie_pool->cookie_count--;
+
+		alloced = cookie_pool->cookie_num - cookie_pool->cookie_count;
+		cookie_pool->cookie_alloc_cnt++;
+		if (alloced > cookie_pool->cookie_peak_cnt)
+			cookie_pool->cookie_peak_cnt = alloced;
+	} else
+		cookie_pool->cookie_alloc_fail_cnt++;
 
 	return cookie;
 }
 
 void ath6kl_cookie_init(struct ath6kl *ar)
 {
-	u32 i;
+	/* Create HTC cookies pool for DATA frame */
+	ath6kl_cookie_pool_init(ar,
+				&ar->cookie_data,
+				COOKIE_TYPE_DATA,
+				MAX_COOKIE_DATA_NUM);
 
-	ar->cookie_list = NULL;
-	ar->cookie_count = 0;
+	/* Create HTC cookies pool for CTRL command */
+	ath6kl_cookie_pool_init(ar,
+				&ar->cookie_ctrl,
+				COOKIE_TYPE_CTRL,
+				MAX_COOKIE_CTRL_NUM);
 
-	memset(ar->cookie_mem, 0, sizeof(ar->cookie_mem));
-
-	for (i = 0; i < MAX_COOKIE_NUM; i++)
-		ath6kl_free_cookie(ar, &ar->cookie_mem[i]);
+	return;
 }
 
 void ath6kl_cookie_cleanup(struct ath6kl *ar)
 {
-	ar->cookie_list = NULL;
-	ar->cookie_count = 0;
+	ath6kl_cookie_pool_cleanup(ar,
+				  &ar->cookie_data);
+	ath6kl_cookie_pool_cleanup(ar,
+				  &ar->cookie_ctrl);
+
+	return;
 }
 
 void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
 {
-	/* Insert first */
+	struct ath6kl_cookie_pool *cookie_pool;
 
 	if (!ar || !cookie)
 		return;
 
-	cookie->arc_list_next = ar->cookie_list;
-	ar->cookie_list = cookie;
-	ar->cookie_count++;
+	cookie_pool = cookie->cookie_pool;
+	BUG_ON(!cookie_pool);
+
+	cookie->arc_list_next = cookie_pool->cookie_list;
+	cookie_pool->cookie_list = cookie;
+	cookie_pool->cookie_count++;
+
+	cookie_pool->cookie_free_cnt++;
+
+	return;
 }
 
 /*
@@ -771,6 +878,48 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 	return;
 }
 
+int ath6kl_fw_watchdog_enable(struct ath6kl *ar)
+{
+	u32 param;
+	int ret;
+
+	ret = ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param);
+
+	if (ret != 0)
+		return ret;
+
+	param |= HI_OPTION_FW_WATCHDOG_ENABLE;
+
+	ret = ath6kl_diag_write32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		param);
+
+	return ret;
+}
+
+int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar)
+{
+	u32 param;
+	int ret;
+
+	ret = ath6kl_diag_read32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		(u32 *)&param);
+
+	if (ret != 0)
+		return ret;
+
+	param |= HI_OPTION_FW_CRASH_COLD_RESET;
+
+	ret = ath6kl_diag_write32(ar,
+		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_option_flag2)),
+		param);
+
+	return ret;
+}
+
 static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 {
 	u8 index;
@@ -837,6 +986,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
 
 	set_bit(CONNECTED, &vif->flags);
+	ath6kl_judge_roam_parameter(vif, false);
+	ath6kl_switch_parameter_based_on_connection(vif, false);
 	netif_carrier_on(vif->ndev);
 }
 
@@ -847,6 +998,7 @@ void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 	u8 *ies = NULL, *wpa_ie = NULL, *pos;
 	size_t ies_len = 0;
 	struct station_info sinfo;
+	bool is_ht_sta = false;
 
 	ath6kl_dbg(ATH6KL_DBG_TRC, "new station %pM aid=%d\n", mac_addr, aid);
 
@@ -881,7 +1033,10 @@ void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				wpa_ie = pos; /* WPS IE */
 				break; /* overrides WPA/RSN IE */
 			}
-		} else if (pos[0] == 0x44 && wpa_ie == NULL) {
+		} else if (pos[0] == WLAN_EID_HT_CAPABILITY &&
+				pos[1] >= 22)
+			is_ht_sta = true;
+		else if (pos[0] == 0x44 && wpa_ie == NULL) {
 			/*
 			 * Note: WAPI Parameter Set IE re-uses Element ID that
 			 * was officially allocated for BSS AC Access Delay. As
@@ -899,7 +1054,8 @@ void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 
 	ath6kl_add_new_sta(vif, mac_addr, aid, wpa_ie,
 			   wpa_ie ? 2 + wpa_ie[1] : 0,
-			   keymgmt, ucipher, auth, apsd_info);
+			   keymgmt, ucipher, auth, apsd_info,
+			   is_ht_sta);
 
 	/* send event to application */
 	memset(&sinfo, 0, sizeof(sinfo));
@@ -989,20 +1145,6 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "scan complete: %d\n", status);
 }
 
-/* shall be used within if_lock */
-static void ath6kl_handshake_protect(struct ath6kl_vif *vif)
-{
-
-	if (test_bit(CONNECTED, &vif->flags) &&
-		(vif->auth_mode > NONE_AUTH) &&
-		(vif->prwise_crypto > WEP_CRYPT) &&
-		(vif->nw_type == INFRA_NETWORK)) {
-		set_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
-	} else {
-		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
-	}
-}
-
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			  u16 listen_int, u16 beacon_int,
 			  enum network_type net_type, u8 beacon_ie_len,
@@ -1021,7 +1163,8 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	vif->bss_ch = channel;
 
 	if ((vif->nw_type == INFRA_NETWORK)) {
-		if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM) {
+		if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM &&
+			vif->wdev.iftype == NL80211_IFTYPE_STATION) {
 			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
 				ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT);
 		} else {
@@ -1039,7 +1182,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	spin_lock_bh(&vif->if_lock);
 	set_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
-	ath6kl_handshake_protect(vif);
 	netif_carrier_on(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -1060,6 +1202,7 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 
 	/* Hook connection event */
 	ath6kl_htcoex_connect_event(vif);
+	ath6kl_switch_parameter_based_on_connection(vif, false);
 }
 
 void ath6kl_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid, bool ismcast)
@@ -1215,7 +1358,6 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	if (vif->nw_type == AP_NETWORK) {
 		if ((len + 4) >= sizeof(*p)) {
 			for (ac = 0; ac < AP_MAX_NUM_STA; ac++) {
-				st_ap = &ap->sta[ac];
 				st_p = &p->sta[ac];
 
 				/*
@@ -1226,9 +1368,11 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 					(st_p->aid > AP_MAX_NUM_STA))
 					continue;
 
+				st_ap = &ap->sta[st_p->aid - 1];
 				slot = (1 << (st_p->aid - 1));
 				if ((vif->sta_list_index & slot) &&
 				    (!(updated & slot))) {
+					WARN_ON(st_ap->aid != st_p->aid);
 					updated |= slot;
 					ath6kl_add_le32(&st_ap->tx_bytes,
 							st_p->tx_bytes);
@@ -1246,7 +1390,6 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 							st_p->rx_error);
 					ath6kl_add_le32(&st_ap->rx_discard,
 							st_p->rx_discard);
-					st_ap->aid = st_p->aid;
 					st_ap->tx_ucast_rate =
 							st_p->tx_ucast_rate;
 					st_ap->last_txrx_time =
@@ -1415,6 +1558,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		if (!ath6kl_remove_sta(vif, bssid, prot_reason_status))
 			return;
 
+		ath6kl_ap_ht_update_ies(vif);
+
 		/* if no more associated STAs, empty the mcast PS q */
 		if (vif->sta_list_index == 0) {
 			ath6kl_ps_queue_purge(&vif->psq_mcast);
@@ -1434,6 +1579,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			vif->bss_ch = 0;
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
+			ath6kl_judge_roam_parameter(vif, true);
+			ath6kl_switch_parameter_based_on_connection(vif, true);
 		}
 		return;
 	} else if (vif->nw_type == INFRA_NETWORK) {
@@ -1472,6 +1619,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		    ((reason == ASSOC_FAILED) && (prot_reason_status == 0x0)
 		     && (vif->reconnect_flag == 1))) {
 			set_bit(CONNECTED, &vif->flags);
+			ath6kl_judge_roam_parameter(vif, false);
+			ath6kl_switch_parameter_based_on_connection(vif, false);
 			return;
 		}
 	}
@@ -1480,6 +1629,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	spin_lock_bh(&vif->if_lock);
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	del_timer(&vif->shprotect_timer);
 	netif_carrier_off(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -1497,6 +1647,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 	/* Hook disconnection event */
 	ath6kl_htcoex_disconnect_event(vif);
+	ath6kl_judge_roam_parameter(vif, true);
+	ath6kl_switch_parameter_based_on_connection(vif, true);
 }
 
 struct ath6kl_vif *ath6kl_vif_first(struct ath6kl *ar)
@@ -1567,6 +1719,7 @@ static int ath6kl_close(struct net_device *dev)
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
+	del_timer(&vif->shprotect_timer);
 
 	if (test_bit(WMI_READY, &ar->flag)) {
 		if (ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0xFFFF,

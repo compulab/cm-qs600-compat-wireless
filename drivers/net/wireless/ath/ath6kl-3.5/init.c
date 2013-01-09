@@ -40,6 +40,9 @@ unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
 unsigned int ath6kl_p2p = ATH6KL_MODULEP2P_DEF_MODE;
 unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
+unsigned int ath6kl_scan_timeout;
+unsigned int ath6kl_roam_mode = ATH6KL_MODULEROAM_DEFAULT;
+static unsigned int recovery_enable_mode = ATH6KL_RECOVERY_MODE_NONE;
 
 #ifdef CONFIG_QC_INTERNAL
 unsigned short reg_domain = 0xffff;
@@ -65,10 +68,13 @@ module_param(ath6kl_wow_gpio, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
 module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
+module_param(ath6kl_scan_timeout, uint, 0644);
+module_param(ath6kl_roam_mode, uint, 0644);
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
 bool ktk_enable;
 module_param(ktk_enable, bool, 0644);
 #endif
+module_param(recovery_enable_mode, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -206,7 +212,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0x434c00,
 		.flags				= ATH6KL_HW_TGT_ALIGN_PADDING |
-						ATH6KL_HW_SINGLE_PIPE_SCHED,
+						  ATH6KL_HW_SINGLE_PIPE_SCHED |
+						ATH6KL_HW_FIRMWARE_EXT_SUPPORT,
 
 		.fw = {
 			.dir		= AR6004_HW_1_3_FW_DIR,
@@ -407,6 +414,21 @@ static int ath6kl_set_host_app_area(struct ath6kl *ar)
 	return 0;
 }
 
+static u32 ath6kl_get_host_app_area(struct ath6kl *ar)
+{
+	u32 address, data;
+
+	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_app_host_interest));
+	address = TARG_VTOP(ar->target_type, address);
+
+	if (ath6kl_diag_read32(ar, address, &data))
+		return -EIO;
+
+	address = TARG_VTOP(ar->target_type, data);
+
+	return address;
+}
+
 static inline void set_ac2_ep_map(struct ath6kl *ar,
 				  u8 ac,
 				  enum htc_endpoint_id ep)
@@ -599,10 +621,18 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
 						 SCAN_CONNECTED_CTRL_FLAGS |
 						 ACTIVE_SCAN_CTRL_FLAGS |
-						 ROAM_SCAN_CTRL_FLAGS |
 						 ENABLE_AUTO_CTRL_FLAGS);
 	}
+
+	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
+		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
+
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
+
+	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
+		vif->sc_params.pas_chdwell_time =
+			ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM;
+
 }
 
 /*
@@ -1311,14 +1341,18 @@ get_fw:
 			 ar->hw.fw.dir, ar->hw.fw.fw_ext);
 		ret = ath6kl_get_fw(ar, filename, &ar->fw_ext, &ar->fw_ext_len);
 		if (ret) {
-			ath6kl_err("Failed to get firmware ext file %s: %d\n",
+			/*ath6kl_err("Failed to get firmware ext file %s: %d\n",
 				   filename, ret);
 			return ret;
+			*/
+			ath6kl_err("Disable firmware ext feature\n");
+			goto get_fw_done;
 		}
 
 		set_bit(DOWNLOAD_FIRMWARE_EXT, &ar->flag);
 	}
 
+get_fw_done:
 	return 0;
 }
 
@@ -2288,6 +2322,25 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "hw start\n");
 
+	if (recovery_enable_mode == ATH6KL_RECOVERY_MODE_COLD) {
+
+		ath6kl_info("Firmware recovery mode cold\n");
+
+		ret = ath6kl_fw_watchdog_enable(ar);
+		if (ret != 0) {
+			ath6kl_err("Failed enable fw watchdog%d\n",
+				ret);
+			return ret;
+		}
+
+		ret = ath6kl_fw_crash_cold_reset_enable(ar);
+		if (ret != 0) {
+			ath6kl_err("Failed enable fw code reset %d\n",
+				ret);
+			return ret;
+		}
+	}
+
 	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB) &&
 	     ath6kl_hif_bus_config(ar)) {
 		set_bit(USB_REMOTE_WKUP, &ar->flag);
@@ -2553,6 +2606,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ar->target_type = le32_to_cpu(targ_info.type);
 	ar->wiphy->hw_version = le32_to_cpu(targ_info.version);
 
+	if (ath6kl_get_host_app_area(ar) != 0) {
+		ath6kl_err("Firmware already uploaded, reset target\n");
+		ath6kl_reset_device(ar, ar->target_type, true, true);
+		ret =  -EAGAIN;
+		goto err_power_off;
+	}
+
 	ret = ath6kl_init_hw_params(ar);
 	if (ret)
 		goto err_power_off;
@@ -2705,6 +2765,19 @@ int ath6kl_core_init(struct ath6kl *ar)
 		wifi_diag_init();
 #endif
 
+#ifdef CONFIG_ANDROID
+	ret = ath6kl_android_enable_wow_default(ar);
+	if (ret != 0)
+		goto err_rxbuf_cleanup;
+#endif
+
+#ifndef CONFIG_ANDROID
+	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
+		if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi,
+			WMI_MCC_PROFILE_STA50 | WMI_MCC_CTS_ENABLE))
+			ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
+#endif
+
 	/* Defer some tasks to worker after driver init. */
 	if (!ret) {
 		init_waitqueue_head(&ar->init_defer_wait_wq);
@@ -2729,11 +2802,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
-#ifdef CONFIG_ANDROID
-	ret = ath6kl_android_enable_wow_default(ar);
-	if (ret != 0)
-		goto err_rxbuf_cleanup;
-#endif
 
 	return ret;
 
@@ -2770,6 +2838,9 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	static u8 bcast_mac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	bool discon_issued;
 
+	if (vif->pend_skb)
+		flush_delayed_work(&vif->work_eapol_send);
+
 	netif_stop_queue(vif->ndev);
 
 	clear_bit(WLAN_ENABLED, &vif->flags);
@@ -2788,6 +2859,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	}
 
 	if (vif->scan_req) {
+		del_timer(&vif->vifscan_timer);
 		ath6kl_wmi_abort_scan_cmd(vif->ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;

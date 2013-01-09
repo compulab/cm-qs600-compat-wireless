@@ -52,6 +52,13 @@ struct ieee80211_p2p_action_public {
 	u8 variable[0];
 } __packed;
 
+struct ieee80211_p2p_action_vendor {
+	u8 category;
+	u32 oui;
+	u8 action_subtype;
+	u8 variable[0];
+} __packed;
+
 struct ieee80211_p2p_noa_descriptor {
 	u8 count_or_type;	/* 255: continuous schedule, 0: reserved */
 	__le32 duration;
@@ -99,6 +106,12 @@ struct p2p_ps_info {
 #define ATH6KL_P2P_FLOWCTRL_NULL_CONNID			(0xff)
 #define ATH6KL_P2P_FLOWCTRL_RECYCLE_LIMIT		(10)
 
+#define ATH6KL_P2P_FLOWCTRL_NETIF_STOP			(0x00)
+#define ATH6KL_P2P_FLOWCTRL_NETIF_WAKE			(0x01)
+
+#define ATH6KL_P2P_FLOWCTRL_REQ_STEP			(10)
+#define ATH6KL_P2P_FLOWCTRL_TXQ_LIMIT			(50)
+
 struct ath6kl_fw_conn_list {
 	struct list_head conn_queue;
 	struct list_head re_queue;
@@ -107,6 +120,7 @@ struct ath6kl_fw_conn_list {
 	u8 parent_connId;	/* For P2P_FLOWCTRL_SCHE_TYPE_INTERFACE */
 	u8 mac_addr[ETH_ALEN];
 	struct ath6kl_vif *vif;
+	u8 netif_state;
 
 	union {
 		struct {
@@ -177,6 +191,8 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 	struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar);
+void ath6kl_p2p_flowctrl_netif_state_transition(struct ath6kl *ar,
+			u8 connId, u8 new_state, u8 forced);
 void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar);
 int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar, void *pkt);
 void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar);
@@ -193,5 +209,6 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 			     u8 *buf, int buf_len);
 
 bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len);
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len);
 #endif
 

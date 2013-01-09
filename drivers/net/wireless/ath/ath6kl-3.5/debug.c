@@ -2901,17 +2901,40 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-#define _BUF_SIZE	(4096)
+#define _BUF_SIZE	(8192)
 	struct ath6kl *ar = file->private_data;
+	struct ath6kl_cookie_pool *cookie_pool;
 	u8 *buf;
-	unsigned int len;
+	unsigned int len = 0;
 	ssize_t ret_cnt;
 
 	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
 	if (!buf)
 		return -ENOMEM;
 
-	len = ath6kl_htc_stat(ar->htc_target, buf, _BUF_SIZE);
+	/* HTC cookie stats */
+	cookie_pool = &ar->cookie_data;
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			"DATA Cookie : num %d avail %d, alloc %d fail %d free %d peak %d\n",
+			cookie_pool->cookie_num,
+			cookie_pool->cookie_count,
+			cookie_pool->cookie_alloc_cnt,
+			cookie_pool->cookie_alloc_fail_cnt,
+			cookie_pool->cookie_free_cnt,
+			cookie_pool->cookie_peak_cnt);
+
+	cookie_pool = &ar->cookie_ctrl;
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			"CTRL Cookie : num %d avail %d, alloc %d fail %d free %d peak %d\n",
+			cookie_pool->cookie_num,
+			cookie_pool->cookie_count,
+			cookie_pool->cookie_alloc_cnt,
+			cookie_pool->cookie_alloc_fail_cnt,
+			cookie_pool->cookie_free_cnt,
+			cookie_pool->cookie_peak_cnt);
+
+
+	len += ath6kl_htc_stat(ar->htc_target, buf + len, _BUF_SIZE - len);
 
 	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 
@@ -4258,19 +4281,16 @@ static ssize_t ath6kl_mcc_profile(struct file *file,
 				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
-	char buf[8];
+	char buf[10];
 	ssize_t len;
-	u8 mcc_profile;
+	u32 mcc_profile;
 
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
 
 	buf[len] = '\0';
-	if (kstrtou8(buf, 0, &mcc_profile))
-		return -EINVAL;
-
-	if (mcc_profile >= WMI_MCC_PROFILE_MAX)
+	if (kstrtou32(buf, 0, &mcc_profile))
 		return -EINVAL;
 
 	if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi, mcc_profile))
@@ -4316,6 +4336,40 @@ static ssize_t ath6kl_p2p_frame_retry_write(struct file *file,
 /* debug fs for P2P Frame Retry */
 static const struct file_operations fops_p2p_frame_retry = {
 	.write = ath6kl_p2p_frame_retry_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+/* File operation for P2P Frame Conditional Reject */
+static ssize_t ath6kl_p2p_frame_cond_reject_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 p2p_frame_cond_reject;
+	char buf[32];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &p2p_frame_cond_reject))
+		return -EINVAL;
+
+	if (p2p_frame_cond_reject)
+		ar->p2p_frame_not_report = true;
+	else
+		ar->p2p_frame_not_report = false;
+
+	return count;
+}
+
+/* debug fs for P2P Frame Conditional Reject */
+static const struct file_operations p2p_frame_cond_reject = {
+	.write = ath6kl_p2p_frame_cond_reject_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -4492,6 +4546,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("p2p_frame_retry", S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_p2p_frame_retry);
+
+	debugfs_create_file("p2p_frame_cond_reject", S_IWUSR,
+			    ar->debugfs_phy, ar, &p2p_frame_cond_reject);
 
 	return 0;
 }
