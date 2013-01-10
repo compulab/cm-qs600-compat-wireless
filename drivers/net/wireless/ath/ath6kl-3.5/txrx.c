@@ -440,7 +440,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		ath6kl_err("wmi ctrl ep full, dropping pkt : 0x%p, len:%d\n",
 			   skb, skb->len);
 	} else
-		cookie = ath6kl_alloc_cookie(ar);
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (cookie == NULL) {
 		spin_unlock_bh(&ar->lock);
@@ -632,7 +632,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar);
+	cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
@@ -873,7 +873,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 	 */
 	if (ar->ac_stream_pri_map[ar->ep2ac_map[endpoint]] <
 	    ar->hiac_stream_active_pri &&
-	    ar->cookie_count <=
+	    ar->cookie_data.cookie_count <=
 			target->endpoint[endpoint].tx_drop_packet_threshold){
 		/*
 		 * Give preference to the highest priority stream by
@@ -959,16 +959,18 @@ void ath6kl_tx_complete(struct htc_target *target,
 {
 	struct ath6kl *ar = target->dev->ar;
 	struct sk_buff_head skb_queue;
-	struct htc_packet *packet;
+	struct htc_packet *packet = NULL;
 	struct sk_buff *skb;
 	struct ath6kl_cookie *ath6kl_cookie;
 	u32 map_no = 0;
 	int status;
-	enum htc_endpoint_id eid;
+	enum htc_endpoint_id eid = 0;
 	bool wake_event = false;
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif;
+	struct htc_endpoint *endpoint = NULL;
+	int txq_depth;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -1073,18 +1075,41 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 	__skb_queue_purge(&skb_queue);
 
-	/* FIXME: Locking */
-	spin_lock_bh(&ar->list_lock);
-	list_for_each_entry(vif, &ar->vif_list, list) {
-		if ((test_bit(CONNECTED, &vif->flags) ||
-			 test_bit(TESTMODE_EPPING, &ar->flag)) &&
-		    !flushing[vif->fw_vif_idx]) {
-			spin_unlock_bh(&ar->list_lock);
-			netif_wake_queue(vif->ndev);
-			spin_lock_bh(&ar->list_lock);
+
+	if (test_bit(MCC_ENABLED, &ar->flag)) {
+		endpoint = &ar->htc_target->endpoint[eid];
+		if (ar && endpoint && packet && ar->htc_target &&
+			eid >= ENDPOINT_2 && eid <= ENDPOINT_5) {
+			struct list_head *tx_queue;
+
+			tx_queue = &endpoint->txq;
+			spin_lock_bh(&ar->htc_target->tx_lock);
+			txq_depth = get_queue_depth(tx_queue);
+			spin_unlock_bh(&ar->htc_target->tx_lock);
+
+			if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
+				ath6kl_p2p_flowctrl_netif_state_transition(
+					ar, packet->connid,
+					ATH6KL_P2P_FLOWCTRL_NETIF_WAKE, 0);
+			else
+				ath6kl_p2p_flowctrl_netif_state_transition(
+					ar, packet->connid,
+					ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 0);
 		}
+	} else {
+		/* FIXME: Locking */
+		spin_lock_bh(&ar->list_lock);
+		list_for_each_entry(vif, &ar->vif_list, list) {
+			if ((test_bit(CONNECTED, &vif->flags) ||
+				test_bit(TESTMODE_EPPING, &ar->flag)) &&
+				!flushing[vif->fw_vif_idx]) {
+				spin_unlock_bh(&ar->list_lock);
+				netif_wake_queue(vif->ndev);
+				spin_lock_bh(&ar->list_lock);
+			}
+		}
+		spin_unlock_bh(&ar->list_lock);
 	}
-	spin_unlock_bh(&ar->list_lock);
 
 	if (wake_event)
 		wake_up(&ar->event_wq);
@@ -1110,6 +1135,52 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar)
 }
 
 /* Rx functions */
+#ifdef CONFIG_ANDROID
+static void ath6kl_eapol_send(struct work_struct *work)
+{
+	struct ath6kl_vif *vif = NULL;
+
+	if (!work)
+		goto FAILED;
+
+	vif = container_of(work, struct ath6kl_vif,
+		work_eapol_send.work);
+
+	if (!vif)
+		goto FAILED;
+
+	spin_lock_bh(&vif->pend_skb_lock);
+
+	if (!vif->pend_skb) {
+		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		spin_unlock_bh(&vif->pend_skb_lock);
+		goto FAILED;
+	}
+
+	if (!(vif->pend_skb->dev->flags & IFF_UP)) {
+		dev_kfree_skb(vif->pend_skb);
+		vif->pend_skb = NULL;
+		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		spin_unlock_bh(&vif->pend_skb_lock);
+		return;
+	}
+
+	netif_rx_ni(vif->pend_skb);
+
+	vif->pend_skb = NULL;
+
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+
+	spin_unlock_bh(&vif->pend_skb_lock);
+
+	return;
+FAILED:
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+	ath6kl_err("%s failed\n", __func__);
+	return;
+}
+
+#endif
 
 static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 					      struct sk_buff *skb)
@@ -1143,6 +1214,25 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 	}
 
 	skb->protocol = eth_type_trans(skb, skb->dev);
+
+#ifdef CONFIG_ANDROID
+	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
+
+		if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) &&
+			(vif->ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM)) {
+			if (vif->pend_skb != NULL)
+				flush_delayed_work(&vif->work_eapol_send);
+			if (test_bit(FIRST_EAPOL_PENDSENT, &vif->flags)) {
+				vif->pend_skb = skb;
+				INIT_DELAYED_WORK(&vif->work_eapol_send,
+					ath6kl_eapol_send);
+				schedule_delayed_work(&vif->work_eapol_send,
+					ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE);
+				return;
+			}
+		}
+	}
+#endif
 
 /*
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)) &&	\
@@ -1585,6 +1675,7 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 		rxtid->timerwait_seq_num != rxtid->seq_next) {
 		del_timer(&rxtid->tid_timer);
 		rxtid->tid_timer_scheduled = false;
+		rxtid->continuous_count = 0;
 	}
 
 	if (!rxtid->tid_timer_scheduled) {
@@ -1600,6 +1691,7 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 				 */
 				rxtid->tid_timer_scheduled = true;
 				rxtid->timerwait_seq_num = rxtid->seq_next;
+				rxtid->continuous_count++;
 				mod_timer(&rxtid->tid_timer,
 					(jiffies +
 					msecs_to_jiffies(
@@ -2454,7 +2546,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar);
+	cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
@@ -2546,12 +2638,23 @@ static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn)
 	return 0;
 }
 
+/*
+ * For the continuous un-received packets, wait timer will be divided by 2
+ * I.E. pkt#1, pkt#2, pkt#3 don't receive,
+ * the pkt#1 will wait tid_timeout_setting
+ * the pkt#2 will wait tid_timeout_setting / 2
+ * the pkt#3 will wait tid_timeout_setting / 4
+ * If more than ATH6KL_MAX_WAIT_CONTINUOUS_PKT, move to the first
+ * un-continuous un-received packets
+*/
 static void aggr_timeout(unsigned long arg)
 {
 	u8 j;
 	struct rxtid *rxtid = (struct rxtid *) arg;
 	struct aggr_conn_info *aggr_conn = rxtid->aggr_conn;
 	struct rxtid_stats *stats;
+	u32 tid_next_timeout =
+		aggr_conn->tid_timeout_setting[rxtid->tid];
 
 	stats = AGGR_GET_RXTID_STATS(aggr_conn, rxtid->tid);
 
@@ -2569,9 +2672,26 @@ static void aggr_timeout(unsigned long arg)
 				ATH6KL_MAX_SEQ_NO), rxtid->tid);
 		spin_unlock_bh(&rxtid->lock);
 		aggr_deque_frms(aggr_conn, rxtid->tid,
-			((rxtid->issue_timer_seq + 1) & ATH6KL_MAX_SEQ_NO) , 0);
+			((rxtid->timerwait_seq_num + 1) &
+			ATH6KL_MAX_SEQ_NO) , 0);
 		/* inorder packet that after time-out packet!! */
 		aggr_deque_frms(aggr_conn, rxtid->tid, 0 , 1);
+		if (rxtid->seq_next ==
+			((rxtid->timerwait_seq_num + 1) &
+			ATH6KL_MAX_SEQ_NO)) {
+			/* Continus hole */
+			if (rxtid->continuous_count >=
+					ATH6KL_MAX_WAIT_CONTINUOUS_PKT) {
+				aggr_deque_frms(aggr_conn, rxtid->tid,
+					((rxtid->issue_timer_seq + 1) &
+					ATH6KL_MAX_SEQ_NO) , 0);
+			/* inorder packet that after time-out packet!! */
+				aggr_deque_frms(aggr_conn, rxtid->tid, 0 , 1);
+				rxtid->continuous_count = 0;
+			}
+		} else {
+			rxtid->continuous_count = 0;
+		}
 		spin_lock_bh(&rxtid->lock);
 	}
 	rxtid->tid_timer_scheduled = false;
@@ -2583,15 +2703,31 @@ static void aggr_timeout(unsigned long arg)
 					rxtid->hold_q[j].seq_no;
 				rxtid->timerwait_seq_num = rxtid->seq_next;
 				rxtid->tid_timer_scheduled = true;
+				rxtid->continuous_count++;
 				break;
 			}
 		}
 	}
 
+	if (rxtid->continuous_count > 1) {
+		if (rxtid->continuous_count <=
+				ATH6KL_MAX_WAIT_CONTINUOUS_PKT) {
+			tid_next_timeout = tid_next_timeout /
+				((rxtid->continuous_count - 1) * 2);
+			ath6kl_dbg(ATH6KL_DBG_AGGR,
+				"aggr continuous hole timeout count %d\n",
+				rxtid->continuous_count);
+		} else {
+			ath6kl_dbg(ATH6KL_DBG_AGGR,
+				"aggr continuous hole count %d larger than 3?\n",
+				rxtid->continuous_count);
+			rxtid->continuous_count = 0;
+		}
+	}
+
 	if (rxtid->tid_timer_scheduled) {
 		mod_timer(&rxtid->tid_timer,
-			  jiffies + msecs_to_jiffies(
-			  aggr_conn->tid_timeout_setting[rxtid->tid]));
+			  jiffies + msecs_to_jiffies(tid_next_timeout));
 	}
 	spin_unlock_bh(&rxtid->lock);
 }
@@ -2873,10 +3009,11 @@ struct aggr_conn_info *aggr_init_conn(struct ath6kl_vif *vif)
 	return aggr_conn;
 }
 
-void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid)
+void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid, u8 initiator)
 {
 	struct aggr_conn_info *aggr_conn;
 	struct rxtid *rxtid;
+	struct txtid *txtid;
 	struct ath6kl_sta *conn;
 	u8 conn_tid, conn_aid;
 
@@ -2888,9 +3025,16 @@ void aggr_recv_delba_req_evt(struct ath6kl_vif *vif, u8 tid)
 		WARN_ON(!conn->aggr_conn_cntxt);
 
 		aggr_conn = conn->aggr_conn_cntxt;
-		rxtid = AGGR_GET_RXTID(aggr_conn, conn_tid);
-		if (rxtid->aggr)
-			aggr_delete_tid_state(aggr_conn, conn_tid);
+		if (initiator == 1) {
+			/* no aggr tx */
+			txtid = AGGR_GET_TXTID(aggr_conn, conn_tid);
+			if (txtid)
+				aggr_tx_delete_tid_state(aggr_conn, conn_tid);
+		} else {
+			rxtid = AGGR_GET_RXTID(aggr_conn, conn_tid);
+			if (rxtid->aggr)
+				aggr_delete_tid_state(aggr_conn, conn_tid);
+		}
 	}
 }
 
@@ -2959,6 +3103,7 @@ void aggr_module_destroy_conn(struct aggr_conn_info *aggr_conn)
 	if (rxtid->tid_timer_scheduled) {
 		del_timer(&rxtid->tid_timer);
 		rxtid->tid_timer_scheduled = false;
+		rxtid->continuous_count = 0;
 	}
 
 		if (rxtid->hold_q) {
