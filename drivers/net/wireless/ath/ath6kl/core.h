@@ -234,6 +234,16 @@ enum ath6kl_hw_flags {
 #define AR6004_HW_1_6_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6004/hw1.6/bdata.bin"
 
+/* AR6004 3.0 definitions */
+#define AR6004_HW_3_0_VERSION			0x31C809F8
+#define AR6004_HW_3_0_FW_DIR			"ath6k/AR6004/hw3.0"
+#define AR6004_HW_3_0_FIRMWARE_FILE		"fw.ram.bin"
+#define AR6004_HW_3_0_TCMD_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_3_0_UTF_FIRMWARE_FILE		"utf.bin"
+#define AR6004_HW_3_0_BOARD_DATA_FILE		"ath6k/AR6004/hw3.0/bdata.bin"
+#define AR6004_HW_3_0_DEFAULT_BOARD_DATA_FILE  	"ath6k/AR6004/hw3.0/bdata.bin"
+#define AR6004_HW_3_0_EPPING_FILE		"epping.bin"
+
 /* Per STA data, used in AP mode */
 #define STA_PS_AWAKE		BIT(0)
 #define	STA_PS_SLEEP		BIT(1)
