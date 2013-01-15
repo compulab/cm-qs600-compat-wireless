@@ -182,7 +182,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_ext_data_addr		= 0,
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
-		.refclk_hz                      = 26000000,
+		.refclk_hz                      = 40000000,
 		.uarttx_pin                     = 11,
 		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
 							ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
@@ -1621,6 +1621,13 @@ int ath6kl_init_hw_params(struct ath6kl *ar)
 	}
 
 	ar->hw = *hw;
+
+	/* For SDIO we need to use 26Mhz reference clock, by default HSIC
+	 * interface uses 40MHz reference clock */
+	if (ar->target_type == TARGET_TYPE_AR6004 &&
+			ar->hif_type == ATH6KL_HIF_TYPE_SDIO) {
+		ar->hw.refclk_hz = 26000000;
+	}
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT,
 		   "target_ver 0x%x target_type 0x%x dataset_patch 0x%x app_load_addr 0x%x\n",
