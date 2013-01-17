@@ -87,6 +87,7 @@ enum ATH6KL_MODULE_QUIRKS {
 
 	/* enable usb auto power management feathre */
 	ATH6KL_MODULE_ENABLE_USB_AUTO_PM = BIT(22),
+
 };
 
 enum ATH6KL_MODULE_P2P {
