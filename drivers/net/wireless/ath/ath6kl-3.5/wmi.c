@@ -352,7 +352,7 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 		 */
 		if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 			usr_pri = WMI_VOICE_USER_PRIORITY;
-			*phtc_tag = ATH6KL_CONTROL_PKT_TAG;
+			*phtc_tag = ATH6KL_PRI_DATA_PKT_TAG;
 		}
 	}
 
@@ -588,6 +588,16 @@ static int ath6kl_wmi_cancel_remain_on_chnl_event_rx(struct wmi *wmi,
 					vif->last_roc_id,
 					vif->last_roc_channel->center_freq,
 					ev->status);
+
+			/* To sync user's RoC id only for long listen. */
+			if (vif->last_roc_duration ==
+				(ATH6KL_ROC_MAX_PERIOD * 1000))
+				cfg80211_ready_on_channel(vif->ndev,
+							vif->last_roc_id,
+							vif->last_roc_channel,
+							NL80211_CHAN_NO_HT,
+							vif->last_roc_duration,
+							GFP_ATOMIC);
 
 			/*
 			 * Still report RoC-End, suppose the user will handle
@@ -899,6 +909,7 @@ static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len,
 	struct wmi_flowctrl_ind_event *ev;
 
 	if ((!(ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL)) ||
+	    (test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag)) ||
 	    (ar->vif_max == 1))
 		return 0;
 
@@ -3397,7 +3408,9 @@ int ath6kl_wmi_set_appie_cmd(struct wmi *wmi, u8 if_idx, u8 mgmt_frm_type,
 				   NO_SYNC_WMIFLAG);
 }
 
-int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi, u32 ratemode)
+int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi,
+				u8 if_idx,
+				u32 ratemode)
 {
 	struct sk_buff *skb;
 	struct  wmi_set_ratectrl_parm_cmd *cmd;
@@ -3411,8 +3424,11 @@ int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi, u32 ratemode)
 	cmd = (struct wmi_set_ratectrl_parm_cmd *) skb->data;
 	cmd->mode = ratemode ? 1 : 0;
 
-	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_RATECTRL_PARM_CMDID,
-					NO_SYNC_WMIFLAG);
+	return ath6kl_wmi_cmd_send(wmi,
+				if_idx,
+				skb,
+				WMI_SET_RATECTRL_PARM_CMDID,
+				NO_SYNC_WMIFLAG);
 }
 
 int ath6kl_wmi_disable_11b_rates_cmd(struct wmi *wmi, u8 if_idx, bool disable)
