@@ -18,6 +18,7 @@
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
 #include <linux/of.h>
+#include <linux/interrupt.h>
 #include <linux/mmc/sdio_func.h>
 #include "core.h"
 #include "cfg80211.h"
@@ -70,10 +71,6 @@ module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
 module_param(ath6kl_scan_timeout, uint, 0644);
 module_param(ath6kl_roam_mode, uint, 0644);
-#ifdef ATH6KL_SUPPORT_WIFI_KTK
-bool ktk_enable;
-module_param(ktk_enable, bool, 0644);
-#endif
 module_param(recovery_enable_mode, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
@@ -624,6 +621,14 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 						 ENABLE_AUTO_CTRL_FLAGS);
 	}
 
+	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB) &&
+			(ar->p2p_compat) &&
+			(vif->fw_vif_idx)) {
+		vif->sc_params.scan_ctrl_flags &= ~CONNECT_SCAN_CTRL_FLAGS;
+		ath6kl_info("Disable connect-scan, vif_idx = %d\n",
+				vif->fw_vif_idx);
+	}
+
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
 		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
 
@@ -906,6 +911,26 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return -EIO;
 	}
 
+#ifdef ATH6KL_SUPPORT_WLAN_HB
+	param = 0;
+	if (ath6kl_bmi_read(ar,
+				ath6kl_get_hi_item_addr(ar,
+				HI_ITEM(hi_option_flag2)),
+				(u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+
+	param |= HI_OPTION_ENABLE_WLAN_HB;
+	if (ath6kl_bmi_write(ar,
+				ath6kl_get_hi_item_addr(ar,
+				HI_ITEM(hi_option_flag2)),
+				(u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_write_memory for heart beat enable flag failed\n");
+		return -EIO;
+	};
+#endif
+
 	/* set the firmware mode to STA/IBSS/AP */
 	param = 0;
 
@@ -1010,6 +1035,7 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
 	kfree(ar->fw);
+	kfree(ar->fw_ext);
 	kfree(ar->fw_patch);
 	kfree(ar->fw_testscript);
 	kfree(ar->fw_softmac);
@@ -1833,7 +1859,7 @@ static int ath6kl_upload_firmware(struct ath6kl *ar)
 static int ath6kl_upload_firmware_ext(struct ath6kl *ar)
 {
 	u32 address;
-	int ret;
+	int ret = -1;
 	u32 param;
 	u32 fileSize = 0, sectionAddr = 0, sectionLen = 0, readLen = 0;
 	u32 i;
@@ -2606,7 +2632,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
-	ar->ktk_enable = ktk_enable;
 	ar->ktk_active = false;
 #endif
 
@@ -2721,7 +2746,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 			 ATH6KL_CONF_ENABLE_11N | ATH6KL_CONF_ENABLE_TX_BURST;
 
 	ar->p2p_flowctrl_ctx = ath6kl_p2p_flowctrl_conn_list_init(ar);
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_FLOWCTRL))
+	if (ar->p2p_multichan_concurrent)
 		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
 
 	ath6kl_info("P2P flowctrl %s\n",
@@ -2730,6 +2755,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_CUTPOWER))
 		ar->conf_flags |= ATH6KL_CONF_SUSPEND_CUTPOWER;
+
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_RX_AGGR_DROP))
+		ar->conf_flags |= ATH6KL_CONF_DISABLE_RX_AGGR_DROP;
+
+	ath6kl_info("RX aggregation drop %s\n",
+			ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP ?
+			"disabled" : "enabled");
 
 	ar->wiphy->flags |= WIPHY_FLAG_HAVE_AP_SME |
 			    WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD;
@@ -2810,6 +2842,18 @@ err_debug_init:
 	ath6kl_debug_cleanup(ar);
 err_node_cleanup:
 #ifdef CONFIG_ANDROID
+	if (ar->wow_irq) {
+		if (disable_irq_wake(ar->wow_irq))
+			ath6kl_err("Couldn't disable hostwake IRQ wakeup mode\n");
+
+		free_irq(ar->wow_irq, ar);
+		ar->wow_irq = 0;
+	}
+
+#ifdef CONFIG_HAS_WAKELOCK
+	wake_lock_destroy(&ar->wake_lock);
+#endif
+
 	ath6kl_cleanup_android_resource(ar);
 #endif
 	ath6kl_wmi_shutdown(ar->wmi);

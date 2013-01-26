@@ -635,12 +635,6 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			return -EINVAL;
 		}
 
-		if (!ar->ktk_enable) {
-			printk(KERN_ERR "%s: KTK feature is not enabled\n",
-					__func__);
-			return -EINVAL;
-		}
-
 		buf = nla_data(tb[ATH6KL_TM_ATTR_DATA]);
 		buf_len = nla_len(tb[ATH6KL_TM_ATTR_DATA]);
 

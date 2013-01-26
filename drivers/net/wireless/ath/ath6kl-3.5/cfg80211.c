@@ -409,6 +409,7 @@ static void ath6kl_install_ktk_ptk(struct ath6kl_vif *vif)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_key *ptk = NULL;
+	enum wmi_sync_flag sync_flag = SYNC_BOTH_WMIFLAG;
 	int status;
 	char buff[32];
 
@@ -426,6 +427,9 @@ static void ath6kl_install_ktk_ptk(struct ath6kl_vif *vif)
 	ptk->seq_len = 6;
 	memset(ptk->seq, 0, ptk->seq_len);
 
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_WMI_SYC))
+		sync_flag = NO_SYNC_WMIFLAG;
+
 	status = ath6kl_wmi_addkey_cmd(ar->wmi, vif->fw_vif_idx, 0,
 					KTK_CRYPT, GROUP_USAGE | TX_USAGE,
 					ptk->key_len,
@@ -434,7 +438,7 @@ static void ath6kl_install_ktk_ptk(struct ath6kl_vif *vif)
 					ptk->key,
 					KEY_OP_INIT_VAL,
 					NULL,
-					SYNC_BOTH_WMIFLAG);
+					sync_flag);
 
 	if (status)
 		ath6kl_err("%s: set ptk at index 0 failed\n", __func__);
@@ -786,6 +790,20 @@ void ath6kl_switch_parameter_based_on_connection(
 	else
 		clear_bit(MCC_ENABLED, &ar->flag);
 
+	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
+		if (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL) {
+			clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+		} else {
+			if (test_bit(MCC_ENABLED, &ar->flag)) {
+				clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+			} else {
+				set_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+			}
+		}
+	} else {
+		clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
+	}
+
 	if (mcc) {
 		list_for_each_entry(vif_temp, &ar->vif_list, list) {
 			if (test_bit(CONNECTED, &vif_temp->flags)) {
@@ -875,7 +893,9 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
 	ath6kl_judge_roam_parameter(vif, false);
 
-	ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi, RATECTRL_MODE_PERONLY);
+	if (ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi,
+				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
+		ath6kl_err("set rate_ctrl failed\n");
 
 	if (sme->ie && (sme->ie_len > 0)) {
 		status = ath6kl_set_assoc_req_ies(vif, sme->ie, sme->ie_len);
@@ -1359,7 +1379,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 				WLAN_STATUS_UNSPECIFIED_FAILURE,
 				GFP_KERNEL);
 	} else if (vif->sme_state == SME_CONNECTED) {
-		cfg80211_disconnected(vif->ndev, reason,
+		cfg80211_disconnected(vif->ndev, proto_reason,
 				NULL, 0, GFP_KERNEL);
 	}
 #ifdef ATH6KL_DIAGNOSTIC
@@ -1453,6 +1473,11 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	u8 skip_chan_num = 0;
 	bool sche_scan_trig;
 
+	if (test_bit(DISABLE_SCAN, &ar->flag)) {
+		ath6kl_err("scan is disabled temporarily\n");
+		return -EIO;
+	}
+
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
@@ -1462,6 +1487,50 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s\n", __func__);
+
+	/*
+	 * Last Cancel-RoC not yet finished. To update vif->last_cancel_roc_id
+	 * first to avoid wrong cookie report to supplicant.
+	 */
+	if (test_bit(ROC_CANCEL_PEND, &vif->flags)) {
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"RoC : Scan but Cancel-RoC not yet back, wait it finish %x\n",
+				vif->last_cancel_roc_id);
+
+		wait_event_interruptible_timeout(ar->event_wq,
+					!test_bit(ROC_ONGOING, &vif->flags),
+					WMI_TIMEOUT);
+		if (signal_pending(current)) {
+			ath6kl_err("RoC : target did not respond\n");
+			up(&ar->sem);
+			return -EINTR;
+		}
+	}
+
+	/* RoC is ongoing and stop it first. */
+	if (test_bit(ROC_ONGOING, &vif->flags)) {
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"RoC : Scan but On-going-RoC, cancel it first %x\n",
+			vif->last_roc_id);
+
+		set_bit(ROC_CANCEL_PEND, &vif->flags);
+		if (ath6kl_wmi_cancel_remain_on_chnl_cmd(ar->wmi,
+				vif->fw_vif_idx) != 0) {
+			ath6kl_err("RoC : cancel ROC failed\n");
+			up(&ar->sem);
+			return -EIO;
+		}
+
+		wait_event_interruptible_timeout(ar->event_wq,
+				!test_bit(ROC_ONGOING, &vif->flags),
+				 WMI_TIMEOUT);
+
+		if (signal_pending(current)) {
+			ath6kl_err("RoC : target did not respond\n");
+			up(&ar->sem);
+			return -EINTR;
+		}
+	}
 
 	sche_scan_trig = ath6kl_sched_scan_trigger(vif);
 
@@ -1588,53 +1657,6 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	if (test_bit(CONNECTED, &vif->flags))
 		force_fg_scan = 1;
 
-	/*
-	 * Last Cancel-RoC not yet finished. To update vif->last_cancel_roc_id
-	 * first to avoid wrong cookie report to supplicant.
-	 */
-	if (test_bit(ROC_CANCEL_PEND, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
-			"RoC : Scan but Cancel-RoC not yet back, wait it finish %x\n",
-				vif->last_cancel_roc_id);
-
-		wait_event_interruptible_timeout(ar->event_wq,
-					!test_bit(ROC_ONGOING, &vif->flags),
-					WMI_TIMEOUT);
-		if (signal_pending(current)) {
-			ath6kl_err("RoC : target did not respond\n");
-			kfree(channels);
-			up(&ar->sem);
-			return -EINTR;
-		}
-	}
-
-	/* RoC is ongoing and stop it first. */
-	if (test_bit(ROC_ONGOING, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
-			"RoC : Scan but On-going-RoC, cancel it first %x\n",
-			vif->last_roc_id);
-
-		set_bit(ROC_CANCEL_PEND, &vif->flags);
-		if (ath6kl_wmi_cancel_remain_on_chnl_cmd(ar->wmi,
-				vif->fw_vif_idx) != 0) {
-			ath6kl_err("RoC : cancel ROC failed\n");
-			kfree(channels);
-			up(&ar->sem);
-			return ret;
-		}
-
-		wait_event_interruptible_timeout(ar->event_wq,
-				!test_bit(ROC_ONGOING, &vif->flags),
-				 WMI_TIMEOUT);
-
-		if (signal_pending(current)) {
-			ath6kl_err("RoC : target did not respond\n");
-			kfree(channels);
-			up(&ar->sem);
-			return -EINTR;
-		}
-	}
-
 	if (test_and_set_bit(SCANNING, &vif->flags)) {
 		kfree(channels);
 		up(&ar->sem);
@@ -1731,6 +1753,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 	struct ath6kl *ar = (struct ath6kl *)ath6kl_priv(ndev);
 	struct ath6kl_vif *vif = netdev_priv(ndev);
 	struct ath6kl_key *key = NULL;
+	enum wmi_sync_flag sync_flag = SYNC_BOTH_WMIFLAG;
 	u8 key_usage;
 	u8 key_type;
 	int ret;
@@ -1871,11 +1894,14 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 		return 0;
 	}
 
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_WMI_SYC))
+		sync_flag = NO_SYNC_WMIFLAG;
+
 	ret = ath6kl_wmi_addkey_cmd(ar->wmi, vif->fw_vif_idx, key_index,
 				     key_type, key_usage, key->key_len,
 				     key->seq, key->seq_len, key->key,
 				     KEY_OP_INIT_VAL,
-				     (u8 *) mac_addr, SYNC_BOTH_WMIFLAG);
+				     (u8 *) mac_addr, sync_flag);
 
 	up(&ar->sem);
 
@@ -1977,6 +2003,7 @@ static int ath6kl_cfg80211_set_default_key(struct wiphy *wiphy,
 	struct ath6kl_key *key = NULL;
 	u8 key_usage;
 	enum crypto_type key_type = NONE_CRYPT;
+	enum wmi_sync_flag sync_flag = SYNC_BOTH_WMIFLAG;
 	int ret;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: index %d\n", __func__, key_index);
@@ -2020,13 +2047,16 @@ static int ath6kl_cfg80211_set_default_key(struct wiphy *wiphy,
 		return 0; /* Delay until AP mode has been started */
 	}
 
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_WMI_SYC))
+		sync_flag = NO_SYNC_WMIFLAG;
+
 	ret = ath6kl_wmi_addkey_cmd(ar->wmi, vif->fw_vif_idx,
 				     vif->def_txkey_index,
 				     key_type, key_usage,
 				     key->key_len, key->seq, key->seq_len,
 				     key->key,
 				     KEY_OP_INIT_VAL, NULL,
-				     SYNC_BOTH_WMIFLAG);
+				     sync_flag);
 
 	up(&ar->sem);
 
@@ -2396,7 +2426,7 @@ static int ath6kl_cfg80211_join_ibss(struct wiphy *wiphy,
 	}
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
-	if (!ar->ktk_enable) {
+	if (!ar->ktk_active) {
 #endif
 		if (ibss_param->privacy) {
 			ath6kl_set_cipher(vif, WLAN_CIPHER_SUITE_WEP40, true);
@@ -3181,14 +3211,17 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 		}
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
-		vif = ath6kl_vif_first(ar);
-		if (vif) {
-			ret = ath6kl_wmi_set_heart_beat_params(
-				ar->wmi, vif->fw_vif_idx, 0);
-			if (ret) {
-				ath6kl_warn("set wlan heart beat params failed in resume: %d\n",
-					ret);
-				return ret;
+		if (ar->wlan_hb_enable != 0) {
+			vif = ath6kl_vif_first(ar);
+			if (vif) {
+				ret = ath6kl_wmi_set_heart_beat_params(
+					ar->wmi, vif->fw_vif_idx, 0);
+				if (ret) {
+					ath6kl_warn("set wlan heart beat params failed "
+						"in resume: %d\n",
+						ret);
+					return ret;
+				}
 			}
 		}
 #endif
@@ -4048,6 +4081,7 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 			ath6kl_dbg(ATH6KL_DBG_INFO,
 				"RoC : wait ROC_WAIT_EVENT timeout\n");
 			clear_bit(ROC_WAIT_EVENT, &vif->flags);
+			clear_bit(ROC_ONGOING, &vif->flags);
 		}
 
 		if (signal_pending(current)) {
@@ -4068,6 +4102,7 @@ static int ath6kl_remain_on_channel(struct wiphy *wiphy,
 
 	/* Cache request channel and report to cfg80211 when target reject. */
 	vif->last_roc_channel = chan;
+	vif->last_roc_duration = duration;
 
 	set_bit(ROC_PEND, &vif->flags);
 	ret = ath6kl_wmi_remain_on_chnl_cmd(ar->wmi, vif->fw_vif_idx,
@@ -4121,6 +4156,7 @@ static int ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 					cookie,
 					vif->last_roc_id);
 			clear_bit(ROC_WAIT_EVENT, &vif->flags);
+			clear_bit(ROC_PEND, &vif->flags);
 			up(&ar->sem);
 			return 0;
 		}
@@ -4144,9 +4180,9 @@ static int ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 	}
 
 	vif->last_cancel_roc_id = cookie;
+	set_bit(ROC_CANCEL_PEND, &vif->flags);
 	spin_unlock_bh(&vif->if_lock);
 
-	set_bit(ROC_CANCEL_PEND, &vif->flags);
 	ret = ath6kl_wmi_cancel_remain_on_chnl_cmd(ar->wmi, vif->fw_vif_idx);
 
 	up(&ar->sem);
@@ -4791,7 +4827,11 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 		ar->max_norm_iface++;
 
 	ar->p2p_frame_retry = false;
-	ar->p2p_frame_not_report = false;
+
+	if (ar->p2p_compat)
+		ar->p2p_frame_not_report = true;
+	else
+		ar->p2p_frame_not_report = false;
 
 	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
 		" %s dedicate p2p-device,"
@@ -5143,16 +5183,13 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
-	if (ath6kl_mod_debug_quirks(vif->ar, ATH6KL_MODULE_ENABLE_KEEPALIVE)) {
-		vif->ap_keepalive_ctx =
-			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
-	} else if (ath6kl_mod_debug_quirks(vif->ar,
+	if (ath6kl_mod_debug_quirks(vif->ar,
 		ATH6KL_MODULE_KEEPALIVE_BY_SUPP)) {
 		vif->ap_keepalive_ctx =
 			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_BYSUPP);
 	} else {
 		vif->ap_keepalive_ctx =
-			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_DISABLE);
+			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
 	}
 
 	if (!vif->ap_keepalive_ctx) {

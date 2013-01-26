@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.247)
+#define __BUILD_VERSION_ (3.5.1.5)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -74,23 +74,25 @@
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
 	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
-
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
-	(ATH6KL_MODULE_P2P_FLOWCTRL |			\
-		ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
-	 /* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-	 /* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	 0)
 #else
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+#endif
 
+#ifdef CONFIG_ANDROID
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
-	(ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	0)
+	 0)
+#else
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+	 0)
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -242,6 +244,9 @@ struct ath6kl_fw_ie {
 /* Standard do_ioctl() ioctl interface */
 #define ATH6KL_IOCTL_STANDARD02		(SIOCDEVPRIVATE+2)
 
+/* BTC command */
+#define ATH6KL_IOCTL_STANDARD03		(SIOCDEVPRIVATE+3)
+
 /* hole, please reserved */
 #define ATH6KL_IOCTL_STANDARD12		(SIOCDEVPRIVATE+12)
 
@@ -291,11 +296,22 @@ struct ath6kl_android_wifi_priv_cmd {
 	int total_len;
 };
 
+struct btcoex_ioctl{
+	char *cmd;
+	unsigned int cmd_len;
+};
+
 enum ath6kl_recovery_mode {
 	ATH6KL_RECOVERY_MODE_NONE = 0,
 	ATH6KL_RECOVERY_MODE_WARM,
 	ATH6KL_RECOVERY_MODE_COLD,
 };
+
+#ifdef CONFIG_ATH6KL_RECOVERY_MODE_USER
+#define ATH6KL_RECOVERY_MODE_DEFAULT CONFIG_ATH6KL_RECOVERY_MODE_USER
+#else
+#define ATH6KL_RECOVERY_MODE_DEFAULT ATH6KL_RECOVERY_MODE_NONE
+#endif
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
 
@@ -440,6 +456,7 @@ enum ath6kl_recovery_mode {
 /* HTC TX packet tagging definitions */
 #define ATH6KL_CONTROL_PKT_TAG    HTC_TX_PACKET_TAG_USER_DEFINED
 #define ATH6KL_DATA_PKT_TAG       (ATH6KL_CONTROL_PKT_TAG + 1)
+#define ATH6KL_PRI_DATA_PKT_TAG       (ATH6KL_CONTROL_PKT_TAG + 2)
 
 #define AR6003_CUST_DATA_SIZE 16
 
@@ -522,6 +539,8 @@ enum scanband_type {
 #define ATH6KL_CONF_ENABLE_TX_BURST		BIT(3)
 #define ATH6KL_CONF_SUSPEND_CUTPOWER		BIT(4)
 #define ATH6KL_CONF_ENABLE_FLOWCTRL		BIT(5)
+#define ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL	BIT(6)
+#define ATH6KL_CONF_DISABLE_RX_AGGR_DROP	BIT(7)
 
 enum wlan_low_pwr_state {
 	WLAN_POWER_STATE_ON,
@@ -980,6 +999,7 @@ struct ath6kl_vif {
 	int reconnect_flag;
 	u32 last_roc_id;
 	struct ieee80211_channel *last_roc_channel;
+	unsigned int last_roc_duration;
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
@@ -1030,6 +1050,8 @@ enum ath6kl_dev_state {
 	INIT_DEFER_PROGRESS,
 	DOWNLOAD_FIRMWARE_EXT,
 	MCC_ENABLED,
+	SKIP_FLOWCTRL_EVENT,
+	DISABLE_SCAN,
 };
 
 enum ath6kl_state {
@@ -1217,9 +1239,6 @@ struct ath6kl {
 	bool sche_scan;
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
-	/* ktk feature is enabled or not */
-	bool ktk_enable;
-
 	/* ktk feature is started ot not */
 	bool ktk_active;
 
