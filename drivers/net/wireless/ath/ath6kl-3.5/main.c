@@ -2087,8 +2087,10 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	    (ar->p2p_concurrent) &&
 	    (ar->p2p_dedicate)) {
 		vif = ath6kl_get_vif_by_index(ar, ar->vif_max - 2);
-		if (!vif)
+		if (!vif) {
+			up(&ar->sem);
 			return -EFAULT;
+		}
 	}
 #endif
 
