@@ -220,7 +220,7 @@ struct ap_keepalive_info *ath6kl_ap_keepalive_init(struct ath6kl_vif *vif,
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_ENABLED;
 		ap_keepalive->ap_ka_interval = ATH6KL_AP_KA_INTERVAL_DEFAULT;
 		ap_keepalive->ap_ka_reclaim_cycle =
-			ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT;
+			ATH6KL_AP_KA_RECLAIM_CYCLE_SCC;
 	} else if (mode == AP_KA_MODE_BYSUPP)
 		ap_keepalive->flags |= ATH6KL_AP_KA_FLAGS_BY_SUPP;
 
@@ -283,6 +283,8 @@ int ath6kl_ap_keepalive_start(struct ath6kl_vif *vif)
 			  msecs_to_jiffies(ATH6KL_AP_KA_PRELOAD_LEADTIME));
 		ap_keepalive->flags |= (ATH6KL_AP_KA_FLAGS_START |
 					ATH6KL_AP_KA_FLAGS_PRELOAD_STAT);
+		ath6kl_wmi_set_inact_cmd(vif->ar->wmi,
+			DISALBE_AP_INACTIVE_TIMEMER);
 	}
 
 	return 0;
@@ -320,6 +322,8 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			   "already offlad to supplicant/hostapd.\n");
 		return 0;
+	} else if (!(ap_keepalive->flags & ATH6KL_AP_KA_FLAGS_ENABLED)) {
+		return 0;
 	}
 
 	if ((ap_ka_interval != 0) &&
@@ -349,7 +353,7 @@ int ath6kl_ap_keepalive_config(struct ath6kl_vif *vif,
 			ap_keepalive->ap_ka_interval =
 				ATH6KL_AP_KA_INTERVAL_DEFAULT;
 			ap_keepalive->ap_ka_reclaim_cycle =
-				ATH6KL_AP_KA_RECLAIM_CYCLE_DEFAULT;
+				ATH6KL_AP_KA_RECLAIM_CYCLE_SCC;
 		}
 
 		ap_keepalive->ap_ka_remove_time =

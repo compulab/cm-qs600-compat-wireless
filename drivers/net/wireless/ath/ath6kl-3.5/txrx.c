@@ -467,6 +467,9 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		cookie->htc_pkt.recycle_count = 0;
 	}
 
+	/*null data's vif since it is not applied */
+	cookie->htc_pkt.vif = NULL;
+
 	/*
 	 * This interface is asynchronous, if there is an error, cleanup
 	 * will happen in the TX completion callback.
@@ -550,8 +553,9 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		else {
 			/* get the stream mapping */
 			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
-				    vif->fw_vif_idx, skb,
-				    0, test_bit(WMM_ENABLED, &vif->flags), &ac);
+					vif->fw_vif_idx, skb,
+					0, test_bit(WMM_ENABLED, &vif->flags),
+					&ac, &htc_tag);
 			if (ret)
 				goto fail_tx;
 		}
@@ -632,7 +636,10 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
+	if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
+	else
+		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
@@ -683,6 +690,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		else if (ret < 0)	/* Error, drop it. */
 			goto fail_tx;
 	}
+
+	cookie->htc_pkt.vif = vif;
 
 	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 
@@ -864,7 +873,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		return action;
 	}
 
-	if (packet->info.tx.tag == ATH6KL_CONTROL_PKT_TAG)
+	if ((packet->info.tx.tag == ATH6KL_CONTROL_PKT_TAG) ||
+			(packet->info.tx.tag == ATH6KL_PRI_DATA_PKT_TAG))
 		return action;
 
 	/*
@@ -968,7 +978,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool wake_event = false;
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif = NULL;
 	struct htc_endpoint *endpoint = NULL;
 	int txq_depth;
 
@@ -1075,26 +1085,22 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 	__skb_queue_purge(&skb_queue);
 
-
 	if (test_bit(MCC_ENABLED, &ar->flag)) {
 		endpoint = &ar->htc_target->endpoint[eid];
-		if (ar && endpoint && packet && ar->htc_target &&
-			eid >= ENDPOINT_2 && eid <= ENDPOINT_5) {
+		if (ar && endpoint && packet && ar->htc_target) {
 			struct list_head *tx_queue;
 
 			tx_queue = &endpoint->txq;
-			spin_lock_bh(&ar->htc_target->tx_lock);
-			txq_depth = get_queue_depth(tx_queue);
-			spin_unlock_bh(&ar->htc_target->tx_lock);
+			if (tx_queue && vif && !flushing[vif->fw_vif_idx]) {
+				spin_lock_bh(&ar->htc_target->tx_lock);
+				txq_depth = get_queue_depth(tx_queue);
+				spin_unlock_bh(&ar->htc_target->tx_lock);
 
-			if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
-				ath6kl_p2p_flowctrl_netif_state_transition(
-					ar, packet->connid,
-					ATH6KL_P2P_FLOWCTRL_NETIF_WAKE, 0);
-			else
-				ath6kl_p2p_flowctrl_netif_state_transition(
-					ar, packet->connid,
-					ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 0);
+				if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
+					ath6kl_p2p_flowctrl_netif_transition(
+						ar,
+						ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
+			}
 		}
 	} else {
 		/* FIXME: Locking */
@@ -1120,6 +1126,51 @@ fatal:
 	WARN_ON(1);
 	spin_unlock_bh(&ar->lock);
 	return;
+}
+
+static void ath6kl_flush_data_in_ep_by_if(struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	struct htc_packet *packet, *tmp_pkt;
+	struct htc_endpoint *endpoint;
+	struct list_head    *tx_queue, container;
+	int eid;
+
+	INIT_LIST_HEAD(&container);
+
+	spin_lock_bh(&ar->htc_target->tx_lock);
+	for (eid = ENDPOINT_2; eid <= ENDPOINT_5; eid++) {
+
+		endpoint = &ar->htc_target->endpoint[eid];
+		tx_queue = &endpoint->txq;
+
+		if (list_empty(tx_queue))
+			continue;
+
+		list_for_each_entry_safe(packet,
+					tmp_pkt,
+					tx_queue,
+					list) {
+			if (packet->vif != vif)
+				continue;
+			list_del(&packet->list);
+			packet->status = 0;
+			list_add_tail(
+				&packet->list,
+				&container);
+		}
+	}
+	spin_unlock_bh(&ar->htc_target->tx_lock);
+
+	ath6kl_tx_complete(ar->htc_target, &container);
+
+	return;
+}
+
+void ath6kl_tx_data_cleanup_by_if(struct ath6kl_vif *vif)
+{
+	ath6kl_flush_data_in_ep_by_if(vif);
+	ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(vif);
 }
 
 void ath6kl_tx_data_cleanup(struct ath6kl *ar)
@@ -1149,13 +1200,19 @@ static void ath6kl_eapol_send(struct work_struct *work)
 	if (!vif)
 		goto FAILED;
 
-	if (WARN_ON(!vif->pend_skb))
+	spin_lock_bh(&vif->pend_skb_lock);
+
+	if (!vif->pend_skb) {
+		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		spin_unlock_bh(&vif->pend_skb_lock);
 		goto FAILED;
+	}
 
 	if (!(vif->pend_skb->dev->flags & IFF_UP)) {
 		dev_kfree_skb(vif->pend_skb);
 		vif->pend_skb = NULL;
 		clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+		spin_unlock_bh(&vif->pend_skb_lock);
 		return;
 	}
 
@@ -1165,8 +1222,11 @@ static void ath6kl_eapol_send(struct work_struct *work)
 
 	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
 
+	spin_unlock_bh(&vif->pend_skb_lock);
+
 	return;
 FAILED:
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
 	ath6kl_err("%s failed\n", __func__);
 	return;
 }
@@ -1529,8 +1589,9 @@ static void aggr_deque_frms(struct aggr_conn_info *aggr_conn, u8 tid,
 	spin_unlock_bh(&rxtid->lock);
 }
 
-static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
-				  u16 seq_no,
+static bool aggr_process_recv_frm(struct ath6kl *ar,
+				  struct aggr_conn_info *aggr_conn,
+				  u8 tid, u16 seq_no,
 				  bool is_amsdu, struct sk_buff *frame)
 {
 	struct rxtid *rxtid;
@@ -1622,7 +1683,8 @@ static bool aggr_process_recv_frm(struct aggr_conn_info *aggr_conn, u8 tid,
 		stats->num_oow++;
 	}
 
-	if (drop_it == true) {
+	if ((drop_it == true) &&
+			!(ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP)) {
 		dev_kfree_skb(frame);
 		is_queued = true;
 		spin_unlock_bh(&rxtid->lock);
@@ -2185,8 +2247,8 @@ rx_aggr_process:
 	datap = (struct ethhdr *) skb->data;
 
 	if (is_unicast_ether_addr(datap->h_dest) &&
-	    aggr_process_recv_frm(conn->aggr_conn_cntxt, tid, seq_no,
-				  is_amsdu, skb))
+		aggr_process_recv_frm(ar, conn->aggr_conn_cntxt, tid,
+			seq_no, is_amsdu, skb))
 		/* aggregation code will handle the skb */
 		return;
 
@@ -2572,6 +2634,8 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 		else if (ret < 0)	/* Error, drop it. */
 			goto fail_tx;
 	}
+
+	cookie->htc_pkt.vif = vif;
 
 	ar->tx_on_vif |= (1 << vif->fw_vif_idx);
 
