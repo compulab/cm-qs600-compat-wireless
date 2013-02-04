@@ -41,12 +41,13 @@
 #include "p2p.h"
 #include "ap.h"
 #include <linux/wireless.h>
+#include <linux/interrupt.h>
 
 #define MAKE_STR(symbol) #symbol
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.237)
+#define __BUILD_VERSION_ (3.5.0.275)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -74,23 +75,25 @@
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
 	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
-
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
-	(ATH6KL_MODULE_P2P_FLOWCTRL |			\
-	 /* ATH6KL_MODULE_ENABLE_KEEPALIVE | */		\
-	 /* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
-	 /* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	 0)
 #else
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+#endif
 
+#ifdef CONFIG_ANDROID
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
-	(ATH6KL_MODULE_ENABLE_KEEPALIVE |		\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	0)
+	 0)
+#else
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
+	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
+	 0)
 #endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
@@ -115,6 +118,89 @@
 
 #ifndef ATH6KL_DEVNAME_DEF_STA
 #define ATH6KL_DEVNAME_DEF_STA		"sta%d"
+#endif
+
+
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_4
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_4
+#endif
+#endif
+
+/*
+ * NOT to touch origional branches's Makefile and therefore turn-on
+ * ATH6KL_SUPPORT_NL80211_QCA by default for all Android releases.
+ *
+ * For JB_2.5, Android.mk will append ATH6KL_SUPPORT_NL80211_KERNEL3_4
+ * For JB_MR1, Android.mk will append ATH6KL_SUPPORT_NL80211_KERNEL3_6
+ *                                    ATH6KL_SUPPORT_NETLINK_KERNEL3_6
+ *                                    ATH6KL_SUPPORT_NETLINK_KERNEL3_7
+ *
+ * For ATH6KL_SUPPORT_NETLINK_KERNEL3_6 & ATH6KL_SUPPORT_NETLINK_KERNEL3_7,
+ * not really need if compat.ko used.
+ */
+#ifdef CONFIG_ANDROID
+#define ATH6KL_SUPPORT_NL80211_QCA
+
+#if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
+	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)
+/*
+ * New Android (after JB_2.5/JB_MR1) use build-in cfg80211.ko and
+ * need to remove QCA's cfg80211 implementations.
+ */
+#undef ATH6KL_SUPPORT_NL80211_QCA
+#endif
+#endif
+
+/*
+ * No good way to support every version of cfg80211.ko so far, especially
+ * we sometimes change the default behavior of public cfg80211.ko.
+ *
+ * To let driver code could compiler between different cfg80211.ko and using
+ * these flags now.
+ * Newer NL80211.h may has the similiar definitions to used by application
+ * or the driver but, unfortunately, all are not we want.
+ *
+ * Please add ATH6KL_SUPPORT_NL80211_QCA or ATH6KL_SUPPORT_NL80211_KERNEL3_x
+ * in your BSP's Makefiles based on the cfg80211.ko you used.
+ */
+#ifdef ATH6KL_SUPPORT_NL80211_QCA
+/*
+ * Means the cfg80211.ko is older version (as least older than built-in
+ * version of kernel3.3) and had QCA's special implementations.
+ *
+ * NL80211_CMD_GET_WOWLAN_QCA: for QCA WoW command.
+ * NL80211_CMD_BTCOEX_QCA: for QCA BTCoext NL80211 command and event.
+ *
+ * TODO : remove these special implementations.
+ */
+#define NL80211_CMD_GET_WOWLAN_QCA
+#define NL80211_CMD_BTCOEX_QCA
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_4
+/*
+ * Means the cfg80211.ko is newer version (as least newer than built-in
+ * version of kernel3.4)
+ *
+ * NL80211_CMD_START_AP: for new call-back and structures.
+ * NL80211_ATTR_RX_SIGNAL_DBM: for new API's parameter.
+ * CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL: new flag consist w/ RoC oper.
+ */
+#define NL80211_CMD_START_AP
+#define NL80211_ATTR_RX_SIGNAL_DBM
+#define CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_6
+/*
+ * Means the cfg80211.ko is newer version (as least newer than built-in
+ * version of kernel3.6)
+ *
+ * CFG80211_NETDEV_REPLACED_BY_WDEV: using wireless_dev pointer instead
+ *                                   of net_device.
+ * CFG80211_NO_SET_CHAN_OPERATION: no support set_channel call-back.
+ */
+#define CFG80211_NETDEV_REPLACED_BY_WDEV
+#define CFG80211_NO_SET_CHAN_OPERATION
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -242,6 +328,9 @@ struct ath6kl_fw_ie {
 /* Standard do_ioctl() ioctl interface */
 #define ATH6KL_IOCTL_STANDARD02		(SIOCDEVPRIVATE+2)
 
+/* BTC command */
+#define ATH6KL_IOCTL_STANDARD03		(SIOCDEVPRIVATE+3)
+
 /* hole, please reserved */
 #define ATH6KL_IOCTL_STANDARD12		(SIOCDEVPRIVATE+12)
 
@@ -291,11 +380,22 @@ struct ath6kl_android_wifi_priv_cmd {
 	int total_len;
 };
 
+struct btcoex_ioctl {
+	char *cmd;
+	unsigned int cmd_len;
+};
+
 enum ath6kl_recovery_mode {
 	ATH6KL_RECOVERY_MODE_NONE = 0,
 	ATH6KL_RECOVERY_MODE_WARM,
 	ATH6KL_RECOVERY_MODE_COLD,
 };
+
+#ifdef CONFIG_ATH6KL_RECOVERY_MODE_USER
+#define ATH6KL_RECOVERY_MODE_DEFAULT CONFIG_ATH6KL_RECOVERY_MODE_USER
+#else
+#define ATH6KL_RECOVERY_MODE_DEFAULT ATH6KL_RECOVERY_MODE_NONE
+#endif
 
 #define ATH6KL_FW_API2_FILE "fw-2.bin"
 
@@ -372,7 +472,6 @@ enum ath6kl_recovery_mode {
 #define AR6004_HW_1_3_FIRMWARE_2_FILE         "fw-2.bin"
 #define AR6004_HW_1_3_FIRMWARE_FILE           "fw.ram.bin"
 #define AR6004_HW_1_3_FIRMWARE_EXT_FILE       "fw_ext.ram.bin"
-#define AR6004_HW_1_3_MOCHA_FIRMWARE_FILE     "fw.ram_mocha.bin"
 #define AR6004_HW_1_3_TCMD_FIRMWARE_FILE      "utf.bin"
 #define AR6004_HW_1_3_UTF_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_1_3_TESTSCRIPT_FILE	"nullTestFlow.bin"
@@ -397,20 +496,20 @@ enum ath6kl_recovery_mode {
 #define AR6004_HW_2_0_EPPING_FILE             "ath6k/AR6004/hw2.0/epping.bin"
 #define AR6004_HW_2_0_SOFTMAC_FILE            "ath6k/AR6004/hw2.0/softmac.bin"
 
-/* AR6004 2.1 definitions */
-#define AR6004_HW_2_1_VERSION			0x31c809f0
-#define AR6004_HW_2_1_FW_DIR			"ath6k/AR6004/hw2.1"
-#define AR6004_HW_2_1_OTP_FILE			"otp.bin"
-#define AR6004_HW_2_1_FIRMWARE_2_FILE         "fw-2.bin"
-#define AR6004_HW_2_1_FIRMWARE_FILE           "fw.ram.bin"
-#define AR6004_HW_2_1_TCMD_FIRMWARE_FILE      "utf.bin"
-#define AR6004_HW_2_1_UTF_FIRMWARE_FILE	"utf.bin"
-#define AR6004_HW_2_1_TESTSCRIPT_FILE	"nullTestFlow.bin"
-#define AR6004_HW_2_1_BOARD_DATA_FILE         "ath6k/AR6004/hw2.1/bdata.bin"
-#define AR6004_HW_2_1_DEFAULT_BOARD_DATA_FILE \
-	"ath6k/AR6004/hw2.1/bdata.bin"
-#define AR6004_HW_2_1_EPPING_FILE             "ath6k/AR6004/hw2.1/epping.bin"
-#define AR6004_HW_2_1_SOFTMAC_FILE            "ath6k/AR6004/hw2.1/softmac.bin"
+/* AR6004 3.0 definitions */
+#define AR6004_HW_3_0_VERSION			0x31C809F8
+#define AR6004_HW_3_0_FW_DIR			"ath6k/AR6004/hw3.0"
+#define AR6004_HW_3_0_OTP_FILE			"otp.bin"
+#define AR6004_HW_3_0_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6004_HW_3_0_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6004_HW_3_0_TCMD_FIRMWARE_FILE      "utf.bin"
+#define AR6004_HW_3_0_UTF_FIRMWARE_FILE	"utf.bin"
+#define AR6004_HW_3_0_TESTSCRIPT_FILE	"nullTestFlow.bin"
+#define AR6004_HW_3_0_BOARD_DATA_FILE         "ath6k/AR6004/hw3.0/bdata.bin"
+#define AR6004_HW_3_0_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6004/hw3.0/bdata.bin"
+#define AR6004_HW_3_0_EPPING_FILE             "ath6k/AR6004/hw3.0/epping.bin"
+#define AR6004_HW_3_0_SOFTMAC_FILE            "ath6k/AR6004/hw3.0/softmac.bin"
 
 /* AR6006 1.0 definitions */
 #define AR6006_HW_1_0_VERSION                 0x31c80997
@@ -422,6 +521,17 @@ enum ath6kl_recovery_mode {
 #define AR6006_HW_1_0_DEFAULT_BOARD_DATA_FILE \
 	"ath6k/AR6006/hw1.0/bdata.bin"
 #define AR6006_HW_1_0_SOFTMAC_FILE            "ath6k/AR6006/hw1.0/softmac.bin"
+
+/* AR6006 1.1 definitions */
+#define AR6006_HW_1_1_VERSION                 0x31c80a26
+#define AR6006_HW_1_1_FW_DIR			"ath6k/AR6006/hw1.1"
+#define AR6006_HW_1_1_FIRMWARE_2_FILE         "fw-2.bin"
+#define AR6006_HW_1_1_FIRMWARE_FILE           "fw.ram.bin"
+#define AR6006_HW_1_1_BOARD_DATA_FILE         "ath6k/AR6006/hw1.1/bdata.bin"
+#define AR6006_HW_1_1_EPPING_FILE             "ath6k/AR6006/hw1.1/epping.bin"
+#define AR6006_HW_1_1_DEFAULT_BOARD_DATA_FILE \
+	"ath6k/AR6006/hw1.1/bdata.bin"
+#define AR6006_HW_1_1_SOFTMAC_FILE            "ath6k/AR6006/hw1.1/softmac.bin"
 
 #define AR6004_MAX_64K_FW_SIZE                65536
 
@@ -441,6 +551,7 @@ enum ath6kl_recovery_mode {
 /* HTC TX packet tagging definitions */
 #define ATH6KL_CONTROL_PKT_TAG    HTC_TX_PACKET_TAG_USER_DEFINED
 #define ATH6KL_DATA_PKT_TAG       (ATH6KL_CONTROL_PKT_TAG + 1)
+#define ATH6KL_PRI_DATA_PKT_TAG       (ATH6KL_CONTROL_PKT_TAG + 2)
 
 #define AR6003_CUST_DATA_SIZE 16
 
@@ -523,6 +634,8 @@ enum scanband_type {
 #define ATH6KL_CONF_ENABLE_TX_BURST		BIT(3)
 #define ATH6KL_CONF_SUSPEND_CUTPOWER		BIT(4)
 #define ATH6KL_CONF_ENABLE_FLOWCTRL		BIT(5)
+#define ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL	BIT(6)
+#define ATH6KL_CONF_DISABLE_RX_AGGR_DROP	BIT(7)
 
 enum wlan_low_pwr_state {
 	WLAN_POWER_STATE_ON,
@@ -852,6 +965,7 @@ enum ath6kl_hw_flags {
 	ATH6KL_HW_TGT_ALIGN_PADDING = BIT(0),
 	ATH6KL_HW_SINGLE_PIPE_SCHED = BIT(1),
 	ATH6KL_HW_FIRMWARE_EXT_SUPPORT = BIT(2),
+	ATH6KL_HW_USB_FLOWCTRL = BIT(3)
 };
 
 /*
@@ -981,6 +1095,7 @@ struct ath6kl_vif {
 	int reconnect_flag;
 	u32 last_roc_id;
 	struct ieee80211_channel *last_roc_channel;
+	unsigned int last_roc_duration;
 	u32 last_cancel_roc_id;
 	u32 send_action_id;
 	bool probe_req_report;
@@ -1010,6 +1125,7 @@ struct ath6kl_vif {
 	u8 arp_offload_ip_set;
 	struct delayed_work work_eapol_send;
 	struct sk_buff *pend_skb;
+	spinlock_t pend_skb_lock;
 };
 
 #define WOW_LIST_ID		0
@@ -1030,6 +1146,8 @@ enum ath6kl_dev_state {
 	INIT_DEFER_PROGRESS,
 	DOWNLOAD_FIRMWARE_EXT,
 	MCC_ENABLED,
+	SKIP_FLOWCTRL_EVENT,
+	DISABLE_SCAN,
 };
 
 enum ath6kl_state {
@@ -1214,17 +1332,22 @@ struct ath6kl {
 	/* Not to report P2P Frame to user if not in RoC period */
 	bool p2p_frame_not_report;
 
+	/* WAR EV119712 */
+	bool p2p_war_bad_intel_go;
+
 	bool sche_scan;
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
-	/* ktk feature is enabled or not */
-	bool ktk_enable;
-
 	/* ktk feature is started ot not */
 	bool ktk_active;
 
 	/* ktk cipher key */
 	u8 ktk_passphrase[16];
+#endif
+
+#ifdef ATH6KL_SUPPORT_WIFI_DISC
+	/* discovery feature is started ot not */
+	bool disc_active;
 #endif
 
 	struct ath6kl_btcoex btcoex_info;
@@ -1395,6 +1518,7 @@ int ath6kl_diag_read(struct ath6kl *ar, u32 address, void *data, u32 length);
 int ath6kl_read_fwlogs(struct ath6kl *ar);
 void ath6kl_init_profile_info(struct ath6kl_vif *vif);
 void ath6kl_tx_data_cleanup(struct ath6kl *ar);
+void ath6kl_tx_data_cleanup_by_if(struct ath6kl_vif *vif);
 
 struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 	enum cookie_type cookie_type);
@@ -1496,7 +1620,7 @@ void ath6kl_ps_queue_age_handler(unsigned long ptr);
 void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn);
 void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn);
 
-#ifdef CONFIG_ANDROID
+#ifdef CONFIG_ANDROID_8960_SDIO
 void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif

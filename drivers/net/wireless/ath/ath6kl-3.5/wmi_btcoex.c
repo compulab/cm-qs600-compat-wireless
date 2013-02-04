@@ -38,9 +38,12 @@
 	(70 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME     \
 	(30 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
+#define BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME     \
+	(60 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 #define BTCOEX_A2DP_BDR_WLAN_MAX_DUR           20
+#define BTCOEX_APMODE_A2DP_BDR_WLAN_MAX_DUR    40
 #define BTCOEX_APMODE_A2DP_WLAN_MAX_DUR	       70
 #define BTCOEX_APMODE_A2DP_MIN_BURST_CNT       10
 
@@ -68,7 +71,19 @@ static inline struct sk_buff *ath6kl_wmi_btcoex_get_new_buf(u32 size)
 /*  This is a temporary WAR since BTC related NL80211 commands are
  *  defined in Linux nl80211.h.
  */
-#define NL80211_WMI_SET_BT_HID_CONFIG 12
+#define NL80211_WMI_SET_BT_STATUS		0
+#define NL80211_WMI_SET_BT_PARAMS		1
+#define NL80211_WMI_SET_BT_FT_ANT		2
+#define NL80211_WMI_SET_COLOCATED_BT_DEV	3
+#define NL80211_WMI_SET_BT_INQUIRY_PAGE_CONFIG	4
+#define NL80211_WMI_SET_BT_SCO_CONFIG		5
+#define NL80211_WMI_SET_BT_A2DP_CONFIG		6
+#define NL80211_WMI_SET_BT_ACLCOEX_CONFIG	7
+#define NL80211_WMI_SET_BT_DEBUG		8
+#define NL80211_WMI_SET_BT_OPSTATUS		9
+#define NL80211_WMI_GET_BT_CONFIG		10
+#define NL80211_WMI_GET_BT_STATS		11
+#define NL80211_WMI_SET_BT_HID_CONFIG		12
 
 static int ath6kl_get_wmi_cmd(int nl_cmd)
 {
@@ -149,11 +164,19 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 	{
 		struct wmi_set_btcoex_fe_antenna_cmd *cmd =
 			(struct wmi_set_btcoex_fe_antenna_cmd *)buf;
-		/* fill in correct antenna configuration from
-		   board data if valid */
-		if (ar->fw_board[BDATA_ANTCONF_OFFSET])
+
+		if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
+			/* use WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO
+			 by default for McK2.0.4 */
 			cmd->fe_antenna_type =
-				ar->fw_board[BDATA_ANTCONF_OFFSET];
+					WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
+		} else {
+			/* fill in correct antenna configuration from
+			board data if valid */
+			if (ar->fw_board[BDATA_ANTCONF_OFFSET])
+				cmd->fe_antenna_type =
+					ar->fw_board[BDATA_ANTCONF_OFFSET];
+		}
 	}
 	break;
 	case WMI_SET_BTCOEX_COLOCATED_BT_DEV_CMDID:
@@ -227,9 +250,15 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				WMI_A2DP_CONFIG_FLAG_IS_EDR_CAPABLE) {
 				pspoll_config->a2dp_wlan_max_dur =
 					BTCOEX_APMODE_A2DP_WLAN_MAX_DUR;
+				a2dp_config->a2dp_flags |= cpu_to_le32(
+					BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME);
+			} else {
+				pspoll_config->a2dp_wlan_max_dur =
+					BTCOEX_APMODE_A2DP_BDR_WLAN_MAX_DUR;
+				a2dp_config->a2dp_flags |= cpu_to_le32(
+				BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME);
 			}
-			a2dp_config->a2dp_flags |= cpu_to_le32(
-				BTCOEX_APMODE_A2DP_MAX_BLUETOOTH_TIME);
+
 			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
 				BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
 		}

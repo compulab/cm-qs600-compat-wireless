@@ -18,6 +18,17 @@
 
 #include <net/netlink.h>
 
+/*
+ * netlink.h remove these macros from kernel 3.5.
+ * TODO : Error handle for nla_put_XXX calls.
+ */
+#ifndef NLA_PUT
+#define NLA_PUT_U32	nla_put_u32
+#define NLA_PUT		nla_put
+#else
+#define _NLA_PUT_ERR_RTN
+#endif
+
 enum ath6kl_tm_attr {
 	__ATH6KL_TM_ATTR_INVALID	= 0,
 	ATH6KL_TM_ATTR_CMD		= 1,
@@ -80,9 +91,12 @@ void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len)
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode rx skb!\n");
+#endif
+
 }
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
@@ -109,9 +123,11 @@ void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value,
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
+#endif
 }
 #endif
 
@@ -137,9 +153,11 @@ void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len)
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
+#endif
 }
 #endif
 
@@ -196,9 +214,11 @@ out:
 
 	return ret;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	ret = -ENOBUFS;
 	goto out;
+#endif
 }
 EXPORT_SYMBOL(ath6kl_tm_rx_report);
 
@@ -601,7 +621,12 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 						__func__);
 				return -EINVAL;
 			}
+
+			/* change disc state to active */
+			ar->disc_active = true;
 		} else if (disc_params->cmd == NL80211_WIFI_DISC_STOP) {
+			/* change disc state to inactive */
+			ar->disc_active = false;
 			if (ath6kl_wmi_disc_mode_cmd(ar->wmi, vif->fw_vif_idx,
 							0, 0, 0, 0, 0, 0, 0)) {
 				printk(KERN_ERR "%s: wifi discovery stop fail\n",
@@ -627,12 +652,6 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 
 		if (!tb[ATH6KL_TM_ATTR_DATA]) {
 			printk(KERN_ERR "%s: NO DATA\n", __func__);
-			return -EINVAL;
-		}
-
-		if (!ar->ktk_enable) {
-			printk(KERN_ERR "%s: KTK feature is not enabled\n",
-					__func__);
 			return -EINVAL;
 		}
 
@@ -690,6 +709,17 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 		} else if (ktk_params->cmd == NL80211_WIFI_KTK_START) {
 			ar->ktk_active = true;
 
+			/* Clear the legacy ie pattern and filter */
+			if (ath6kl_wmi_disc_ie_cmd(ar->wmi, vif->fw_vif_idx,
+					0,
+					0,
+					NULL,
+					0)) {
+				printk(KERN_ERR "%s: wifi ktk clear ie filter fail\n",
+					__func__);
+				return -EINVAL;
+			}
+
 			memcpy(ar->ktk_passphrase,
 				ktk_params->params.start_params.passphrase,
 				16);
@@ -698,13 +728,34 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 				1, SPECIFIC_SSID_FLAG,
 				ktk_params->params.start_params.ssid_len,
 				ktk_params->params.start_params.ssid)) {
-				printk(KERN_ERR
-					"%s: wifi ktk set probedssid fail\n",
+				printk(KERN_ERR "%s: wifi ktk set probedssid fail\n",
+					__func__);
+				return -EINVAL;
+			}
+
+			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi,
+					vif->fw_vif_idx,
+					ADHOC_PS_KTK,
+					5,
+					10,
+					10)) {
+				printk(KERN_ERR "%s: wifi ktk set power save mode on fail\n",
 					__func__);
 				return -EINVAL;
 			}
 		} else if (ktk_params->cmd == NL80211_WIFI_KTK_STOP) {
 			ar->ktk_active = false;
+
+			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi,
+					vif->fw_vif_idx,
+					ADHOC_PS_DISABLE,
+					0,
+					0,
+					0)) {
+				printk(KERN_ERR "%s: wifi ktk set power save mode off fail\n",
+					__func__);
+				return -EINVAL;
+			}
 		}
 	}
 
