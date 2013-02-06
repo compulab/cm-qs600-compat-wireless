@@ -4212,6 +4212,19 @@ static int ath6kl_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
 		return -ERESTARTSYS;
 	}
 
+	if ((ar->p2p) && !ar->p2p_compat &&
+		(ar->p2p_concurrent) &&
+		(vif->fw_vif_idx == (ar->vif_max - 1)) &&
+		!test_bit(ROC_ONGOING, &vif->flags)) {
+
+		if (ath6kl_p2p_is_p2p_frame(ar, buf, len)) {
+			ath6kl_err("RoC : RoC channel closed, ignore action frame\n");
+			up(&ar->sem);
+			return -EINVAL;
+		}
+
+	}
+
 	id = vif->send_action_id++;
 	if (id == 0) {
 		/*
