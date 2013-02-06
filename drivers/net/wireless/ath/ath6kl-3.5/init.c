@@ -2798,10 +2798,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 #endif
 
 #ifndef CONFIG_ANDROID
-	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
-		if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi,
-			WMI_MCC_PROFILE_STA50 | WMI_MCC_CTS_ENABLE))
-			ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
+	if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi,
+		WMI_MCC_PROFILE_STA50 | WMI_MCC_CTS_ENABLE))
+		ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
 #endif
 
 	/* Defer some tasks to worker after driver init. */

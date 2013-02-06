@@ -209,6 +209,6 @@ int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 			     u8 *buf, int buf_len);
 
 bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len);
-bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len);
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, const u8 *frm, size_t len);
 #endif
 

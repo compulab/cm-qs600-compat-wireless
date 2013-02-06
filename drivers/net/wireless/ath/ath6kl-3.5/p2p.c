@@ -1024,7 +1024,7 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 		flowctrl_allowed = _check_can_send(ar, fw_conn);
 		if (!flowctrl_allowed && fw_conn->previous_can_send) {
 			spin_lock_bh(&ar->htc_target->tx_lock);
-			for (eid = ENDPOINT_5; eid <= ENDPOINT_2; eid--) {
+			for (eid = ENDPOINT_5; eid >= ENDPOINT_2; eid--) {
 				endpoint = &ar->htc_target->endpoint[eid];
 				tx_queue = &endpoint->txq;
 				if (list_empty(tx_queue))
@@ -1061,13 +1061,13 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 				}
 			}
 			spin_unlock_bh(&ar->htc_target->tx_lock);
-		} else if (flowctrl_allowed) {
-			ath6kl_p2p_flowctrl_netif_transition(
-				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
 		}
 		fw_conn->previous_can_send = flowctrl_allowed;
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	}
+
+	ath6kl_p2p_flowctrl_netif_transition(
+				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
 		"p2p_flowctrl state_change %p re_tx %d re_tx_aging %d\n",
@@ -1319,7 +1319,7 @@ bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
 		(action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF));
 }
 
-bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len)
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, const u8 *frm, size_t len)
 {
 	struct ieee80211_mgmt *action = (struct ieee80211_mgmt *)frm;
 	struct ieee80211_p2p_action_public *action_public;
