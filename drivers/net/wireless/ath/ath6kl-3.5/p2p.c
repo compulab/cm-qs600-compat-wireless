@@ -341,12 +341,6 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 			   p2p_ps->go_last_beacon_app_ie_len);
 	}
 
-	if (down_interruptible(&vif->ar->sem)) {
-		ath6kl_err("busy, couldn't get access\n");
-		ret = -ERESTARTSYS;
-		goto done;
-	}
-
 	/*
 	 * Only need to update Beacon's IE. The ProbeResp'q IE is settled
 	 * while sending.
@@ -357,9 +351,6 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 				       buf,
 				       len);
 
-	up(&vif->ar->sem);
-
-done:
 	kfree(buf);
 
 	return ret;
@@ -456,8 +447,13 @@ int ath6kl_p2p_utils_trans_porttype(enum nl80211_iftype type,
 {
 	int ret = 0;
 
-	/* nl80211.h not yet support this type. */
-	if (type == NL80211_IFTYPE_P2P_DEVICE) {
+	/*
+	 * nl80211.h support NL80211_IFTYPE_P2P_DEVICE from kernel 3.7,
+	 * but not yet see any applications to use it now.
+	 * To avoid conflict with old nl80211.h and change namming
+	 * with postfix _QCA.
+	 */
+	if (type == NL80211_IFTYPE_P2P_DEVICE_QCA) {
 		*opmode = HI_OPTION_FW_MODE_BSS_STA;
 		*subopmode = HI_OPTION_FW_SUBMODE_P2PDEV;
 	} else {
@@ -548,13 +544,13 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 
 	if ((ar->vif_max > skip_vif) && fw_vif_idx) {
 		if (ar->p2p_dedicate && (fw_vif_idx == (ar->vif_max - 1)))
-			type = NL80211_IFTYPE_P2P_DEVICE;
+			type = NL80211_IFTYPE_P2P_DEVICE_QCA;
 
 		if (ath6kl_p2p_utils_trans_porttype(type,
 						&opmode,
 						&subopmode) == 0) {
 			/* Delete it first. */
-			if (type != NL80211_IFTYPE_P2P_DEVICE) {
+			if (type != NL80211_IFTYPE_P2P_DEVICE_QCA) {
 				set_bit(PORT_STATUS_PEND, &vif->flags);
 				if (ath6kl_wmi_del_port_cmd(ar->wmi,
 							    fw_vif_idx,
@@ -632,7 +628,6 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 		fw_conn->connect_status = 0;
 		fw_conn->previous_can_send = true;
 		fw_conn->connId = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
-		fw_conn->netif_state = ATH6KL_P2P_FLOWCTRL_NETIF_WAKE;
 		fw_conn->parent_connId = ATH6KL_P2P_FLOWCTRL_NULL_CONNID;
 		memset(fw_conn->mac_addr, 0, ETH_ALEN);
 
@@ -763,7 +758,7 @@ static u8 _find_parent_conn_id(struct ath6kl_p2p_flowctrl *p2p_flowctrl,
 }
 
 void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(
-	struct ath6kl_vif *vif)
+			struct ath6kl_vif *vif)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
@@ -831,12 +826,13 @@ void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(
 	return;
 }
 
-static inline bool _check_can_send(struct ath6kl_fw_conn_list *fw_conn)
+static inline bool _check_can_send(struct ath6kl *ar,
+			struct ath6kl_fw_conn_list *fw_conn)
 {
 	bool can_send = false;
 
 	do {
-		if (fw_conn->ocs)
+		if ((fw_conn->ocs) && !test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag))
 			break;
 
 		can_send = true;
@@ -845,55 +841,28 @@ static inline bool _check_can_send(struct ath6kl_fw_conn_list *fw_conn)
 	return can_send;
 }
 
-void ath6kl_p2p_flowctrl_netif_state_transition(
-			struct ath6kl *ar, u8 connId, u8 new_state, u8 forced)
+void ath6kl_p2p_flowctrl_netif_transition(
+			struct ath6kl *ar, u8 new_state)
 {
-	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
-	struct ath6kl_fw_conn_list *fw_conn = NULL;
 	struct ath6kl_vif *vif;
 
-	if (connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID) {
-		spin_lock_bh(&ar->list_lock);
-		list_for_each_entry(vif, &ar->vif_list, list) {
-			spin_unlock_bh(&ar->list_lock);
-
-			if (ath6kl_htc_stop_netif_queue_full(ar->htc_target) ||
-				vif->nw_type == INFRA_NETWORK ||
-				ar->ac_stream_active_num == 1)
-				netif_stop_queue(vif->ndev);
-
-			spin_lock_bh(&ar->list_lock);
-		}
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
 		spin_unlock_bh(&ar->list_lock);
-		return;
-	}
 
-	fw_conn = &p2p_flowctrl->fw_conn_list[connId];
-	if (!fw_conn)
-		return;
-
-	vif = fw_conn->vif;
-	if (!vif)
-		return;
-
-	if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_WAKE &&
-		fw_conn->netif_state == ATH6KL_P2P_FLOWCTRL_NETIF_STOP &&
-		_check_can_send(fw_conn)) {
-		if ((test_bit(CONNECTED, &vif->flags) ||
-			test_bit(TESTMODE_EPPING, &ar->flag))) {
-			netif_wake_queue(vif->ndev);
-			fw_conn->netif_state = ATH6KL_P2P_FLOWCTRL_NETIF_WAKE;
-		}
-	} else if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_STOP &&
-		(fw_conn->netif_state == ATH6KL_P2P_FLOWCTRL_NETIF_WAKE ||
-		forced)) {
-		if (ath6kl_htc_stop_netif_queue_full(ar->htc_target) ||
-			vif->nw_type == INFRA_NETWORK ||
-			ar->ac_stream_active_num == 1) {
+		if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_STOP &&
+				test_bit(CONNECTED, &vif->flags))
 			netif_stop_queue(vif->ndev);
-			fw_conn->netif_state = ATH6KL_P2P_FLOWCTRL_NETIF_STOP;
-		}
+		else if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_WAKE &&
+				(test_bit(CONNECTED, &vif->flags) ||
+				test_bit(TESTMODE_EPPING, &ar->flag)))
+			netif_wake_queue(vif->ndev);
+
+		spin_lock_bh(&ar->list_lock);
 	}
+	spin_unlock_bh(&ar->list_lock);
+
+	return;
 }
 
 void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar)
@@ -915,26 +884,16 @@ void ath6kl_p2p_flowctrl_tx_schedule(struct ath6kl *ar)
 			continue;
 		}
 
-		if (_check_can_send(fw_conn)) {
-
-			if (!fw_conn->sche_re_tx)
-				ath6kl_p2p_flowctrl_netif_state_transition(
-					ar, i,
-					ATH6KL_P2P_FLOWCTRL_NETIF_WAKE, 0);
-			else
-				ath6kl_p2p_flowctrl_netif_state_transition(
-					ar, i,
-					ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 1);
-
-
+		if (_check_can_send(ar, fw_conn)) {
 			if (!list_empty(&fw_conn->re_queue)) {
 				list_for_each_entry_safe(packet,
 							tmp_pkt,
 							&fw_conn->re_queue,
 							list) {
-					list_del(&packet->list);
 					if (packet == NULL)
 						continue;
+
+					list_del(&packet->list);
 
 					if (packet->endpoint >= ENDPOINT_MAX)
 						continue;
@@ -998,15 +957,31 @@ int ath6kl_p2p_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
 
 	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	fw_conn = &p2p_flowctrl->fw_conn_list[connId];
-	if (!_check_can_send(fw_conn)) {
-		list_add_tail(&cookie->htc_pkt.list, &fw_conn->conn_queue);
+	if (!_check_can_send(ar, fw_conn)) {
+		if (cookie->htc_pkt.info.tx.tag !=
+			ATH6KL_PRI_DATA_PKT_TAG) {
+			list_add_tail(&cookie->htc_pkt.list,
+				&fw_conn->conn_queue);
+		} else {
+			list_add(&cookie->htc_pkt.list,
+				&fw_conn->re_queue);
+			fw_conn->sche_re_tx++;
+		}
 		fw_conn->sche_tx_queued++;
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
 		goto result;
 	} else if (!list_empty(&fw_conn->conn_queue) ||
 				!list_empty(&fw_conn->re_queue)) {
-		list_add_tail(&cookie->htc_pkt.list, &fw_conn->conn_queue);
+		if (cookie->htc_pkt.info.tx.tag !=
+			ATH6KL_PRI_DATA_PKT_TAG) {
+			list_add_tail(&cookie->htc_pkt.list,
+				&fw_conn->conn_queue);
+		} else {
+			list_add(&cookie->htc_pkt.list, &fw_conn->re_queue);
+			fw_conn->sche_re_tx++;
+		}
+
 		fw_conn->sche_tx_queued++;
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
@@ -1034,6 +1009,7 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 	struct htc_endpoint *endpoint;
 	struct list_head    *tx_queue, container;
 	int i, eid;
+	bool flowctrl_allowed;
 
 	WARN_ON(!p2p_flowctrl);
 
@@ -1042,9 +1018,10 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 	for (i = 0; i < NUM_CONN; i++) {
 		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
-		if (!_check_can_send(fw_conn) && fw_conn->previous_can_send) {
+		flowctrl_allowed = _check_can_send(ar, fw_conn);
+		if (!flowctrl_allowed && fw_conn->previous_can_send) {
 			spin_lock_bh(&ar->htc_target->tx_lock);
-			for (eid = ENDPOINT_2; eid <= ENDPOINT_5; eid++) {
+			for (eid = ENDPOINT_5; eid >= ENDPOINT_2; eid--) {
 				endpoint = &ar->htc_target->endpoint[eid];
 				tx_queue = &endpoint->txq;
 				if (list_empty(tx_queue))
@@ -1081,13 +1058,13 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 				}
 			}
 			spin_unlock_bh(&ar->htc_target->tx_lock);
-
-			ath6kl_p2p_flowctrl_netif_state_transition(
-				ar, i, ATH6KL_P2P_FLOWCTRL_NETIF_STOP, 1);
 		}
-		fw_conn->previous_can_send = _check_can_send(fw_conn);
+		fw_conn->previous_can_send = flowctrl_allowed;
 		spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	}
+
+	ath6kl_p2p_flowctrl_netif_transition(
+				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
 		"p2p_flowctrl state_change %p re_tx %d re_tx_aging %d\n",
@@ -1339,7 +1316,7 @@ bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
 		(action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF));
 }
 
-bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len)
+bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, const u8 *frm, size_t len)
 {
 	struct ieee80211_mgmt *action = (struct ieee80211_mgmt *)frm;
 	struct ieee80211_p2p_action_public *action_public;
@@ -1364,5 +1341,66 @@ bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, u8 *frm, int len)
 		return true;
 
 	return false;
+}
+
+void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info)
+{
+	u8 *pie, *peie;
+	struct ieee80211_ht_cap *ht_cap_ie = NULL;
+	bool vendor_spec_ie_intel = false;
+
+	if (vif->nw_type != INFRA_NETWORK)
+		return;
+
+	/* Now, only p2p_war_bad_intel_go need to do something here. */
+	if (!vif->ar->p2p_war_bad_intel_go)
+		return;
+
+	/* AssocResp IEs */
+	pie = assoc_info + beacon_ie_len + assoc_req_len +
+		(sizeof(u16) * 3); /* capinfo + status code + associd */
+	peie = assoc_info + beacon_ie_len + assoc_req_len + assoc_resp_len;
+
+	while (pie < peie) {
+		switch (*pie) {
+		case WLAN_EID_HT_CAPABILITY:
+			if (pie[1] >= sizeof(struct ieee80211_ht_cap))
+				ht_cap_ie =
+					(struct ieee80211_ht_cap *)(pie + 2);
+			break;
+		case WLAN_EID_VENDOR_SPECIFIC:
+			if (pie[1] > 0) {
+				if (pie[1] == 0x0b &&
+				     pie[2] == 0x00 &&
+				     pie[3] == 0x17 &&
+				     pie[4] == 0x35 &&
+				     pie[5] == 0x01)
+					vendor_spec_ie_intel = true;
+			}
+			break;
+		}
+		pie += pie[1] + 2;
+	}
+
+	/* WAR EV119712 */
+	if (ht_cap_ie &&
+	    vendor_spec_ie_intel &&
+	    (vif->ar->target_subtype & TARGET_SUBTYPE_2SS)) {
+		if (((ht_cap_ie->cap_info & IEEE80211_HT_CAP_SM_PS) ==
+		     (WLAN_HT_CAP_SM_PS_DYNAMIC <<
+					IEEE80211_HT_CAP_SM_PS_SHIFT)) &&
+		    (ht_cap_ie->mcs.rx_mask[1])) {
+			ath6kl_info("Disable 2SS rates\n");
+			ath6kl_wmi_set_fix_rates(vif->ar->wmi,
+						vif->fw_vif_idx,
+						(0x00000000000fffffULL));
+		}
+	}
+
+	return;
 }
 
