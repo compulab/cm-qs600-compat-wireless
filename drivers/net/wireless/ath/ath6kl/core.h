@@ -211,6 +211,7 @@ struct ath6kl_traffic_activity_change {
 /* AR6004 1.0 definitions */
 #define AR6004_HW_1_0_VERSION                 0x30000623
 #define AR6004_HW_1_0_FW_DIR			"ath6k/AR6004/hw1.0"
+#define AR6004_HW_1_0_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_0_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_0_BOARD_DATA_FILE         AR6004_HW_1_0_FW_DIR"/bdata.bin"
 #define AR6004_HW_1_0_DEFAULT_BOARD_DATA_FILE \
@@ -219,6 +220,7 @@ struct ath6kl_traffic_activity_change {
 /* AR6004 1.1 definitions */
 #define AR6004_HW_1_1_VERSION			0x30000001
 #define AR6004_HW_1_1_FW_DIR			"ath6k/AR6004/hw1.1"
+#define AR6004_HW_1_1_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_1_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_1_BOARD_DATA_FILE		AR6004_HW_1_1_FW_DIR"/bdata.bin"
 #define AR6004_HW_1_1_DEFAULT_BOARD_DATA_FILE \
@@ -228,6 +230,7 @@ struct ath6kl_traffic_activity_change {
 /* AR6004 1.2 definitions */
 #define AR6004_HW_1_2_VERSION			0x300007e8
 #define AR6004_HW_1_2_FW_DIR			"ath6k/AR6004/hw1.2"
+#define AR6004_HW_1_2_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_2_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_2_BOARD_DATA_FILE		AR6004_HW_1_2_FW_DIR"/bdata.bin"
 #define AR6004_HW_1_2_DEFAULT_BOARD_DATA_FILE \
@@ -237,6 +240,7 @@ struct ath6kl_traffic_activity_change {
 /* AR6004 1.3 definitions */
 #define AR6004_HW_1_3_VERSION			0x31c8088a
 #define AR6004_HW_1_3_FW_DIR			"ath6k/AR6004/hw1.3"
+#define AR6004_HW_1_3_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_3_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_3_BOARD_DATA_FILE		"ath6k/AR6004/hw1.3/bdata.bin"
 #define AR6004_HW_1_3_DEFAULT_BOARD_DATA_FILE	"ath6k/AR6004/hw1.3/bdata.bin"
@@ -247,6 +251,7 @@ struct ath6kl_traffic_activity_change {
 /* AR6004 1.6 definitions */
 #define AR6004_HW_1_6_VERSION                 0x31c80958
 #define AR6004_HW_1_6_FW_DIR			"ath6k/AR6004/hw1.6"
+#define AR6004_HW_1_6_OTP_FILE			"otp.bin"
 #define AR6004_HW_1_6_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_1_6_TCMD_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_1_6_UTF_FIRMWARE_FILE		"utf.bin"
@@ -258,6 +263,7 @@ struct ath6kl_traffic_activity_change {
 /* AR6004 3.0 definitions */
 #define AR6004_HW_3_0_VERSION			0x31C809F8
 #define AR6004_HW_3_0_FW_DIR			"ath6k/AR6004/hw3.0"
+#define AR6004_HW_3_0_OTP_FILE			"otp.bin"
 #define AR6004_HW_3_0_FIRMWARE_FILE		"fw.ram.bin"
 #define AR6004_HW_3_0_TCMD_FIRMWARE_FILE	"utf.bin"
 #define AR6004_HW_3_0_UTF_FIRMWARE_FILE		"utf.bin"
