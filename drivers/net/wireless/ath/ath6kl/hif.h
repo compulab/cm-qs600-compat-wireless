@@ -262,6 +262,7 @@ struct ath6kl_hif_ops {
 	int (*pipe_map_service)(struct ath6kl *ar, u16 service_id, u8 *pipe_ul,
 				u8 *pipe_dl);
 	u16 (*pipe_get_free_queue_number)(struct ath6kl *ar, u8 pipe);
+	int (*pipe_set_rxq_threshold)(struct ath6kl *ar, u32 rxq_threshold);
 };
 
 int ath6kl_hif_setup(struct ath6kl_device *dev);

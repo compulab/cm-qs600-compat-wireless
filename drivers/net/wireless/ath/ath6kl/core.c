@@ -71,7 +71,8 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 		return -ENOMEM;
 	}
 
-	ar->ath6kl_wq = create_singlethread_workqueue("ath6kl");
+	ar->ath6kl_wq = alloc_workqueue("ath6kl",
+			WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 1);
 	if (!ar->ath6kl_wq)
 		return -ENOMEM;
 
