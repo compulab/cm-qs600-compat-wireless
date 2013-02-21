@@ -105,6 +105,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 		.fw = {
 			.dir		= AR6004_HW_1_0_FW_DIR,
+			.otp		= AR6004_HW_1_0_OTP_FILE,
 			.fw		= AR6004_HW_1_0_FIRMWARE_FILE,
 		},
 
@@ -126,6 +127,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 		.fw = {
 			.dir		= AR6004_HW_1_1_FW_DIR,
+			.otp		= AR6004_HW_1_1_OTP_FILE,
 			.fw		= AR6004_HW_1_1_FIRMWARE_FILE,
 			.epping 	= AR6004_HW_1_1_EPPING_FILE,
 		},
@@ -148,6 +150,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 		.fw = {
 			.dir		= AR6004_HW_1_2_FW_DIR,
+			.otp		= AR6004_HW_1_2_OTP_FILE,
 			.fw		= AR6004_HW_1_2_FIRMWARE_FILE,
 			.epping 	= AR6004_HW_1_2_EPPING_FILE,
 		},
@@ -168,6 +171,7 @@ static const struct ath6kl_hw hw_list[] = {
 						  ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 		.fw = {
 			.dir            = AR6004_HW_1_3_FW_DIR,
+			.otp		= AR6004_HW_1_3_OTP_FILE,
 			.fw             = AR6004_HW_1_3_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_3_TCMD_FIRMWARE_FILE,
 			.utf		= AR6004_HW_1_3_UTF_FIRMWARE_FILE,
@@ -191,6 +195,7 @@ static const struct ath6kl_hw hw_list[] = {
 							ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 		.fw = {
 			.dir		= AR6004_HW_1_6_FW_DIR,
+			.otp		= AR6004_HW_1_6_OTP_FILE,
 			.fw		= AR6004_HW_1_6_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_1_6_TCMD_FIRMWARE_FILE,
 			.utf		= AR6004_HW_1_6_UTF_FIRMWARE_FILE,
@@ -214,6 +219,7 @@ static const struct ath6kl_hw hw_list[] = {
 							ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 		.fw = {
 			.dir		= AR6004_HW_3_0_FW_DIR,
+			.otp		= AR6004_HW_3_0_OTP_FILE,
 			.fw		= AR6004_HW_3_0_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_3_0_TCMD_FIRMWARE_FILE,
 			.utf		= AR6004_HW_3_0_UTF_FIRMWARE_FILE,
@@ -879,6 +885,10 @@ static int ath6kl_fetch_otp_file(struct ath6kl *ar)
 	char filename[100];
 	int ret;
 
+	if ((ar->target_type == TARGET_TYPE_AR6004) &&
+			((ar->testmode == 0) || ar->testmode == 4))
+		return 0;
+
 	if (ar->fw_otp != NULL)
 		return 0;
 
@@ -1247,6 +1257,10 @@ int ath6kl_init_fetch_firmwares(struct ath6kl *ar)
 		return ret;
 
 	ret = ath6kl_fetch_testmode_file(ar);
+	if (ret)
+		return ret;
+
+	ret = ath6kl_fetch_otp_file(ar);
 	if (ret)
 		return ret;
 
