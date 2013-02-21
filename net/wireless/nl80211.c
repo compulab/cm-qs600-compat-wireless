@@ -5356,6 +5356,7 @@ static struct genl_multicast_group nl80211_testmode_mcgrp = {
 static int nl80211_testmode_do(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
 	int err;
 
 	if (!info->attrs[NL80211_ATTR_TESTDATA])
@@ -5364,7 +5365,7 @@ static int nl80211_testmode_do(struct sk_buff *skb, struct genl_info *info)
 	err = -EOPNOTSUPP;
 	if (rdev->ops->testmode_cmd) {
 		rdev->testmode_info = info;
-		err = rdev->ops->testmode_cmd(&rdev->wiphy,
+		err = rdev->ops->testmode_cmd(&rdev->wiphy, dev,
 				nla_data(info->attrs[NL80211_ATTR_TESTDATA]),
 				nla_len(info->attrs[NL80211_ATTR_TESTDATA]));
 		rdev->testmode_info = NULL;
@@ -7128,7 +7129,7 @@ static struct genl_ops nl80211_ops[] = {
 		.dumpit = nl80211_testmode_dump,
 		.policy = nl80211_policy,
 		.flags = GENL_ADMIN_PERM,
-		.internal_flags = NL80211_FLAG_NEED_WIPHY |
+		.internal_flags = NL80211_FLAG_NEED_NETDEV_UP |
 				  NL80211_FLAG_NEED_RTNL,
 	},
 #endif

@@ -68,9 +68,10 @@ nla_put_failure:
 	ath6kl_warn("nla_put failed on testmode rx skb!\n");
 }
 
-int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
+int ath6kl_tm_cmd(struct wiphy *wiphy, struct net_device *dev, void *data, int len)
 {
-	struct ath6kl *ar = wiphy_priv(wiphy);
+	struct ath6kl *ar = ath6kl_priv(dev);
+	struct ath6kl_vif *vif = netdev_priv(dev);
 	struct nlattr *tb[ATH6KL_TM_ATTR_MAX + 1];
 	int err, buf_len;
 	void *buf;
@@ -100,7 +101,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 
                 memcpy(&wmi_cmd, buf, sizeof(wmi_cmd));
                 memcpy(skb->data, (u32 *)buf + 1, buf_len - 4);
-                ath6kl_wmi_cmd_send(ar->wmi, 0, skb, wmi_cmd, NO_SYNC_WMIFLAG);
+                ath6kl_wmi_cmd_send(ar->wmi, vif->fw_vif_idx, skb, wmi_cmd, NO_SYNC_WMIFLAG);
 
                 return 0;
 
