@@ -2566,6 +2566,14 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		if (!params.channel)
 			return -EINVAL;
 		params.channel_type = channel_type;
+	} else if (info->attrs[NL80211_ATTR_ACS]) {
+		if (rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_ACS) {
+			params.auto_channel_select = nla_get_u8(
+				info->attrs[NL80211_ATTR_ACS]);
+			params.channel_type = NL80211_CHAN_HT20;
+		} else {
+			return -EINVAL;
+		}
 	} else if (wdev->preset_chan) {
 		params.channel = wdev->preset_chan;
 		params.channel_type = wdev->preset_chantype;
@@ -2588,8 +2596,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		return -EINVAL;
 
 	mutex_lock(&rdev->devlist_mtx);
-	err = cfg80211_can_use_chan(rdev, wdev, params.channel,
+	if (params.channel) {
+		err = cfg80211_can_use_chan(rdev, wdev, params.channel,
 				    CHAN_MODE_SHARED);
+	}
 	mutex_unlock(&rdev->devlist_mtx);
 
 	if (err)
