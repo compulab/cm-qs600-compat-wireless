@@ -3590,9 +3590,11 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 	clear_bit(CONNECT_PEND, &vif->flags);
 
 	/* disable scanning */
-	if (ath6kl_wmi_scanparams_cmd(vif->ar->wmi, vif->fw_vif_idx, 0xFFFF,
-				      0, 0, 0, 0, 0, 0, 0, 0, 0) != 0)
-		ath6kl_warn("failed to disable scan during stop\n");
+	if (test_bit(WMI_READY, &vif->ar->flag)) {
+		if (ath6kl_wmi_scanparams_cmd(vif->ar->wmi, vif->fw_vif_idx,
+					0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+			ath6kl_warn("failed to disable scan during stop\n");
+	}
 
 	ath6kl_cfg80211_scan_complete_event(vif, true);
 }

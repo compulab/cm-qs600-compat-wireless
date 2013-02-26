@@ -1892,8 +1892,11 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		vif->scan_req = NULL;
 	}
 
-	/* need to clean up enhanced bmiss detection fw state */
-	ath6kl_cfg80211_sta_bmiss_enhance(vif, false);
+
+	if (wmi_ready) {
+		/* need to clean up enhanced bmiss detection fw state */
+		ath6kl_cfg80211_sta_bmiss_enhance(vif, false);
+	}
 }
 
 void ath6kl_stop_txrx(struct ath6kl *ar)
