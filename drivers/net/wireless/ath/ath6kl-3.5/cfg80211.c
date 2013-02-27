@@ -5161,6 +5161,7 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 {
 	int i;
+	struct ath6kl *ar = vif->ar;
 
 	vif->aggr_cntxt = aggr_init(vif);
 	if (!vif->aggr_cntxt) {
@@ -5196,18 +5197,22 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
-	if (ath6kl_mod_debug_quirks(vif->ar,
-		ATH6KL_MODULE_KEEPALIVE_BY_SUPP)) {
-		vif->ap_keepalive_ctx =
-			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_BYSUPP);
-	} else {
-		vif->ap_keepalive_ctx =
-			ath6kl_ap_keepalive_init(vif, AP_KA_MODE_ENABLE);
-	}
+	if (!test_bit(TESTMODE_EPPING, &ar->flag)) {
+		if (ath6kl_mod_debug_quirks(vif->ar,
+			ATH6KL_MODULE_KEEPALIVE_BY_SUPP)) {
+			vif->ap_keepalive_ctx =
+				ath6kl_ap_keepalive_init(vif,
+						AP_KA_MODE_BYSUPP);
+		} else {
+			vif->ap_keepalive_ctx =
+				ath6kl_ap_keepalive_init(vif,
+						AP_KA_MODE_ENABLE);
+		}
 
-	if (!vif->ap_keepalive_ctx) {
-		ath6kl_err("failed to initialize ap_keepalive\n");
-		return -ENOMEM;
+		if (!vif->ap_keepalive_ctx) {
+			ath6kl_err("failed to initialize ap_keepalive\n");
+			return -ENOMEM;
+		}
 	}
 
 	vif->ap_acl_ctx = ath6kl_ap_acl_init(vif);
@@ -5504,6 +5509,9 @@ int ath6kl_android_enable_wow_default(struct ath6kl *ar)
 	int mask_len;
 	int rv = 0, i;
 	struct cfg80211_wowlan wow;
+
+	if (test_bit(TESTMODE_EPPING, &ar->flag))
+		return 0;
 
 	memset(&wow, 0, sizeof(wow));
 
