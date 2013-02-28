@@ -18,6 +18,21 @@
 
 #include <net/netlink.h>
 
+#ifdef ATH6KL_SUPPORT_WLAN_HB
+#include "core.h"
+#endif
+
+/*
+ * netlink.h remove these macros from kernel 3.5.
+ * TODO : Error handle for nla_put_XXX calls.
+ */
+#ifndef NLA_PUT
+#define NLA_PUT_U32	nla_put_u32
+#define NLA_PUT		nla_put
+#else
+#define _NLA_PUT_ERR_RTN
+#endif
+
 enum ath6kl_tm_attr {
 	__ATH6KL_TM_ATTR_INVALID	= 0,
 	ATH6KL_TM_ATTR_CMD		= 1,
@@ -43,6 +58,8 @@ static const struct nla_policy ath6kl_tm_policy[ATH6KL_TM_ATTR_MAX + 1] = {
 	[ATH6KL_TM_ATTR_DATA]		= { .type = NLA_BINARY,
 					    .len = ATH6KL_TM_DATA_MAX_LEN },
 };
+
+#ifdef CONFIG_NL80211_TESTMODE
 
 void ath6kl_tm_rx_report_event(struct ath6kl *ar, void *buf, size_t buf_len)
 {
@@ -80,9 +97,12 @@ void ath6kl_tm_rx_event(struct ath6kl *ar, void *buf, size_t buf_len)
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode rx skb!\n");
+#endif
+
 }
 
 #ifdef ATH6KL_SUPPORT_WLAN_HB
@@ -109,9 +129,11 @@ void ath6kl_wlan_hb_event(struct ath6kl *ar, u8 value,
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
+#endif
 }
 #endif
 
@@ -137,9 +159,11 @@ void ath6kl_tm_disc_event(struct ath6kl *ar, void *buf, size_t buf_len)
 	cfg80211_testmode_event(skb, GFP_ATOMIC);
 	return;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	kfree_skb(skb);
 	printk(KERN_ERR "nla_put failed on testmode event skb!\n");
+#endif
 }
 #endif
 
@@ -196,9 +220,11 @@ out:
 
 	return ret;
 
+#ifdef _NLA_PUT_ERR_RTN
 nla_put_failure:
 	ret = -ENOBUFS;
 	goto out;
+#endif
 }
 EXPORT_SYMBOL(ath6kl_tm_rx_report);
 
@@ -378,6 +404,14 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 
 		if (hb_params->cmd == NL80211_WLAN_HB_ENABLE) {
 			if (hb_params->enable != 0) {
+
+				if (ath6kl_enable_wow_hb(ar)) {
+					printk(KERN_ERR
+					"%s: enable hb wow fail\n",
+					__func__);
+					return -EINVAL;
+				}
+
 				if (hb_params->enable & WLAN_HB_TCP_ENABLE) {
 					ar->wlan_hb_enable |=
 						WLAN_HB_TCP_ENABLE;
@@ -398,6 +432,15 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 				}
 			} else {
 				ar->wlan_hb_enable = 0;
+
+#ifdef CONFIG_ANDROID
+				if (ath6kl_android_enable_wow_default(ar)) {
+					printk(KERN_ERR
+					"%s: enable android defualt wow fail\n",
+					__func__);
+				}
+#endif
+
 				if (ath6kl_wmi_set_heart_beat_params(ar->wmi,
 					vif->fw_vif_idx, 0)) {
 					printk(KERN_ERR
@@ -635,12 +678,6 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 			return -EINVAL;
 		}
 
-		if (!ar->ktk_enable) {
-			printk(KERN_ERR "%s: KTK feature is not enabled\n",
-					__func__);
-			return -EINVAL;
-		}
-
 		buf = nla_data(tb[ATH6KL_TM_ATTR_DATA]);
 		buf_len = nla_len(tb[ATH6KL_TM_ATTR_DATA]);
 
@@ -711,15 +748,16 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 				16);
 
 			if (ath6kl_wmi_probedssid_cmd(ar->wmi, vif->fw_vif_idx,
-					1, SPECIFIC_SSID_FLAG,
-					ktk_params->params.start_params.ssid_len,
-					ktk_params->params.start_params.ssid)) {
+				1, SPECIFIC_SSID_FLAG,
+				ktk_params->params.start_params.ssid_len,
+				ktk_params->params.start_params.ssid)) {
 				printk(KERN_ERR "%s: wifi ktk set probedssid fail\n",
 					__func__);
 				return -EINVAL;
 			}
 
-			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi, vif->fw_vif_idx,
+			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi,
+					vif->fw_vif_idx,
 					ADHOC_PS_KTK,
 					5,
 					10,
@@ -728,11 +766,11 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 					__func__);
 				return -EINVAL;
 			}
-		}
-		else if (ktk_params->cmd == NL80211_WIFI_KTK_STOP) {
+		} else if (ktk_params->cmd == NL80211_WIFI_KTK_STOP) {
 			ar->ktk_active = false;
 
-			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi, vif->fw_vif_idx,
+			if (ath6kl_wmi_ibss_pm_caps_cmd(ar->wmi,
+					vif->fw_vif_idx,
 					ADHOC_PS_DISABLE,
 					0,
 					0,
@@ -752,3 +790,4 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 	}
 }
 
+#endif /* CONFIG_NL80211_TESTMODE */

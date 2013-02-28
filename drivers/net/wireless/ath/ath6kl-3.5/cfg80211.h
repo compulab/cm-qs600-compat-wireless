@@ -29,6 +29,33 @@ extern unsigned int ath6kl_wow_ext;
 extern unsigned int ath6kl_scan_timeout;
 extern unsigned int ath6kl_roam_mode;
 
+struct ath6kl_beacon_parameters {
+	/* Settings */
+	int beacon_interval;
+	int dtim_period;
+	const u8 *ssid;
+	size_t ssid_len;
+	enum nl80211_hidden_ssid hidden_ssid;
+	struct cfg80211_crypto_settings crypto;
+	bool privacy;
+	enum nl80211_auth_type auth_type;
+	int inactivity_timeout;
+	struct ieee80211_channel *channel;	/* After kernel 3.6 */
+	enum nl80211_channel_type channel_type;	/* After kernel 3.6 */
+
+	/* IEs */
+	const u8 *head, *tail;
+	int head_len, tail_len;
+	const u8 *beacon_ies;
+	size_t beacon_ies_len;
+	const u8 *proberesp_ies;
+	size_t proberesp_ies_len;
+	const u8 *assocresp_ies;
+	size_t assocresp_ies_len;
+	const u8 *probe_resp;
+	int probe_resp_len;
+};
+
 struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 					enum nl80211_iftype type,
 					u8 fw_vif_idx, u8 nw_type);
@@ -61,10 +88,10 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar);
 void ath6kl_cfg80211_stop(struct ath6kl_vif *vif);
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar);
 
-#ifdef CONFIG_ANDROID
+#if defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
 int ath6kl_clear_wow_mode(struct wiphy *wiphy);
-#endif /* CONFIG_ANDROID */
+#endif /* defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND) */
 
 bool ath6kl_sched_scan_trigger(struct ath6kl_vif *vif);
 
@@ -79,4 +106,7 @@ void ath6kl_switch_parameter_based_on_connection(
 			struct ath6kl_vif *vif,
 			bool call_on_disconnect);
 
+#if defined(USB_AUTO_SUSPEND)
+void ath6kl_auto_pm_wakeup_resume(struct work_struct *);
+#endif
 #endif /* ATH6KL_CFG80211_H */

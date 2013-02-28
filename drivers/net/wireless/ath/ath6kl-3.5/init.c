@@ -18,6 +18,7 @@
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
 #include <linux/of.h>
+#include <linux/interrupt.h>
 #include <linux/mmc/sdio_func.h>
 #include "core.h"
 #include "cfg80211.h"
@@ -58,6 +59,10 @@ module_param(diag_local_test, uint, 0644);
    used to override the default MAC of MAC from softmac.bin file */
 char *ath6kl_wifi_mac;
 
+/* for android frame work, we need to add fwpath module parameter,
+   to avoid the problem that create softap mode will fail. */
+char *fwpath = "android_fw_path_compatible_str";
+
 module_param(debug_mask, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
 module_param(htc_bundle_send, uint, 0644);
@@ -70,11 +75,8 @@ module_param(ath6kl_vap, uint, 0644);
 module_param(ath6kl_wifi_mac, charp, 0000);
 module_param(ath6kl_scan_timeout, uint, 0644);
 module_param(ath6kl_roam_mode, uint, 0644);
-#ifdef ATH6KL_SUPPORT_WIFI_KTK
-bool ktk_enable;
-module_param(ktk_enable, bool, 0644);
-#endif
 module_param(recovery_enable_mode, uint, 0644);
+module_param(fwpath, charp, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -267,8 +269,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x43e400,
 		.testscript_addr		= 0x43d400,
-		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
-
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED	|
+						ATH6KL_HW_USB_FLOWCTRL,
 		.fw = {
 			.dir		= AR6004_HW_2_0_FW_DIR,
 			.otp		= AR6004_HW_2_0_OTP_FILE,
@@ -293,7 +295,8 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0,
-		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED	|
+						ATH6KL_HW_USB_FLOWCTRL,
 
 		.fw = {
 			.dir		= AR6004_HW_3_0_FW_DIR,
@@ -327,6 +330,27 @@ static const struct ath6kl_hw hw_list[] = {
 		.fw_epping		= AR6006_HW_1_0_EPPING_FILE,
 		.fw_softmac		= AR6006_HW_1_0_SOFTMAC_FILE,
 	},
+	{
+		.id				= AR6006_HW_1_1_VERSION,
+		.name				= "ar6006 hw 1.1",
+		.dataset_patch_addr		= 0,
+		.app_load_addr			= 0x1234,
+		.board_ext_data_addr		= 0,
+		.reserved_ram_size		= 11264,
+		.board_addr			= 0x45fc00,
+		.flags				= ATH6KL_HW_SINGLE_PIPE_SCHED,
+
+		.fw = {
+			.dir		= AR6006_HW_1_1_FW_DIR,
+			.fw		= AR6006_HW_1_1_FIRMWARE_FILE,
+			.api2		= ATH6KL_FW_API2_FILE,
+		},
+
+		.fw_board		= AR6006_HW_1_1_BOARD_DATA_FILE,
+		.fw_default_board	= AR6006_HW_1_1_DEFAULT_BOARD_DATA_FILE,
+		.fw_epping		= AR6006_HW_1_1_EPPING_FILE,
+		.fw_softmac		= AR6006_HW_1_1_SOFTMAC_FILE,
+	},
 };
 
 /*
@@ -357,6 +381,7 @@ static const struct ath6kl_hw hw_list[] = {
 #define CONFIG_AR600x_DEBUG_UART_TX_PIN 8
 #define CONFIG_AR6004_DEBUG_UART_TX_PIN 11
 #define CONFIG_AR6006_DEBUG_UART_TX_PIN 11
+#define CONFIG_AR6006_FPGA_DEBUG_UART_TX_PIN 24
 
 #define ATH6KL_DATA_OFFSET    64
 struct sk_buff *ath6kl_buf_alloc(int size)
@@ -389,6 +414,8 @@ void ath6kl_init_profile_info(struct ath6kl_vif *vif)
 	memset(vif->req_bssid, 0, sizeof(vif->req_bssid));
 	memset(vif->bssid, 0, sizeof(vif->bssid));
 	vif->bss_ch = 0;
+	vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
+	vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
 }
 
 
@@ -486,11 +513,8 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 
 	memset(&connect, 0, sizeof(connect));
 
-	if (ar->version.target_ver == AR6004_HW_2_0_VERSION ||
-	    ar->version.target_ver == AR6004_HW_3_0_VERSION ||
-	    ar->version.target_ver == AR6006_HW_1_0_VERSION) {
+	if (ar->hw.flags & ATH6KL_HW_USB_FLOWCTRL)
 		connect.conn_flags |= HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL;
-	}
 
 	/* these fields are the same for all service endpoints */
 	connect.ep_cb.tx_comp_multi = ath6kl_tx_complete;
@@ -622,6 +646,14 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 						 SCAN_CONNECTED_CTRL_FLAGS |
 						 ACTIVE_SCAN_CTRL_FLAGS |
 						 ENABLE_AUTO_CTRL_FLAGS);
+	}
+
+	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB) &&
+			(ar->p2p_compat) &&
+			(vif->fw_vif_idx)) {
+		vif->sc_params.scan_ctrl_flags &= ~CONNECT_SCAN_CTRL_FLAGS;
+		ath6kl_info("Disable connect-scan, vif_idx = %d\n",
+				vif->fw_vif_idx);
 	}
 
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
@@ -906,6 +938,26 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return -EIO;
 	}
 
+#ifdef ATH6KL_SUPPORT_WLAN_HB
+	param = 0;
+	if (ath6kl_bmi_read(ar,
+				ath6kl_get_hi_item_addr(ar,
+				HI_ITEM(hi_option_flag2)),
+				(u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_read_memory for setting fwmode failed\n");
+		return -EIO;
+	}
+
+	param |= HI_OPTION_ENABLE_WLAN_HB;
+	if (ath6kl_bmi_write(ar,
+				ath6kl_get_hi_item_addr(ar,
+				HI_ITEM(hi_option_flag2)),
+				(u8 *)&param, 4) != 0) {
+		ath6kl_err("bmi_write_memory for heart beat enable flag failed\n");
+		return -EIO;
+	};
+#endif
+
 	/* set the firmware mode to STA/IBSS/AP */
 	param = 0;
 
@@ -1010,6 +1062,7 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
 	kfree(ar->fw);
+	kfree(ar->fw_ext);
 	kfree(ar->fw_patch);
 	kfree(ar->fw_testscript);
 	kfree(ar->fw_softmac);
@@ -1091,12 +1144,12 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 	u32 sum = 0;
 	u32 param;
 
+	if (ar->fw_board == NULL || ar->fw_softmac == NULL)
+		return;
+
 	/* set checksum filed in the board data to zero */
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
-
-	if (ar->fw_board == NULL || ar->fw_softmac == NULL)
-		return;
 
 	/* replace the mac address with softmac */
 	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], ar->fw_softmac, ETH_ALEN);
@@ -1833,7 +1886,7 @@ static int ath6kl_upload_firmware(struct ath6kl *ar)
 static int ath6kl_upload_firmware_ext(struct ath6kl *ar)
 {
 	u32 address;
-	int ret;
+	int ret = -1;
 	u32 param;
 	u32 fileSize = 0, sectionAddr = 0, sectionLen = 0, readLen = 0;
 	u32 i;
@@ -2209,10 +2262,15 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 	/* Configure GPIO AR600x UART */
 	if (ar->target_type == TARGET_TYPE_AR6004)
 		param = CONFIG_AR6004_DEBUG_UART_TX_PIN;
-	else if (ar->target_type == TARGET_TYPE_AR6006)
+	else if (ar->target_type == TARGET_TYPE_AR6006 &&  \
+	    ar->version.target_ver == AR6006_HW_1_0_VERSION)
 		param = CONFIG_AR6006_DEBUG_UART_TX_PIN;
+	else if (ar->target_type == TARGET_TYPE_AR6006 &&  \
+	    ar->version.target_ver == AR6006_HW_1_1_VERSION)
+		param = CONFIG_AR6006_FPGA_DEBUG_UART_TX_PIN;
 	else
 		param = CONFIG_AR600x_DEBUG_UART_TX_PIN;
+
 	status = ath6kl_bmi_write(ar,
 				  ath6kl_get_hi_item_addr(ar,
 				  HI_ITEM(hi_dbg_uart_txpin)),
@@ -2556,6 +2614,26 @@ static u32 ath6kl_init_get_subtype(struct ath6kl *ar)
 	return subtype;
 }
 
+int ath6kl_get_bootstrap_mode(struct ath6kl *ar)
+{
+	u32 address = WLAN_BOOTSTRAP_ADDRESS;
+	u32 bootstrap;
+
+	/* Currently, we only check for AR6004 */
+	if (ar->target_type != TARGET_TYPE_AR6004) {
+		ar->bootstrap_mode = 0;
+		return 0;
+	}
+
+	if (ath6kl_diag_read32(ar, address, &bootstrap))
+		return -EIO;
+
+	ath6kl_info("target bootstrap: 0x%08x\n", bootstrap);
+	ar->bootstrap_mode = bootstrap;
+
+	return 0;
+}
+
 int ath6kl_core_init(struct ath6kl *ar)
 {
 	struct ath6kl_bmi_target_info targ_info;
@@ -2594,6 +2672,11 @@ int ath6kl_core_init(struct ath6kl *ar)
 		goto err_power_off;
 	}
 
+	if (ath6kl_get_bootstrap_mode(ar) != 0) {
+		ath6kl_err("can't get bootstrap mode\n");
+		goto err_power_off;
+	}
+
 	ret = ath6kl_init_hw_params(ar);
 	if (ret)
 		goto err_power_off;
@@ -2606,7 +2689,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 
 #ifdef ATH6KL_SUPPORT_WIFI_KTK
-	ar->ktk_enable = ktk_enable;
 	ar->ktk_active = false;
 #endif
 
@@ -2721,7 +2803,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 			 ATH6KL_CONF_ENABLE_11N | ATH6KL_CONF_ENABLE_TX_BURST;
 
 	ar->p2p_flowctrl_ctx = ath6kl_p2p_flowctrl_conn_list_init(ar);
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_P2P_FLOWCTRL))
+	if (ar->p2p_multichan_concurrent)
 		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
 
 	ath6kl_info("P2P flowctrl %s\n",
@@ -2730,6 +2812,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_CUTPOWER))
 		ar->conf_flags |= ATH6KL_CONF_SUSPEND_CUTPOWER;
+
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_RX_AGGR_DROP))
+		ar->conf_flags |= ATH6KL_CONF_DISABLE_RX_AGGR_DROP;
+
+	ath6kl_info("RX aggregation drop %s\n",
+			ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP ?
+			"disabled" : "enabled");
 
 	ar->wiphy->flags |= WIPHY_FLAG_HAVE_AP_SME |
 			    WIPHY_FLAG_AP_PROBE_RESP_OFFLOAD;
@@ -2759,7 +2848,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 		wifi_diag_init();
 #endif
 
-#ifdef CONFIG_ANDROID
+#if  defined(CONFIG_ANDROID) || defined(USB_AUTO_SUSPEND)
 	ret = ath6kl_android_enable_wow_default(ar);
 	if (ret != 0)
 		goto err_rxbuf_cleanup;
@@ -2810,6 +2899,18 @@ err_debug_init:
 	ath6kl_debug_cleanup(ar);
 err_node_cleanup:
 #ifdef CONFIG_ANDROID
+	if (ar->wow_irq) {
+		if (disable_irq_wake(ar->wow_irq))
+			ath6kl_err("Couldn't disable hostwake IRQ wakeup mode\n");
+
+		free_irq(ar->wow_irq, ar);
+		ar->wow_irq = 0;
+	}
+
+#ifdef CONFIG_HAS_WAKELOCK
+	wake_lock_destroy(&ar->wake_lock);
+#endif
+
 	ath6kl_cleanup_android_resource(ar);
 #endif
 	ath6kl_wmi_shutdown(ar->wmi);
@@ -2910,4 +3011,6 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC,
 			"attempting to reset target on instance destroy\n");
 	ath6kl_reset_device(ar, ar->target_type, true, true);
+
+	up(&ar->sem);
 }

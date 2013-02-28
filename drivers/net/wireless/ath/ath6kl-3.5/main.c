@@ -86,7 +86,8 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 
 static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 				u8 *wpaie, u8 ielen, u8 keymgmt, u8 ucipher,
-				u8 auth, u8 apsd_info, bool ht_support)
+				u8 auth, u8 apsd_info, bool ht_support,
+				u8 phymode)
 {
 	struct ath6kl_sta *sta;
 	u8 free_slot;
@@ -106,6 +107,7 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 	sta->ucipher = ucipher;
 	sta->auth = auth;
 	sta->apsd_info = apsd_info;
+	sta->phymode = phymode;
 	sta->vif = vif;
 	init_timer(&sta->psq_age_timer);
 	sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
@@ -658,6 +660,20 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
 	return;
 }
 
+int ath6kl_diag_warm_reset(struct ath6kl *ar)
+{
+	int ret;
+
+	ret = ath6kl_hif_diag_warm_reset(ar);
+
+	if (ret) {
+		ath6kl_err("failed to issue warm reset command\n");
+		return ret;
+	}
+
+	return 0;
+}
+
 /*
  * Read from the hardware through its diagnostic window. No cooperation
  * from the firmware is required for this.
@@ -841,7 +857,13 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 		break;
 	}
 
-	status = ath6kl_diag_write32(ar, address, data);
+	/* If the bootstrap mode is HSIC, do warm reset */
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+		status = ath6kl_diag_warm_reset(ar);
+		ath6kl_info("%s: warm reset\n", __func__);
+	} else {
+		status = ath6kl_diag_write32(ar, address, data);
+	}
 
 	if (status)
 		ath6kl_err("failed to reset target\n");
@@ -944,7 +966,8 @@ static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 	}
 }
 
-void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
+void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel,
+				u8 *beacon, u8 beacon_len)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_req_key *ik;
@@ -956,6 +979,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "AP mode started on %u MHz\n", channel);
 
 	vif->bss_ch = channel;
+	ath6kl_ap_beacon_info(vif, beacon, beacon_len);
 
 	switch (vif->auth_mode) {
 	case NONE_AUTH:
@@ -987,13 +1011,17 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	set_bit(CONNECTED, &vif->flags);
 	ath6kl_judge_roam_parameter(vif, false);
+	if (ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi,
+				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
+		ath6kl_err("set rate_ctrl failed\n");
 	ath6kl_switch_parameter_based_on_connection(vif, false);
 	netif_carrier_on(vif->ndev);
 }
 
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
-				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info)
+				u8 assoc_req_len, u8 *assoc_info,
+				u8 apsd_info, u8 phymode)
 {
 	u8 *ies = NULL, *wpa_ie = NULL, *pos;
 	size_t ies_len = 0;
@@ -1055,7 +1083,7 @@ void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u8 aid, u8 *mac_addr,
 	ath6kl_add_new_sta(vif, mac_addr, aid, wpa_ie,
 			   wpa_ie ? 2 + wpa_ie[1] : 0,
 			   keymgmt, ucipher, auth, apsd_info,
-			   is_ht_sta);
+			   is_ht_sta, phymode);
 
 	/* send event to application */
 	memset(&sinfo, 0, sizeof(sinfo));
@@ -1202,6 +1230,11 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 
 	/* Hook connection event */
 	ath6kl_htcoex_connect_event(vif);
+	ath6kl_p2p_connect_event(vif,
+				beacon_ie_len,
+				assoc_req_len,
+				assoc_resp_len,
+				assoc_info);
 	ath6kl_switch_parameter_based_on_connection(vif, false);
 }
 
@@ -1577,6 +1610,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
 			vif->bss_ch = 0;
+			vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
+			vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
 			netif_carrier_off(vif->ndev);
@@ -1645,6 +1680,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	netif_stop_queue(vif->ndev);
 	memset(vif->bssid, 0, sizeof(vif->bssid));
 	vif->bss_ch = 0;
+	vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
+	vif->chan_type = ATH6KL_CHAN_TYPE_NONE;
 
 	ath6kl_tx_data_cleanup_by_if(vif);
 
@@ -2008,6 +2045,33 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 		}
 		break;
 	}
+	case ATH6KL_IOCTL_STANDARD03:
+	{
+		struct btcoex_ioctl btcoex_cmd;
+		char *user_cmd;
+
+		if (copy_from_user(&btcoex_cmd,
+				data,
+				sizeof(struct btcoex_ioctl)))
+			ret = -EIO;
+		else {
+			user_cmd = kzalloc(btcoex_cmd.cmd_len, GFP_KERNEL);
+			if (!user_cmd) {
+				ret = -ENOMEM;
+				break;
+			}
+			if (copy_from_user(user_cmd,
+					btcoex_cmd.cmd,
+					btcoex_cmd.cmd_len))
+				ret = -EIO;
+			else {
+				ret = ath6kl_wmi_send_btcoex_cmd(vif->ar,
+					(u8 *)user_cmd, btcoex_cmd.cmd_len);
+			}
+			kfree(user_cmd);
+		}
+		break;
+	}
 	default:
 		ret = -EOPNOTSUPP;
 		break;
@@ -2057,8 +2121,10 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	    (ar->p2p_concurrent) &&
 	    (ar->p2p_dedicate)) {
 		vif = ath6kl_get_vif_by_index(ar, ar->vif_max - 2);
-		if (!vif)
+		if (!vif) {
+			up(&ar->sem);
 			return -EFAULT;
+		}
 	}
 #endif
 
@@ -2128,6 +2194,7 @@ int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	case ATH6KL_IOCTL_STANDARD01:	/* Android privacy command */
 	case ATH6KL_IOCTL_STANDARD02:	/* supplicant escape purpose to
 					   support WiFi-Direct Cert. */
+	case ATH6KL_IOCTL_STANDARD03:	/* BTC command */
 	case ATH6KL_IOCTL_STANDARD12:	/* hole, please reserved */
 	case ATH6KL_IOCTL_STANDARD13:	/* TX99 */
 	case ATH6KL_IOCTL_STANDARD15:	/* hole, please reserved */
