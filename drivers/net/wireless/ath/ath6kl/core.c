@@ -62,19 +62,28 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	switch (htc_type) {
 	case ATH6KL_HTC_TYPE_MBOX:
 		ath6kl_htc_mbox_attach(ar);
+		ar->ath6kl_wq = alloc_workqueue("ath6kl",
+				WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 1);
+		if (!ar->ath6kl_wq)
+			goto err_wq;
 		break;
 	case ATH6KL_HTC_TYPE_PIPE:
 		ath6kl_htc_pipe_attach(ar);
+		ar->ath6kl_wq_tx = alloc_workqueue("ath6kl_tx",
+				WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 1);
+		if (!ar->ath6kl_wq_tx)
+			goto err_wq;
+
+		ar->ath6kl_wq_rx = alloc_workqueue("ath6kl_rx",
+				WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 1);
+		if (!ar->ath6kl_wq_rx)
+			goto err_wq;
 		break;
 	default:
 		WARN_ON(1);
 		return -ENOMEM;
 	}
 
-	ar->ath6kl_wq = alloc_workqueue("ath6kl",
-			WQ_MEM_RECLAIM | WQ_CPU_INTENSIVE, 1);
-	if (!ar->ath6kl_wq)
-		return -ENOMEM;
 
 	ret = ath6kl_bmi_init(ar);
 	if (ret)
@@ -230,8 +239,12 @@ err_power_off:
 err_bmi_cleanup:
 	ath6kl_bmi_cleanup(ar);
 err_wq:
-	destroy_workqueue(ar->ath6kl_wq);
-
+	if (ar->ath6kl_wq)
+		destroy_workqueue(ar->ath6kl_wq);
+	if (ar->ath6kl_wq_tx)
+		destroy_workqueue(ar->ath6kl_wq_tx);
+	if (ar->ath6kl_wq_rx)
+		destroy_workqueue(ar->ath6kl_wq_rx);
 	return ret;
 }
 EXPORT_SYMBOL(ath6kl_core_init);
@@ -302,7 +315,12 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 {
 	ath6kl_hif_power_off(ar);
 
-	destroy_workqueue(ar->ath6kl_wq);
+	if (ar->ath6kl_wq)
+		destroy_workqueue(ar->ath6kl_wq);
+	if (ar->ath6kl_wq_tx)
+		destroy_workqueue(ar->ath6kl_wq_tx);
+	if (ar->ath6kl_wq_rx)
+		destroy_workqueue(ar->ath6kl_wq_rx);
 
 	if (ar->htc_target)
 		ath6kl_htc_cleanup(ar->htc_target);
