@@ -55,8 +55,10 @@ struct ath6kl_usb_pipe {
 	u8 logical_pipe_num;
 	struct ath6kl_usb *ar_usb;
 	u16 max_packet_size;
-	struct work_struct io_complete_work;
-	struct sk_buff_head io_comp_queue;
+	struct work_struct tx_io_complete_work;
+	struct work_struct rx_io_complete_work;
+	struct sk_buff_head tx_io_comp_queue;
+	struct sk_buff_head rx_io_comp_queue;
 	struct usb_endpoint_descriptor *ep_desc;
 };
 
@@ -544,15 +546,15 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 	skb_put(skb, urb->actual_length);
 
 	/* note: queue implements a lock */
-	skb_queue_tail(&pipe->io_comp_queue, skb);
-	queue_work(pipe->ar_usb->ar->ath6kl_wq, &pipe->io_complete_work);
+	skb_queue_tail(&pipe->rx_io_comp_queue, skb);
+	queue_work(pipe->ar_usb->ar->ath6kl_wq_rx, &pipe->rx_io_complete_work);
 
 cleanup_recv_urb:
 	ath6kl_usb_cleanup_recv_urb(urb_context);
 
 	if (status == 0 || urb->status == -EPROTO) {
 		if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
-				skb_queue_len(&pipe->io_comp_queue) <
+				skb_queue_len(&pipe->rx_io_comp_queue) <
 				pipe->ar_usb->rxq_threshold) {
 			/* our free urbs are piling up, post more transfers */
 			ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
@@ -582,35 +584,41 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 	ath6kl_usb_free_urb_to_pipe(urb_context->pipe, urb_context);
 
 	/* note: queue implements a lock */
-	skb_queue_tail(&pipe->io_comp_queue, skb);
-	queue_work(pipe->ar_usb->ar->ath6kl_wq, &pipe->io_complete_work);
+	skb_queue_tail(&pipe->tx_io_comp_queue, skb);
+	queue_work(pipe->ar_usb->ar->ath6kl_wq_tx, &pipe->tx_io_complete_work);
 }
 
-static void ath6kl_usb_io_comp_work(struct work_struct *work)
+static void ath6kl_usb_io_comp_work_tx(struct work_struct *work)
 {
 	struct ath6kl_usb_pipe *pipe = container_of(work,
-						    struct ath6kl_usb_pipe,
-						    io_complete_work);
+			struct ath6kl_usb_pipe, tx_io_complete_work);
+	struct ath6kl_usb *ar_usb;
+	struct sk_buff *skb;
+	ar_usb = pipe->ar_usb;
+	while ((skb = skb_dequeue(&pipe->tx_io_comp_queue))) {
+		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+				"ath6kl usb xmit callback buf:0x%p\n", skb);
+		ath6kl_core_tx_complete(ar_usb->ar, skb);
+	}
+}
+
+static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
+{
+	struct ath6kl_usb_pipe *pipe = container_of(work,
+			struct ath6kl_usb_pipe, rx_io_complete_work);
 	struct ath6kl_usb *ar_usb;
 	struct sk_buff *skb;
 
 	ar_usb = pipe->ar_usb;
 
-	while ((skb = skb_dequeue(&pipe->io_comp_queue))) {
-		if (pipe->flags & ATH6KL_USB_PIPE_FLAG_TX) {
-			ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-				   "ath6kl usb xmit callback buf:0x%p\n", skb);
-			ath6kl_core_tx_complete(ar_usb->ar, skb);
-		} else {
-			ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-				   "ath6kl usb recv callback buf:0x%p\n", skb);
-			ath6kl_core_rx_complete(ar_usb->ar, skb,
-						pipe->logical_pipe_num);
-		}
+	while ((skb = skb_dequeue(&pipe->rx_io_comp_queue))) {
+		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+				"ath6kl usb recv callback buf:0x%p\n", skb);
+		ath6kl_core_rx_complete(ar_usb->ar, skb,
+				pipe->logical_pipe_num);
 	}
 
-	if (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX &&
-			pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+	if (pipe->urb_cnt >= pipe->urb_cnt_thresh) {
 		/* our free urbs are piling up, post more transfers */
 		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 	}
@@ -652,9 +660,13 @@ static struct ath6kl_usb *ath6kl_usb_create(struct usb_interface *interface)
 
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
 		pipe = &ar_usb->pipes[i];
-		INIT_WORK(&pipe->io_complete_work,
-			  ath6kl_usb_io_comp_work);
-		skb_queue_head_init(&pipe->io_comp_queue);
+                INIT_WORK(&pipe->tx_io_complete_work,
+			  ath6kl_usb_io_comp_work_tx);
+
+		INIT_WORK(&pipe->rx_io_complete_work,
+			  ath6kl_usb_io_comp_work_rx);
+		skb_queue_head_init(&pipe->tx_io_comp_queue);
+		skb_queue_head_init(&pipe->rx_io_comp_queue);
 	}
 
 	ar_usb->diag_cmd_buffer = kzalloc(ATH6KL_USB_MAX_DIAG_CMD, GFP_KERNEL);

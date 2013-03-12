@@ -843,6 +843,8 @@ struct ath6kl {
 	unsigned long fw_capabilities[ATH6KL_CAPABILITY_LEN];
 
 	struct workqueue_struct *ath6kl_wq;
+	struct workqueue_struct *ath6kl_wq_tx;
+	struct workqueue_struct *ath6kl_wq_rx;
 
 	struct dentry *debugfs_phy;
 
