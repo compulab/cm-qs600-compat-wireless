@@ -81,10 +81,16 @@ static struct ieee80211_rate ath6kl_rates[] = {
 #define ath6kl_g_rates     (ath6kl_rates + 0)
 #define ath6kl_g_rates_size    12
 
-#define ath6kl_g_htcap IEEE80211_HT_CAP_SGI_20
+#define ath6kl_g_htcap (IEEE80211_HT_CAP_SGI_20	| \
+			IEEE80211_HT_CAP_LDPC_CODING	 | \
+			IEEE80211_HT_CAP_RX_STBC	 | \
+			IEEE80211_HT_CAP_TX_STBC)
 #define ath6kl_a_htcap (IEEE80211_HT_CAP_SUP_WIDTH_20_40 | \
 			IEEE80211_HT_CAP_SGI_20		 | \
-			IEEE80211_HT_CAP_SGI_40)
+			IEEE80211_HT_CAP_SGI_40		 | \
+			IEEE80211_HT_CAP_LDPC_CODING	 | \
+			IEEE80211_HT_CAP_RX_STBC	 | \
+			IEEE80211_HT_CAP_TX_STBC)
 
 static struct ieee80211_channel ath6kl_2ghz_channels[] = {
 	CHAN2G(1, 2412, 0),
