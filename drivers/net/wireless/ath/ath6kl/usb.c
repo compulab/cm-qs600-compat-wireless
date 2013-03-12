@@ -61,6 +61,7 @@ struct ath6kl_usb_pipe {
 };
 
 #define ATH6KL_USB_PIPE_FLAG_TX    (1 << 0)
+#define ATH6KL_USB_PIPE_FLAG_RX    (1 << 1)
 
 /* usb device object */
 struct ath6kl_usb {
@@ -73,6 +74,7 @@ struct ath6kl_usb {
 	u8 *diag_cmd_buffer;
 	u8 *diag_resp_buffer;
 	struct ath6kl *ar;
+	u32 rxq_threshold;
 };
 
 /* usb urb object */
@@ -103,6 +105,8 @@ struct ath6kl_urb_context {
 
 #define ATH6KL_USB_CTRL_DIAG_CC_READ               0
 #define ATH6KL_USB_CTRL_DIAG_CC_WRITE              1
+
+#define HIF_USB_RX_QUEUE_THRESHOLD              64
 
 struct ath6kl_usb_ctrl_diag_cmd_write {
 	__le32 cmd;
@@ -395,7 +399,9 @@ static int ath6kl_usb_setup_pipe_resources(struct ath6kl_usb *ar_usb)
 
 		pipe->ep_desc = endpoint;
 
-		if (!ATH6KL_USB_IS_DIR_IN(pipe->ep_address))
+		if (ATH6KL_USB_IS_DIR_IN(pipe->ep_address))
+			pipe->flags |= ATH6KL_USB_PIPE_FLAG_RX;
+		else
 			pipe->flags |= ATH6KL_USB_PIPE_FLAG_TX;
 
 		status = ath6kl_usb_alloc_pipe_resources(pipe, urbcount);
@@ -539,13 +545,15 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->io_comp_queue, skb);
-	schedule_work(&pipe->io_complete_work);
+	queue_work(pipe->ar_usb->ar->ath6kl_wq, &pipe->io_complete_work);
 
 cleanup_recv_urb:
 	ath6kl_usb_cleanup_recv_urb(urb_context);
 
 	if (status == 0 || urb->status == -EPROTO) {
-		if (pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+		if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
+				skb_queue_len(&pipe->io_comp_queue) <
+				pipe->ar_usb->rxq_threshold) {
 			/* our free urbs are piling up, post more transfers */
 			ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 		}
@@ -575,7 +583,7 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->io_comp_queue, skb);
-	schedule_work(&pipe->io_complete_work);
+	queue_work(pipe->ar_usb->ar->ath6kl_wq, &pipe->io_complete_work);
 }
 
 static void ath6kl_usb_io_comp_work(struct work_struct *work)
@@ -599,6 +607,12 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 			ath6kl_core_rx_complete(ar_usb->ar, skb,
 						pipe->logical_pipe_num);
 		}
+	}
+
+	if (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX &&
+			pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+		/* our free urbs are piling up, post more transfers */
+		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 	}
 }
 
@@ -655,6 +669,8 @@ static struct ath6kl_usb *ath6kl_usb_create(struct usb_interface *interface)
 		status = -ENOMEM;
 		goto fail_ath6kl_usb_create;
 	}
+
+	ar_usb->rxq_threshold = HIF_USB_RX_QUEUE_THRESHOLD;
 
 	status = ath6kl_usb_setup_pipe_resources(ar_usb);
 
@@ -1052,6 +1068,16 @@ static void ath6kl_usb_cleanup_scatter(struct ath6kl *ar)
 	return;
 }
 
+static int ath6kl_usb_set_rxq_threshold(struct ath6kl *ar, u32 rxq_threshold)
+{
+	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+
+	ar_usb->rxq_threshold = rxq_threshold;
+
+	ath6kl_dbg(ATH6KL_DBG_USB, "rxq_threshold = %d\n", ar_usb->rxq_threshold);
+
+	return 0;
+}
 static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.diag_read32 = ath6kl_usb_diag_read32,
 	.diag_write32 = ath6kl_usb_diag_write32,
@@ -1065,6 +1091,7 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.pipe_map_service = ath6kl_usb_map_service_pipe,
 	.pipe_get_free_queue_number = ath6kl_usb_get_free_queue_number,
 	.cleanup_scatter = ath6kl_usb_cleanup_scatter,
+	.pipe_set_rxq_threshold = ath6kl_usb_set_rxq_threshold,
 };
 
 /* ath6kl usb driver registered functions */
@@ -1206,14 +1233,14 @@ static struct usb_driver ath6kl_usb_driver = {
 static int ath6kl_usb_init(void)
 {
 	usb_register(&ath6kl_usb_driver);
-    ath6kl_platform_driver_register();
+	ath6kl_platform_driver_register();
 	return 0;
 }
 
 static void ath6kl_usb_exit(void)
 {
 	usb_deregister(&ath6kl_usb_driver);
-    ath6kl_platform_driver_unregister();
+	ath6kl_platform_driver_unregister();
 }
 
 module_init(ath6kl_usb_init);

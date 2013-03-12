@@ -24,6 +24,7 @@
 
 #include "debug.h"
 #include "target.h"
+#include "hif-ops.h"
 
 struct ath6kl_fwlog_slot {
 	__le32 timestamp;
@@ -1725,6 +1726,47 @@ static const struct file_operations fops_power_params = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for HIF-PIPE RX Queue threshold */
+static ssize_t ath6kl_hif_pipe_rxq_threshold_write(struct file *file,
+		const char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[64];
+	char *sptr, *token;
+	unsigned int len;
+	u32 rxq_threshold = 0;
+
+	if (ar->hif_type != ATH6KL_HIF_TYPE_USB)
+		return -EIO;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+
+	sptr = buf;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou32(token, 0, &rxq_threshold))
+		return -EINVAL;
+
+	ath6kl_hif_pipe_set_rxq_threshold(ar, rxq_threshold);
+
+	return count;
+}
+
+/* debug fs for HIF-PIPE Max. Schedule packages */
+static const struct file_operations fops_hif_pipe_rxq_threshold = {
+	.write = ath6kl_hif_pipe_rxq_threshold_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -1890,6 +1932,9 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 
 	debugfs_create_file("crash_dump", S_IRUSR, ar->debugfs_phy, ar,
 			    &fops_crash_dump);
+	debugfs_create_file("hif_rxq_threshold", S_IWUSR,
+			ar->debugfs_phy, ar, &fops_hif_pipe_rxq_threshold);
+
 	return 0;
 }
 

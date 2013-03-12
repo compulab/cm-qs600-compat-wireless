@@ -184,4 +184,12 @@ static inline u16 ath6kl_hif_pipe_get_free_queue_number(struct ath6kl *ar,
 	return ar->hif_ops->pipe_get_free_queue_number(ar, pipe);
 }
 
+static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
+		u32 rxq_threshold)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set RX queue threshold\n");
+
+	return ar->hif_ops->pipe_set_rxq_threshold(ar, rxq_threshold);
+}
+
 #endif
