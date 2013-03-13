@@ -25,6 +25,8 @@
 #ifndef WMI_H
 #define WMI_H
 
+#include<linux/types.h>
+#ifdef __KERNEL__
 #include <linux/ieee80211.h>
 
 #include "htc.h"
@@ -342,6 +344,7 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
 {
 	return le16_to_cpu(chdr->info1) & WMI_CMD_HDR_IF_ID_MASK;
 }
+#endif
 
 /* List of WMI commands */
  enum wmi_cmd_id{
@@ -677,9 +680,18 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_BEGIN_SCAN_CMDID,
     WMI_SET_IE_CMDID,
     WMI_SET_RSSI_FILTER_CMDID,
+    WMI_AP_SET_IDLE_CLOSE_TIME_CMDID,
+    WMI_SET_MCASTRATE_CMDID,	/* F0B7 */
+    WMI_SET_RECOVERY_TEST_PARAMETER_CMDID,
+    WMI_VOICE_DETECTION_ENABLE_CMDID,
+    WMI_SET_KEEPALIVE_CMDID_EXT,
+    WMI_SET_TXE_NOTIFY_CMDID,
 };
 
+/* WMI_SETPMKID_CMDID */
+#define WMI_PMKID_LEN 16
 
+#ifdef __KERNEL__
 enum wmi_mgmt_frame_type {
 	WMI_FRAME_BEACON = 0,
 	WMI_FRAME_PROBE_REQ,
@@ -845,10 +857,6 @@ struct wmi_add_krk_cmd {
 	u8 krk[WMI_KRK_LEN];
 } __packed;
 
-/* WMI_SETPMKID_CMDID */
-
-#define WMI_PMKID_LEN 16
-
 enum pmkid_enable_flg {
 	PMKID_DISABLE = 0,
 	PMKID_ENABLE = 1,
@@ -928,6 +936,7 @@ struct wmi_start_scan_cmd {
 	__le16 ch_list[1];
 } __packed;
 
+#endif
 /*
  *  Warning: scan control flag value of 0xFF is used to disable
  *  all flags in WMI_SCAN_PARAMS_CMD. Do not add any more
@@ -991,6 +1000,7 @@ struct wmi_scan_params_cmd {
 	__le32 max_dfsch_act_time;
 } __packed;
 
+#ifdef __KERNEL__
 /* WMI_SET_BSS_FILTER_CMDID */
 enum wmi_bss_filter {
 	/* no beacons forwarded */
@@ -1086,6 +1096,7 @@ struct wmi_set_regdomain_cmd {
 	u8 length;
 	u8 iso_name[2];
 } __packed;
+#endif
 
 /* WMI_SET_POWER_MODE_CMDID */
 enum wmi_power_mode {
@@ -1154,6 +1165,7 @@ struct wmi_disc_timeout_cmd {
 	u8 discon_timeout;
 } __packed;
 
+#ifdef __KERNEL__
 enum dir_type {
 	UPLINK_TRAFFIC = 0,
 	DNLINK_TRAFFIC = 1,
@@ -1246,6 +1258,8 @@ struct wmi_delete_pstream_cmd {
 	u8 tsid;
 } __packed;
 
+#endif
+
 /* WMI_SET_CHANNEL_PARAMS_CMDID */
 enum wmi_phy_mode {
 	WMI_11A_MODE = 0x1,
@@ -1266,6 +1280,7 @@ struct wmi_set_ch_params {
 
 #define WMI_MAX_CHANNELS        32
 
+#ifdef __KERNEL__
 /*
  *  WMI_RSSI_THRESHOLD_PARAMS_CMDID
  *  Setting the polltime to 0 would disable polling. Threshold values are
@@ -1384,6 +1399,7 @@ enum target_event_report_config {
 	NO_DISCONN_EVT_IN_RECONN
 };
 
+#endif
 struct wmi_mcast_filter_cmd {
 	u8 mcast_all_enable;
 } __packed;
@@ -1470,6 +1486,7 @@ enum wmi_event_id {
 	WMI_HCI_EVENT_EVENTID,
 	WMI_ACL_DATA_EVENTID,
 	WMI_REPORT_SLEEP_STATE_EVENTID,
+	WMI_WAPI_REKEY_EVENTID,
 	WMI_REPORT_BTCOEX_STATS_EVENTID,
 	WMI_REPORT_BTCOEX_CONFIG_EVENTID,
 	WMI_GET_PMK_EVENTID,
@@ -1537,8 +1554,158 @@ enum wmi_event_id {
 	WMI_P2P_CAPABILITIES_EVENTID,
 	WMI_RX_ACTION_EVENTID,
 	WMI_P2P_INFO_EVENTID,
+	/* WPS Events */
+	WMI_WPS_GET_STATUS_EVENTID,
+	WMI_WPS_PROFILE_EVENTID,
+	/* more P2P events */
+	WMI_NOA_INFO_EVENTID,	/* 0x9010 */
+	WMI_OPPPS_INFO_EVENTID,
+	WMI_PORT_STATUS_EVENTID,
+
+	/* 802.11w */
+	WMI_GET_RSN_CAP_EVENTID,
+
+	WMI_FLOWCTRL_IND_EVENTID,
+	WMI_FLOWCTRL_UAPSD_FRAME_DILIVERED_EVENTID,
+
+	/*Socket Translation Events*/
+	WMI_SOCKET_RESPONSE_EVENTID,
+
+	WMI_LOG_FRAME_EVENTID,
+	WMI_QUERY_PHY_INFO_EVENTID,
+	WMI_CCX_ROAMING_EVENTID,
+
+	WMI_P2P_NODE_LIST_EVENTID,	/* 0x901A */
+	WMI_P2P_REQ_TO_AUTH_EVENTID,
+	WMI_DIAGNOSTIC_EVENTID,	/* diagnostic */
+	WMI_DISC_PEER_EVENTID,	/* wifi discovery */
+	WMI_BSS_RSSI_INFO_EVENTID,
+	WMI_ARGOS_EVENTID,
+	WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID	= 0x9020,
+
 };
 
+struct wmi_get_wow_list_cmd {
+	u8 filter_list_id;
+} ;
+
+#define WMI_MAX_RATE_MASK         2
+
+/*
+ * WMI_SET_FIXRATES_CMDID
+ *
+ * Get fix rates cmd uses same definition as set fix rates cmd
+ */
+struct wmi_fix_rates_cmd {
+	/* see wmi_bit_rate */
+	u32 fix_rate_mask[WMI_MAX_RATE_MASK];
+} __packed ;
+
+/*
+ * WMI_SET_SCAN_PARAMS_CMDID
+ */
+#define WMI_SHORTSCANRATIO_DEFAULT      3
+
+#define CAN_SCAN_IN_CONNECT(flags)      (flags & CONNECT_SCAN_CTRL_FLAGS)
+#define CAN_SCAN_CONNECTED(flags)       (flags & SCAN_CONNECTED_CTRL_FLAGS)
+#define ENABLE_ACTIVE_SCAN(flags)       (flags & ACTIVE_SCAN_CTRL_FLAGS)
+#define ENABLE_ROAM_SCAN(flags)         (flags & ROAM_SCAN_CTRL_FLAGS)
+#define CONFIG_REPORT_BSSINFO(flags)     (flags & REPORT_BSSINFO_CTRL_FLAGS)
+#define IS_AUTO_SCAN_ENABLED(flags)      (flags & ENABLE_AUTO_CTRL_FLAGS)
+#define SCAN_ABORT_EVENT_ENABLED(flags) (flags & ENABLE_SCAN_ABORT_EVENT)
+
+#define DEFAULT_SCAN_CTRL_FLAGS         (CONNECT_SCAN_CTRL_FLAGS | 	\
+					SCAN_CONNECTED_CTRL_FLAGS | 	\
+					ACTIVE_SCAN_CTRL_FLAGS | 	\
+					ROAM_SCAN_CTRL_FLAGS | 		\
+					ENABLE_AUTO_CTRL_FLAGS)
+
+struct wmi_set_wmm_cmd {
+	u8 status;
+}__packed;
+
+/* WMI_ADDBA_REQ_CMDID
+ * f/w starts performing ADDBA negotiations with peer
+ * on the given tid
+ */
+struct wmi_addba_req_cmd {
+	u8 tid;
+} __packed;
+
+/* WMI_ALLOW_AGGR_CMDID
+ * Configures tid's to allow ADDBA negotiations
+ * on each tid, in each direction
+ */
+struct wmi_allow_aggr_cmd {
+	u16 tx_allow_aggr;  /* 16-bit mask to allow uplink ADDBA negotiation - bit
+						   position indicates tid*/
+	u16 rx_allow_aggr;  /* 16-bit mask to allow donwlink ADDBA negotiation -
+						   bit position indicates tid*/
+} __packed;
+
+/* WMI_DELBA_REQ_CMDID
+ * f/w would teardown BA with peer.
+ * is_send_initiator indicates if it's or tx or rx side
+ */
+struct wmi_delba_req_cmd{
+	u8 tid;
+	u8 is_sender_initiator;
+} __packed;
+
+/*
+ * WMI_SET_MCASTRATE_CMD
+ */
+struct wmi_set_mcastrate_cmd {
+	u16 bitrate; /* in units of 100 Kbps */
+                      /* Valid values are 10, 20, 55, 110, 60, 90, 120, 180,
+                       * 240, 360, 480, 540 */
+} __packed;
+
+/* WMI_SET_TXE_NOTIFY_CMDID */
+struct  wmi_set_txe_notify_cmd {
+	u32 rate;
+	u32 pkts;
+	u32 intvl;
+} __packed;
+
+struct wmi_set_recovery_test_parameter_cmd {
+	u8 type;     /*0:unused 1: ASSERT, 2: not respond detect command,3:
+		       simulate ep-full(),4:empty point,5 stack overflow...*/
+	u8 reserved; /*unused now*/
+	u16 delay_time_ms;   /*0xffff means the simulate will delay for random
+			       time (0 ~0xffff ms)*/
+} __packed;
+
+/* voice detection enable/disable command structure */
+struct wmi_voice_detection_enable_cmd {
+	u8 enable;
+} __packed;
+
+struct wmi_greentx_params_cmd {
+	int enable;
+	u8 nextProbeCount;
+	u8 maxBackOff;
+	u8 minGtxRssi;
+	u8 forceBackOff;
+} __packed;
+
+#define AP_11BG_RATESET1        1
+#define AP_11BG_RATESET2        2
+#define DEF_AP_11BG_RATESET     AP_11BG_RATESET1
+struct wmi_ap_set_11bg_rateset_cmd {
+	u8 rateset;
+} __packed;
+
+struct wmi_set_keepalive_cmd_ext {
+	u8 keepaliveInterval;
+	u8 keepaliveMode;
+	u8 reserved[2];
+	u32 keepalive_arp_srcip;
+	u32 keepalive_arp_tgtip;
+	u8 peer_mac_address[6];
+} __packed;
+
+#ifdef __KERNEL__
 struct wmi_ready_event_2 {
 	__le32 sw_version;
 	__le32 abi_version;
@@ -2103,7 +2270,7 @@ struct wmi_set_ie_cmd {
 #define RATECTRL_MODE_PERONLY 1
 
 struct wmi_set_ratectrl_parm_cmd {
-       u32 mode;
+	u32 mode;
 } __packed;
 
 /* Notify the WSC registration status to the target */
@@ -2151,7 +2318,7 @@ enum ath6kl_host_mode {
 	ATH6KL_HOST_MODE_AWAKE,
 	ATH6KL_HOST_MODE_ASLEEP,
 };
-
+#endif
 struct wmi_set_host_sleep_mode_cmd {
 	__le32 awake;
 	__le32 asleep;
@@ -2180,6 +2347,7 @@ struct wmi_del_wow_pattern_cmd {
 	__le16 filter_id;
 } __packed;
 
+#ifdef __KERNEL__
 /* WMI_SET_AKMP_PARAMS_CMD */
 
 struct wmi_pmkid {
@@ -2298,12 +2466,14 @@ struct wmi_tx_complete_event {
 #define WMI_AP_MLME_AUTHORIZE   4   /* authorize station */
 #define WMI_AP_MLME_UNAUTHORIZE 5   /* unauthorize station */
 
+#endif
 struct wmi_ap_set_mlme_cmd {
 	u8 mac[ETH_ALEN];
 	__le16 reason;		/* 802.11 reason code */
 	u8 cmd;			/* operation to perform (WMI_AP_*) */
 } __packed;
 
+#ifdef __KERNEL__
 struct wmi_ap_set_pvb_cmd {
 	__le32 flag;
 	__le16 rsvd;
@@ -2805,4 +2975,5 @@ void *ath6kl_wmi_init(struct ath6kl *devt);
 void ath6kl_wmi_shutdown(struct wmi *wmi);
 void ath6kl_wmi_reset(struct wmi *wmi);
 
+#endif
 #endif /* WMI_H */
