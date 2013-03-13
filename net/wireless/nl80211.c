@@ -296,6 +296,7 @@ static const struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] = {
 	[NL80211_ATTR_BG_SCAN_PERIOD] = { .type = NLA_U16 },
 	[NL80211_ATTR_MAC_ACL] = { .type = NLA_U8 },
 	[NL80211_ATTR_MAC_ADDRS] = { .type = NLA_NESTED },
+	[NL80211_ATTR_MAC_ADDRS_WILD] = { .type = NLA_NESTED },
 	[NL80211_ATTR_ACL_POLICY] = { .type = NLA_U8 },
 	[NL80211_ATTR_STA_CAP_REQ] = { .type = NLA_U8 },
 	[NL80211_ATTR_ACS] = { .type = NLA_U8 },
@@ -2327,7 +2328,8 @@ static int nl80211_set_mac_acl(struct sk_buff *skb, struct genl_info *info)
                 return -EOPNOTSUPP;
 
         if (!info->attrs[NL80211_ATTR_ACL_POLICY] ||
-            !info->attrs[NL80211_ATTR_MAC_ADDRS])
+            !info->attrs[NL80211_ATTR_MAC_ADDRS] ||
+            !info->attrs[NL80211_ATTR_MAC_ADDRS_WILD])
                 return -EINVAL;
 
         n_mac_addrs = validate_acl_mac_addrs(
@@ -2335,8 +2337,9 @@ static int nl80211_set_mac_acl(struct sk_buff *skb, struct genl_info *info)
         if (n_mac_addrs < 0)
                 return -EINVAL;
 
-        if (n_mac_addrs > rdev->wiphy.max_acl_mac_addrs)
-                return -EOPNOTSUPP;
+        if (n_mac_addrs > rdev->wiphy.max_acl_mac_addrs){
+                n_mac_addrs = rdev->wiphy.max_acl_mac_addrs;
+        }
 
         params = kzalloc(sizeof(*params) +
                         (sizeof(*params->mac_addrs) * n_mac_addrs),
@@ -2355,7 +2358,17 @@ static int nl80211_set_mac_acl(struct sk_buff *skb, struct genl_info *info)
         nla_for_each_nested(attr, info->attrs[NL80211_ATTR_MAC_ADDRS], tmp) {
                 memcpy(&params->mac_addrs[i].addr, nla_data(attr), ETH_ALEN);
                 i++;
+                if (i == n_mac_addrs)
+                    break;
         }
+
+	i = 0;
+	nla_for_each_nested(attr, info->attrs[NL80211_ATTR_MAC_ADDRS_WILD], tmp) {
+		memcpy(&params->mac_addrs[i].wild, nla_data(attr), 1);
+		i++;
+		if (i == n_mac_addrs)
+			break;
+	}
 
         params->n_acl_entries = n_mac_addrs;
 

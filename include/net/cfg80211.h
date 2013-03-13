@@ -1422,6 +1422,11 @@ struct mac_address {
 	u8 addr[ETH_ALEN];
 };
 
+struct mac_address_wild {
+	u8 addr[ETH_ALEN];
+	u8 wild;
+};
+
 /**
  * struct cfg80211_acl_params - Access control parameters
  * @mac_addrs: List of mac addresses of stations to be used for acl
@@ -1433,7 +1438,7 @@ struct cfg80211_acl_params {
        int n_acl_entries;
 
        /* Keep it last */
-       struct mac_address mac_addrs[0];
+       struct mac_address_wild mac_addrs[0];
 };
 
 /**

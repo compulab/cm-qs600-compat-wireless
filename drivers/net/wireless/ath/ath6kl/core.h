@@ -677,6 +677,7 @@ struct ath6kl_vif {
 	u8 intra_bss;
 	u8 ap_hold_conn;
 	struct timer_list ap_restart_timer;
+	struct wmi_ap_acl_list ap_acl_list;
 };
 
 #define WOW_LIST_ID		0
