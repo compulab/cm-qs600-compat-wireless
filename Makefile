@@ -67,7 +67,10 @@ export CFLAGS += \
         -DCOMPAT_BASE_TREE="\"$(shell cat $(PWD)/.compat_base_tree)\"" \
         -DCOMPAT_BASE_TREE_VERSION="\"$(shell cat $(PWD)/.compat_base_tree_version)\"" \
         -DCOMPAT_PROJECT="\"Compat-drivers\"" \
-        -DCOMPAT_VERSION="\"$(shell cat $(PWD)/.compat_version)\""
+        -DCOMPAT_VERSION="\"$(shell cat $(PWD)/.compat_version)\""\
+        -DCONFIG_ATH6KL_BAM2BAM \
+        -DCONFIG_ATH6KL_WITH_IPACM \
+        -DCONFIG_ATH6KL_IPA_WITH_IPV6
 
 # These exported as they are used by the scripts
 # to check config and compat autoconf
