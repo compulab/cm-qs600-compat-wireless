@@ -2453,6 +2453,8 @@ struct wmi_tx_complete_event {
 
 #define DEF_AP_COUNTRY_CODE     "US "
 
+#define WMI_DISABLE_REGULATORY_CODE "FF"
+
 /* Used with WMI_AP_SET_NUM_STA_CMDID */
 
 /*
