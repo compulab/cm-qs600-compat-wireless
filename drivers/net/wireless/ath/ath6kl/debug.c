@@ -111,6 +111,13 @@ static const struct ath6kl_diag_reg_info diag_reg[] = {
 	{ 0x1C000, 0x1C748, "Analog" },
 };
 
+void ath6kl_print_mac_addr(enum ATH6K_DEBUG_MASK mask, u8 *mac_addr)
+{
+	ath6kl_dbg (mask, "Mac Addr: %02x:%02x:%02x:%02x:%02x:%02x\n",
+			mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3],
+			mac_addr[4], mac_addr[5]);
+}
+
 void ath6kl_dump_registers(struct ath6kl_device *dev,
 			   struct ath6kl_irq_proc_registers *irq_proc_reg,
 			   struct ath6kl_irq_enable_reg *irq_enable_reg)

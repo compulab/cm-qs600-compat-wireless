@@ -3390,6 +3390,64 @@ static int ath6kl_wmi_dtimexpiry_event_rx(struct wmi *wmi, u8 *datap, int len,
 	return 0;
 }
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+int ath6kl_wmi_flush_buffered_data_event_rx(struct wmi *wmi, u8 *datap, int len,
+					  struct ath6kl_vif *vif)
+{
+     struct wmi_flush_buffered_data_event *ev;
+     if (len < sizeof(struct wmi_flush_buffered_data_event))
+		return -EINVAL;
+
+	ev = (struct wmi_flush_buffered_data_event *)datap;
+        ath6kl_dbg(ATH6KL_DBG_OOO,
+                "IPA-CM:OOO:incoming seq = %d\n", ev->seq_no);
+        ath6kl_aggr_deque_bam2bam(vif,le16_to_cpu(ev->seq_no), ev->tid, ev->aid);
+
+	return 0;
+}
+
+int ath6kl_wmi_send_dummy_data_event_rx(struct wmi *wmi, u8 *datap, int len,
+					  struct ath6kl_vif *vif)
+{
+	struct wmi_send_dummy_data_event *ev;
+    int i;
+
+	if (len < sizeof(struct wmi_send_dummy_data_event))
+		return -EINVAL;
+
+	ev = (struct wmi_send_dummy_data_event *)datap;
+        ath6kl_dbg(ATH6KL_DBG_OOO,
+            "IPA-CM:OOO:num_packets = %d\n", ev->num_packets);
+        ath6kl_dbg(ATH6KL_DBG_OOO,
+            "IPA-CM:OOO:ac_category= %d\n", ev->ac_category);
+	for (i = 0 ; i < ev->num_packets ; i++){
+        if (!ath6kl_send_dummy_data(vif, ev->num_packets, ev->ac_category))
+        {
+            ath6kl_dbg(ATH6KL_DBG_OOO,
+		        "IPA-CM:OOO:Successfully sent dummy packets\n");
+	    } else {
+            ath6kl_err("IPA-CM:OOO:Failed to send dummy packets\n");
+	     }
+	}
+	return 0;
+}
+
+int ath6kl_wmi_client_power_save_event_rx(struct wmi *wmi, u8 *datap, int len,
+                              struct ath6kl_vif *vif)
+{
+    struct wmi_client_power_save_event *ev;
+
+    if (len < sizeof(struct wmi_client_power_save_event))
+        return -EINVAL;
+
+    ev = (struct wmi_client_power_save_event *)datap;
+    ath6kl_client_power_save(vif, ev->power_save, ev->aid);
+
+    return 0;
+}
+
+#endif
+
 int ath6kl_wmi_set_pvb_cmd(struct wmi *wmi, u8 if_idx, u16 aid,
 			   bool flag)
 {
@@ -4001,6 +4059,29 @@ static int ath6kl_wmi_proc_events_vif(struct wmi *wmi, u16 if_idx, u16 cmd_id,
 	case WMI_RX_ACTION_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_RX_ACTION_EVENTID\n");
 		return ath6kl_wmi_rx_action_event_rx(wmi, datap, len, vif);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	case WMI_FLUSH_BUFFERED_DATA_EVENTID:
+        if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+        {
+		    ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_FLUSH_BUFFERED_DATA_EVENTID\n");
+		    return ath6kl_wmi_flush_buffered_data_event_rx(wmi, datap, len, vif);
+        }
+        break;
+    case WMI_SEND_DUMMY_DATA_EVENTID:
+        if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+        {
+            ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_SEND_DUMMY_DATA_EVENTID\n");
+            return ath6kl_wmi_send_dummy_data_event_rx(wmi, datap, len, vif);
+        }
+        break;
+    case WMI_CLIENT_POWER_SAVE_EVENTID:
+        if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+        {
+            ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CLIENT_POWER_SAVE_EVENTID\n");
+            return ath6kl_wmi_client_power_save_event_rx(wmi, datap, len, vif);
+        }
+        break;
+#endif
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", cmd_id);
 		return -EINVAL;

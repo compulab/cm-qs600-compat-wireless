@@ -33,6 +33,7 @@ static unsigned int wow_mode;
 static unsigned int uart_debug;
 static unsigned int ath6kl_p2p;
 static unsigned int testmode;
+static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
 
 module_param(debug_mask, uint, 0644);
 module_param(suspend_mode, uint, 0644);
@@ -40,6 +41,7 @@ module_param(wow_mode, uint, 0644);
 module_param(uart_debug, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
 module_param(testmode, uint, 0644);
+module_param(debug_quirks, uint, 0644);
 
 void ath6kl_core_tx_complete(struct ath6kl *ar, struct sk_buff *skb)
 {
@@ -257,6 +259,12 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar = ath6kl_cfg80211_create();
 	if (!ar)
 		return NULL;
+
+	ath6kl_dbg(ATH6KL_DBG_BOOT,
+			"Module param: debug_quirks set to : %x \n",
+			debug_quirks);
+
+	ar->debug_quirks = debug_quirks;
 
 	ar->p2p = !!ath6kl_p2p;
 	ar->dev = dev;

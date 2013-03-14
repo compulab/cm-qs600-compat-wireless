@@ -27,6 +27,14 @@
 #include "target.h"
 #include "debug.h"
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+/* TODO: Having global variable is not good but keeping it for initial
+ * debugging. This part of the code will be removed or should be removed
+ */
+extern u32 un_ordered;
+extern u32 ordered;
+#endif
+
 int _string_to_mac(char *string, int len, u8 *macaddr)
 {
 	int i, k;
@@ -116,6 +124,10 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 
 	if (sta->vif != vif)
 		return;
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_send_msg_ipa(vif, WLAN_CLIENT_DISCONNECT, sta->mac);
+#endif
 	/* empty the queued pkts in the PS queue if any */
 	spin_lock_bh(&sta->psq_lock);
 	skb_queue_purge(&sta->psq);
@@ -140,6 +152,9 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 	sta->vif = NULL;
 
 	ar->sta_list_index = ar->sta_list_index & ~(1 << i);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	sta->aggr_conn->vif = vif;
+#endif
 	aggr_reset_state(sta->aggr_conn);
 }
 
@@ -164,8 +179,8 @@ static u8 ath6kl_remove_sta(struct ath6kl_vif *vif, u8 *mac, u16 reason)
 		for (i = 0; i < AP_MAX_NUM_STA; i++) {
 			if (memcmp(ar->sta_list[i].mac, mac, ETH_ALEN) == 0) {
 				ath6kl_dbg(ATH6KL_DBG_TRC,
-					   "deleting station %pM aid=%d reason=%d\n",
-					   mac, ar->sta_list[i].aid, reason);
+				   "deleting station %pM aid=%d reason=%d\n",
+				   mac, ar->sta_list[i].aid, reason);
 				ath6kl_sta_cleanup(vif, i);
 				removed = 1;
 				break;
@@ -444,6 +459,10 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	ik = &ar->ap_mode_bkey;
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_send_msg_ipa(vif, WLAN_AP_CONNECT, vif->ndev->dev_addr);
+#endif
+
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "AP mode started on %u MHz\n", channel);
 
 	switch (vif->auth_mode) {
@@ -543,6 +562,9 @@ void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,
 		pos += 2 + pos[1];
 	}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_send_msg_ipa(vif, WLAN_CLIENT_CONNECT, mac_addr);
+#endif
 	ath6kl_add_new_sta(vif, mac_addr, aid, wpa_ie,
 			   wpa_ie ? 2 + wpa_ie[1] : 0,
 			   keymgmt, ucipher, auth, apsd_info);
@@ -700,6 +722,10 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 {
 	struct ath6kl *ar = vif->ar;
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_send_msg_ipa(vif, WLAN_STA_CONNECT, bssid);
+#endif
+
 	ath6kl_cfg80211_connect_event(vif, channel, bssid,
 				      listen_int, beacon_int,
 				      net_type, beacon_ie_len,
@@ -724,6 +750,9 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	netif_carrier_on(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+    vif->aggr_cntxt->aggr_conn->vif = vif;
+#endif
 	aggr_reset_state(vif->aggr_cntxt->aggr_conn);
 	vif->reconnect_flag = 0;
 
@@ -1033,16 +1062,42 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			     u16 prot_reason_status)
 {
 	struct ath6kl *ar = vif->ar;
+	u8 removed = 0;
 
 	if (vif->nw_type == AP_NETWORK) {
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+		{
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+				"IPA-CM: OOO: Out of order statistics.\n");
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+				"IPA-CM: OOO:Ordered Packet %d ,\
+				Out of Order packets: %d \n",
+				ordered, un_ordered );
+		}
+#endif
+
 		/* disconnect due to other STA vif switching channels */
 		if (reason == BSS_DISCONNECTED &&
 			      prot_reason_status == WMI_AP_REASON_STA_ROAM) {
 			ar->want_ch_switch |= 1 << vif->fw_vif_idx;
 			vif->ap_hold_conn = 1;
 		}
-		if (!ath6kl_remove_sta(vif, bssid, prot_reason_status))
+
+		if (!(removed = ath6kl_remove_sta(vif, bssid,
+						prot_reason_status)))
 			return;
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		if( (!removed) && (reason == BSS_DISCONNECTED)) {
+
+			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
+		}
+
+		if (!removed)
+			return;
+#endif
 
 		/* if no more associated STAs, empty the mcast PS q */
 		if (ar->sta_list_index == 0) {
@@ -1068,10 +1123,17 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		return;
 	}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_send_msg_ipa(vif, WLAN_STA_DISCONNECT, bssid);
+#endif
+
 	ath6kl_cfg80211_disconnect_event(vif, reason, bssid,
 					 assoc_resp_len, assoc_info,
 					 prot_reason_status);
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+    vif->aggr_cntxt->aggr_conn->vif = vif;
+#endif
 	aggr_reset_state(vif->aggr_cntxt->aggr_conn);
 
 	del_timer(&vif->disconnect_timer);

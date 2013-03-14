@@ -20,6 +20,22 @@
 
 #include "hif.h"
 
+enum ATH6KL_MODULE_QUIRKS {
+	/* hole */
+	/* Enable BAM2BAM feature */
+	ATH6KL_MODULE_BAM2BAM			= BIT(10),
+	/* Enable IPV6 support */
+	ATH6KL_MODULE_IPA_WITH_IPV6		= BIT(11),
+	/* Enable IPACM support */
+	ATH6KL_MODULE_IPA_WITH_IPACM		= BIT(12),
+	/* Send AMPDU packets to netif */
+	ATH6KL_MODULE_BAM_AMPDU_TO_NETIF	= BIT(13),
+};
+
+#define ATH6KL_DEF_DEBUG_QUIRKS (ATH6KL_MODULE_BAM2BAM |		\
+				ATH6KL_MODULE_IPA_WITH_IPV6 |		\
+				ATH6KL_MODULE_IPA_WITH_IPACM)
+
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
 	/* hole */
@@ -45,11 +61,16 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_USB		= BIT(21),
 	ATH6KL_DBG_USB_BULK	= BIT(22),
 	ATH6KL_DBG_PLAT		= BIT(23),
+	ATH6KL_DBG_BAM2BAM	= BIT(24),
+	ATH6KL_DBG_OOO		= BIT(25),   /* Out of order tracing */
+	ATH6KL_DBG_IPA_MSG	= BIT(26),   /* IPA message tracing */
+
 	ATH6KL_DBG_ANY	        = 0xffffffff  /* enable all logs */
 };
 
 extern unsigned int debug_mask;
 extern __printf(2, 3)
+
 int ath6kl_printk(const char *level, const char *fmt, ...);
 
 #define ath6kl_info(fmt, ...)				\
@@ -63,6 +84,11 @@ enum ath6kl_war {
 	ATH6KL_WAR_INVALID_RATE,
 };
 
+static inline int ath6kl_debug_quirks(struct ath6kl *ar,
+		enum ATH6KL_MODULE_QUIRKS mask)
+{
+	return ar->debug_quirks & mask;
+}
 #ifdef CONFIG_ATH6KL_DEBUG
 
 void ath6kl_dbg(enum ATH6K_DEBUG_MASK mask, const char *fmt, ...);
@@ -83,6 +109,7 @@ void ath6kl_debug_set_disconnect_timeout(struct ath6kl *ar, u8 timeout);
 void ath6kl_debug_init(struct ath6kl *ar);
 int ath6kl_debug_init_fs(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
+void ath6kl_print_mac_addr(enum ATH6K_DEBUG_MASK mask, u8 *mac_addr);
 
 #else
 static inline int ath6kl_dbg(enum ATH6K_DEBUG_MASK dbg_mask,
