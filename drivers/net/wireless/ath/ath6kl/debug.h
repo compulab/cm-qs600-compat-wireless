@@ -72,6 +72,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_OOO		= BIT(25),   /* Out of order tracing */
 	ATH6KL_DBG_IPA_MSG	= BIT(26),   /* IPA message tracing */
 	ATH6KL_DBG_FLOWCTRL     = BIT(27),
+	ATH6KL_DBG_LTE_COEX	= BIT(28),
 	ATH6KL_DBG_ANY	        = 0xffffffff  /* enable all logs */
 };
 

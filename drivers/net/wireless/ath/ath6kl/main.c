@@ -26,6 +26,7 @@
 #include "cfg80211.h"
 #include "target.h"
 #include "debug.h"
+#include "wmiconfig.h"
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 /* TODO: Having global variable is not good but keeping it for initial
@@ -512,6 +513,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
 	set_bit(CONNECTED, &vif->flags);
 	netif_carrier_on(vif->ndev);
+	ath6kl_lte_coex_update_wlan_data(vif, channel);
+
 }
 
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,

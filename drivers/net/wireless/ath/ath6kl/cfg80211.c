@@ -29,6 +29,7 @@
 #include "debug.h"
 #include "hif-ops.h"
 #include "testmode.h"
+#include "wmiconfig.h"
 
 #define RATETAB_ENT(_rate, _rateid, _flags) {   \
 	.bitrate    = (_rate),                  \
@@ -809,6 +810,7 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 		cfg80211_roamed_bss(vif->ndev, bss, assoc_req_ie, assoc_req_len,
 				    assoc_resp_ie, assoc_resp_len, GFP_KERNEL);
 	}
+	ath6kl_lte_coex_update_wlan_data(vif, channel);
 }
 
 static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
@@ -846,6 +848,7 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	up(&ar->sem);
 
 	vif->sme_state = SME_DISCONNECTED;
+	ath6kl_lte_coex_update_wlan_data(vif, 0);
 
 	return 0;
 }
@@ -905,6 +908,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	}
 
 	vif->sme_state = SME_DISCONNECTED;
+	ath6kl_lte_coex_update_wlan_data(vif, 0);
 
 
 	/*
@@ -3040,6 +3044,10 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		}
         }
 
+	if (ar->lte_coex && ar->lte_coex->ap_acs_ch != AP_ACS_POLICY_MAX) {
+		ath6kl_warn("%s: Changing ACS config for lte_coex", __func__);
+		p.ch = ar->lte_coex->ap_acs_ch;
+	}
         htcap  = &vif->htcap[band];
 
 
@@ -3651,6 +3659,7 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 		ath6kl_wmi_disconnect_cmd(vif->ar->wmi, vif->fw_vif_idx);
 
 	vif->sme_state = SME_DISCONNECTED;
+	ath6kl_lte_coex_update_wlan_data(vif, 0);
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
 
