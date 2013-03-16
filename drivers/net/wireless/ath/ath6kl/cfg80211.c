@@ -2789,7 +2789,6 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 
-
 static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_ap_settings *info)
 {
@@ -3037,6 +3036,9 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	res = ath6kl_wmi_ap_profile_commit(ar->wmi, vif->fw_vif_idx, &p);
 	if (res < 0)
 		return res;
+
+	if (!(cfg80211_find_ie(WLAN_EID_COUNTRY, info->beacon.tail, info->beacon.tail_len)))
+		ath6kl_wmi_set_regdomain_cmd(ar->wmi, WMI_DISABLE_REGULATORY_CODE);
 
 	return 0;
 }
