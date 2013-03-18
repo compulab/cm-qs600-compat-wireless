@@ -1409,18 +1409,18 @@ struct wmi_mcast_filter_add_del_cmd {
 	u8 mcast_mac[ATH6KL_MCAST_FILTER_MAC_ADDR_SIZE];
 } __packed;
 
-
-/* user selected ht cap info is passed as 8 bit number
- * from host to firware rather than seperate u8.
- * Meaning of each bit set is defined  below. Currently
- * 5 bits are used for STBC and LDPC on u8.
- */
-#define WMI_HTCAP_RX_STBC_1SS		0x0001
-#define WMI_HTCAP_RX_STBC_2SS		0x0002
-#define WMI_HTCAP_RX_STBC_3SS		0x0004
-#define WMI_HTCAP_TX_STBC		0x0008
-#define WMI_HTCAP_RX_STBC_C		0x0007
-#define WMI_HTCAP_LDPC_CODING		0x0010
+/* user selected ldpc and stbc infor are passed as bit field
+ * in enable param along 11n enable status from host to
+ * firmware. Meaning of each bit set is defined  below.
+ * Currently  5 bits are used for LDPC and STBC in u8 enable.
+ * this is only for MDM9x25 project, rest is similar to old
+ * */
+#define WMI_HTCAP_11N_ENABLE		BIT(0)
+#define WMI_HTCAP_LDPC_CODING		BIT(1)
+#define WMI_HTCAP_RX_STBC_1SS		BIT(2)
+#define WMI_HTCAP_RX_STBC_2SS		BIT(3)
+#define WMI_HTCAP_RX_STBC_3SS		BIT(4)
+#define WMI_HTCAP_TX_STBC		BIT(5)
 
 struct wmi_set_htcap_cmd {
 	u8 band;
@@ -1430,7 +1430,6 @@ struct wmi_set_htcap_cmd {
 	u8 ht40_sgi;
 	u8 intolerant_40mhz;
 	u8 max_ampdu_len_exp;
-	u8 htcap_info;
 } __packed;
 
 /* Command Replies */

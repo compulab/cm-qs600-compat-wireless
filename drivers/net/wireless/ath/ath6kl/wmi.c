@@ -3074,7 +3074,10 @@ int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,
 	 * band value, the host needs to be fixed.
 	 */
 	cmd->band = band;
-	cmd->ht_enable = !!htcap->ht_enable;
+	if(htcap->ht_enable)
+		cmd->ht_enable |= WMI_HTCAP_11N_ENABLE;
+	else
+		cmd->ht_enable = 0;
 	cmd->ht20_sgi = !!(htcap->cap_info & IEEE80211_HT_CAP_SGI_20);
 	cmd->ht40_supported =
 		!!(htcap->cap_info & IEEE80211_HT_CAP_SUP_WIDTH_20_40);
@@ -3083,39 +3086,34 @@ int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,
 		!!(htcap->cap_info & IEEE80211_HT_CAP_40MHZ_INTOLERANT);
 	cmd->max_ampdu_len_exp = htcap->ampdu_factor;
 
-	cmd->htcap_info = 0;
-
-	/* update u8 htcap bit field as per user config to send firmware */
+	/* update ldpc and stbc info in ht_enable as bit field
+	 as per user config along with 11n enable status */
+	if (htcap->cap_info & IEEE80211_HT_CAP_LDPC_CODING) {
+		cmd->ht_enable &= ~WMI_HTCAP_LDPC_CODING;
+		cmd->ht_enable |= WMI_HTCAP_LDPC_CODING;
+	}
 	if(htcap->cap_info & (1 << IEEE80211_HT_CAP_RX_STBC_SHIFT)) {
-		cmd->htcap_info &= ~WMI_HTCAP_RX_STBC_1SS;
-		cmd->htcap_info |= WMI_HTCAP_RX_STBC_1SS;
+		cmd->ht_enable &= ~WMI_HTCAP_RX_STBC_1SS;
+		cmd->ht_enable |= WMI_HTCAP_RX_STBC_1SS;
 	}
-	if (htcap->cap_info & (1 << (IEEE80211_HT_CAP_RX_STBC_SHIFT+1))){
-		cmd->htcap_info &= ~WMI_HTCAP_RX_STBC_2SS;
-		cmd->htcap_info |= WMI_HTCAP_RX_STBC_2SS;
+	if (htcap->cap_info & (1 << (IEEE80211_HT_CAP_RX_STBC_SHIFT+1))) {
+		cmd->ht_enable &= ~WMI_HTCAP_RX_STBC_2SS;
+		cmd->ht_enable |= WMI_HTCAP_RX_STBC_2SS;
 	}
-	if((htcap->cap_info & (1 << IEEE80211_HT_CAP_RX_STBC_SHIFT)) &&
-		(htcap->cap_info & (1 << (IEEE80211_HT_CAP_RX_STBC_SHIFT+1)))){
-		cmd->htcap_info &= ~WMI_HTCAP_RX_STBC_C;
-		cmd->htcap_info |= WMI_HTCAP_RX_STBC_3SS;
+	if(htcap->cap_info & IEEE80211_HT_CAP_RX_STBC) {
+		cmd->ht_enable &= ~WMI_HTCAP_RX_STBC_1SS;
+		cmd->ht_enable &= ~WMI_HTCAP_RX_STBC_2SS;
+		cmd->ht_enable |= WMI_HTCAP_RX_STBC_3SS;
 	}
-	if (htcap->cap_info & IEEE80211_HT_CAP_TX_STBC){
-		cmd->htcap_info &= ~WMI_HTCAP_TX_STBC;
-		cmd->htcap_info |= WMI_HTCAP_TX_STBC;
-	}
-	if (htcap->cap_info & IEEE80211_HT_CAP_LDPC_CODING){
-		cmd->htcap_info &= ~WMI_HTCAP_LDPC_CODING;
-		cmd->htcap_info |= WMI_HTCAP_LDPC_CODING;
+	if (htcap->cap_info & IEEE80211_HT_CAP_TX_STBC) {
+		cmd->ht_enable &= ~WMI_HTCAP_TX_STBC;
+		cmd->ht_enable |= WMI_HTCAP_TX_STBC;
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_WMI,
-		   "Set htcap: band:%d ht_enable:%d 40mhz:%d sgi_20mhz:%d sgi_40mhz:%d 40mhz_intolerant:%d ampdu_len_exp:%d\n \
-			stbc_rx_1ss :%d stbc_rx_2ss :%d stbc_rx_3ss :%d stbc_tx : %d ldpc : %d\n ",
+		   "Set htcap: band:%d ht_enable:%d 40mhz:%d sgi_20mhz:%d sgi_40mhz:%d 40mhz_intolerant:%d ampdu_len_exp:%d\n",
 		   cmd->band, cmd->ht_enable, cmd->ht40_supported,
-		   cmd->ht20_sgi, cmd->ht40_sgi, cmd->intolerant_40mhz,
-		   cmd->max_ampdu_len_exp,(cmd->htcap_info & WMI_HTCAP_RX_STBC_1SS),
-		   (cmd->htcap_info & WMI_HTCAP_RX_STBC_2SS),(cmd->htcap_info & WMI_HTCAP_RX_STBC_3SS),
-		   (cmd->htcap_info & WMI_HTCAP_TX_STBC),(cmd->htcap_info & WMI_HTCAP_LDPC_CODING));
+		   cmd->ht20_sgi, cmd->ht40_sgi, cmd->intolerant_40mhz, cmd->max_ampdu_len_exp);
 
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_HT_CAP_CMDID,
 				   NO_SYNC_WMIFLAG);
