@@ -2982,6 +2982,7 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			     info->channel_type != NL80211_CHAN_NO_HT))
 		return -EIO;
 
+        memset(&(vif->ap_acl_list),0,sizeof(struct wmi_ap_acl_list));
 #ifdef CONFIG_ACL_BLWL_MAC
         if (test_bit(ATH6KL_FW_CAPABILITY_MAC_ACL, ar->fw_capabilities)) {
                 res = ath6kl_wmi_set_acl_policy(ar->wmi, vif->fw_vif_idx,
@@ -3476,19 +3477,21 @@ static int ath6kl_set_mac_acl(struct wiphy *wiphy,
 		return err;
 #endif
        /* Reset the acl list */
-       err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, 0, zero_mac,
-                                     acl_info->acl_policy, true);
+       err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, 0, zero_mac, 0,
+                                     acl_info->acl_policy, WMI_ACL_RESET_MAC_ADDR);
        if (err)
 		return err;
 
        for (i = 0; i < acl_info->n_acl_entries; i++) {
                err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, i,
 						acl_info->mac_addrs[i].addr,
-						acl_info->acl_policy, false);
+						acl_info->mac_addrs[i].wild,
+						acl_info->acl_policy, WMI_ACL_ADD_MAC_ADDR);
                if (err)
 			return err;
        }
 
+#ifdef CONFIG_ACL_BLWL_MAC
        /*
         * Notify fw of the state that the host is done with setting
         * the acl list. This is done with a special configuration
@@ -3498,9 +3501,9 @@ static int ath6kl_set_mac_acl(struct wiphy *wiphy,
         * this notification.
         */
 	err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx,
-					MAC_ACL_INDEX_EOL, zero_mac,
-					acl_info->acl_policy, false);
-
+					MAC_ACL_INDEX_EOL, zero_mac, 0,
+					acl_info->acl_policy, WMI_ACL_ADD_MAC_ADDR);
+#endif
 	return err;
 }
 

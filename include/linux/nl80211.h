@@ -1529,6 +1529,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_MAC_ADDRS,
 
+	NL80211_ATTR_MAC_ADDRS_WILD,
+
 	NL80211_ATTR_ACL_POLICY,
 
 	/* add attributes here, update the policy in nl80211.c */

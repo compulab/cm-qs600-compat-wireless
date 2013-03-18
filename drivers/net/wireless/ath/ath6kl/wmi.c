@@ -22,6 +22,7 @@
 #include "testmode.h"
 #include "../regd.h"
 #include "../regd_common.h"
+#include <ctype.h>
 
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
@@ -3767,12 +3768,74 @@ int ath6kl_wmi_set_acl_policy(struct wmi *wmi, u8 if_idx, bool enable_acl)
                                   NO_SYNC_WMIFLAG);
 }
 
+static int ath6kl_mac_cmp_wild(const char *mac, const char *new_mac, const char wild, const char new_wild)
+{
+	int i;
+	static const u8 zero_mac[ETH_ALEN] = { 0 };
+
+	for(i=0;i<ETH_ALEN;i++) {
+		if((wild & 1<<i) && (new_wild & 1<<i)) continue;
+		if(mac[i] != new_mac[i]) return 1;
+	}
+	if((memcmp(new_mac, zero_mac, 6)==0) && new_wild &&
+			(wild != new_wild)) {
+		return 1;
+	}
+
+	return 0;
+}
+
+int ath6kl_acl_add_del_mac(struct wmi_ap_acl_list* a, struct wmi_set_acl_list_cmd *acl)
+{
+	int already_avail=-1, free_slot=-1, i;
+
+	/* To check whether this mac is already there in our list */
+	for(i=MAX_ACL_MAC_ADDRS-1;i>=0;i--)
+	{
+		if(ath6kl_mac_cmp_wild(a->acl_mac[i], acl->mac, a->wildcard[i],
+					acl->wildcard)==0)
+			already_avail = i;
+
+		if(!((1 << i) & a->index))
+			free_slot = i;
+	}
+
+	if(acl->action == WMI_ACL_ADD_MAC_ADDR)
+	{
+		/* Dont add mac if it is already available */
+		if((already_avail >= 0) || (free_slot == -1))
+			return 0;
+
+		memcpy(a->acl_mac[free_slot], acl->mac, ETH_ALEN);
+		a->index = a->index | (1 << free_slot);
+		acl->index = free_slot;
+		a->wildcard[free_slot] = acl->wildcard;
+		return 1;
+	}
+	else if(acl->action == WMI_ACL_DEL_MAC_ADDR)
+	{
+		if(acl->index >= MAX_ACL_MAC_ADDRS)
+			return 0;
+
+		if(!(a->index & (1 << acl->index)))
+			return 0;
+
+		memset(a->acl_mac[acl->index], 0, ETH_ALEN);
+		a->index = a->index & ~(1 << acl->index);
+		a->wildcard[acl->index] = 0;
+		return 1;
+	}
+
+	return 0;
+}
+
 int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
-                           const u8 *mac_addr,
-                           enum nl80211_acl_policy_attr acl_policy, bool reset)
+                           const u8 *mac_addr, const u8 wildcard,
+                           enum nl80211_acl_policy_attr acl_policy, u8 acl_action)
 {
        struct sk_buff *skb;
        struct wmi_set_acl_list_cmd *cmd;
+       struct ath6kl_vif *vif;
 
        skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
        if (!skb)
@@ -3784,7 +3847,7 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
        memcpy(cmd->mac, mac_addr, ETH_ALEN);
 
 #ifdef CONFIG_ACL_BLWL_MAC
-       if (reset) {
+       if (acl_action == WMI_ACL_RESET_MAC_ADDR) {
                if (acl_policy == NL80211_ACL_POLICY_ACCEPT)
                        cmd->action = WMI_ACL_RESET_WHITE_LIST;
                else
@@ -3796,14 +3859,27 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
                        cmd->action = WMI_ACL_ADD_BLACK_MAC_ADDR;
        }
 #else
-       if (reset)
+       if (acl_action == WMI_ACL_RESET_MAC_ADDR)
               cmd->action = WMI_ACL_RESET_LIST;
+       else if (acl_action == WMI_ACL_DEL_MAC_ADDR)
+              cmd->action = WMI_ACL_DEL_MAC_ADDR;
        else
               cmd->action = WMI_ACL_ADD_MAC_ADDR;
+
+       if (acl_action != WMI_ACL_RESET_MAC_ADDR) {
+           cmd->wildcard = wildcard;
+           vif = ath6kl_get_vif_by_index(wmi->parent_dev, if_idx);
+           if (!ath6kl_acl_add_del_mac(&(vif->ap_acl_list), cmd)) {
+               ath6kl_dbg(ATH6KL_DBG_WMI, "could not set acl mac: index:%d action:%d mac:%pM wild:%d acl_action:%d\n",
+                      cmd->index, cmd->action, cmd->mac, cmd->wildcard, acl_action);
+               dev_kfree_skb(skb);
+               return -2;
+           }
+       }
 #endif
 
-       ath6kl_dbg(ATH6KL_DBG_WMI, "set acl mac: index:%d action:%d mac:%pM reset:%d\n",
-                  cmd->index, cmd->action, cmd->mac, reset);
+       ath6kl_dbg(ATH6KL_DBG_WMI, "set acl mac: index:%d action:%d mac:%pM wild:%d acl_action:%d\n",
+                  cmd->index, cmd->action, cmd->mac, cmd->wildcard, acl_action);
 
        return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_AP_ACL_MAC_LIST_CMDID,
                                   NO_SYNC_WMIFLAG);

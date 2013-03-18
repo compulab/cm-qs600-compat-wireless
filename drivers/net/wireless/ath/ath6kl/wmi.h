@@ -2557,6 +2557,7 @@ struct wmi_ap_mode_stat {
 #define WMI_ACL_BLWL_MAC       0x3
 #define WMI_ACL_RESET_LIST     0x4
 
+#define WMI_ACL_RESET_MAC_ADDR  0
 #define WMI_ACL_ADD_MAC_ADDR    1
 #define WMI_ACL_DEL_MAC_ADDR    2
 
@@ -2566,6 +2567,13 @@ enum wmi_mac_acl_action {
        WMI_ACL_RESET_WHITE_LIST,
        WMI_ACL_RESET_BLACK_LIST,
        WMI_ACL_RESET_BW_LIST = 0x10,
+};
+
+struct wmi_ap_acl_list {
+	u16 index;
+	u8 acl_mac[MAX_ACL_MAC_ADDRS][ETH_ALEN];
+	u8 wildcard[MAX_ACL_MAC_ADDRS];
+	u8 policy;
 };
 
 struct wmi_set_acl_list_cmd {
@@ -2936,10 +2944,12 @@ int ath6kl_wmi_set_ie_cmd(struct wmi *wmi, u8 if_idx, u8 ie_id, u8 ie_field,
 
 int ath6kl_wmi_set_rate_ctrl_cmd(struct wmi *wmi, u8 if_idx, u32 ratemode);
 int ath6kl_wmi_set_acl_policy(struct wmi *wmi, u8 if_idx, bool enable_acl);
+int ath6kl_wmi_add_del_acl(struct wmi *wmi, u8 if_idx, const u8 *mac_addr,
+                           u8 acl_action);
 int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
-                           const u8 *mac_addr,
+                           const u8 *mac_addr, const u8 wildcard,
                            enum nl80211_acl_policy_attr acl_policy,
-                           bool reset);
+                           u8 acl_action);
 
 /* P2P */
 int ath6kl_wmi_disable_11b_rates_cmd(struct wmi *wmi, bool disable);
