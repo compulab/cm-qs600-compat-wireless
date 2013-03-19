@@ -25,17 +25,22 @@
 #include <linux/circ_buf.h>
 #include <net/cfg80211.h>
 #include <linux/wireless.h>
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#include <linux/msm_ipa.h>	/* IPA driver */
+#include <mach/ipa.h>		/* IPA driver */
+#include <mach/usb_bam.h>	/* BAM driver */
+#endif
 #include "htc.h"
 #include "wmi.h"
 #include "bmi.h"
 #include "target.h"
 
-#define MAX_ATH6KL                        1
-#define ATH6KL_MAX_RX_BUFFERS             16
-#define ATH6KL_BUFFER_SIZE                1664
-#define ATH6KL_MAX_AMSDU_RX_BUFFERS       4
-#define ATH6KL_AMSDU_REFILL_THRESHOLD     3
-#define ATH6KL_AMSDU_BUFFER_SIZE     (WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH + 128)
+#define MAX_ATH6KL			1
+#define ATH6KL_MAX_RX_BUFFERS		16
+#define ATH6KL_BUFFER_SIZE		1664
+#define ATH6KL_MAX_AMSDU_RX_BUFFERS	4
+#define ATH6KL_AMSDU_REFILL_THRESHOLD	3
+#define ATH6KL_AMSDU_BUFFER_SIZE	(WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH + 128)
 #define MAX_MSDU_SUBFRAME_PAYLOAD_LEN	1508
 #define MIN_MSDU_SUBFRAME_PAYLOAD_LEN	46
 
@@ -53,8 +58,13 @@
 #define BDATA_CHECKSUM_OFFSET                 4
 #define BDATA_MAC_ADDR_OFFSET                 8
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+/* HBM needs 4 bytes alligned, and having issue with 3 bytes aligned */
+#define ATH6KL_HTC_ALIGN_BYTES  4
+#else
 /* Extra bytes for htc header alignment */
 #define ATH6KL_HTC_ALIGN_BYTES 3
+#endif
 
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
 #define MAX_DEF_COOKIE_NUM                180
@@ -127,13 +137,13 @@ enum ath6kl_fw_capability {
 	ATH6KL_FW_CAPABILITY_CUSTOM_MAC_ADDR,
 
 	/* Firmware supports TX error rate notification */
-        ATH6KL_FW_CAPABILITY_TX_ERR_NOTIFY,
+	ATH6KL_FW_CAPABILITY_TX_ERR_NOTIFY,
 
-        /* supports WMI_SET_REGDOMAIN_CMDID command */
-        ATH6KL_FW_CAPABILITY_REGDOMAIN,
+	/* supports WMI_SET_REGDOMAIN_CMDID command */
+	ATH6KL_FW_CAPABILITY_REGDOMAIN,
 
-        /* Firmware supports sched scan decoupled from host sleep */
-        ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2,
+	/* Firmware supports sched scan decoupled from host sleep */
+	ATH6KL_FW_CAPABILITY_SCHED_SCAN_V2,
 
 	/* Firmware supports HT-40 in 2.4Ghz band */
 	ATH6KL_FW_CAPABILITY_2GIG_HT40_SUPPORT,
@@ -300,7 +310,11 @@ struct ath6kl_traffic_activity_change {
 
 #define AGGR_NUM_OF_FREE_NETBUFS    16
 
-#define AGGR_RX_TIMEOUT     100	/* in ms */
+#ifdef CONFIG_ATH6KL_BAM2BAM
+#define AGGR_RX_TIMEOUT			200	/* in ms */
+#else
+#define AGGR_RX_TIMEOUT			100	/* in ms */
+#endif
 
 #define WMI_TIMEOUT (2 * HZ)
 
@@ -389,6 +403,9 @@ struct aggr_info_conn {
 	struct net_device *dev;
 	struct rxtid rx_tid[NUM_OF_TIDS];
 	struct rxtid_stats stat[NUM_OF_TIDS];
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	struct ath6kl_vif *vif;
+#endif
 	struct aggr_info *aggr_info;
 };
 
@@ -853,6 +870,8 @@ struct ath6kl {
 
 	bool wiphy_registered;
 
+	u32 debug_quirks;
+
 #ifdef CONFIG_ATH6KL_DEBUG
 	struct {
 		struct sk_buff_head fwlog_queue;
@@ -880,13 +899,110 @@ struct ath6kl {
 #endif /* CONFIG_ATH6KL_DEBUG */
 };
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+/*! Fixed header configuration required in IPA end-point
+	for RX/TX [ HTC (6) + WMI(6) + 802.3 (14) + LLC SNAP (8) ]
+
+Rx-Pipe (From HSIC/HSUSB to IPA)
+===============================
+
+WLAN Header - 12 Bytes (HTC + WMI)
+--------------------------------
+HTC - 6 bytes (Byte1: MSB, Byte6 : LSB)
+Byte1-6: Reserved for WLAN
+
+WMI - 6 bytes (Byte1: MSB, Byte6 : LSB)
+Byte1: Reserved
+Byte2:
+	D4-D0: Reserved
+	D6 : Client Power Save (0x20)
+	D7,D6 : Reserved
+Byte3,4,5 : Reserved for WLAN
+(Byte5 and 6 are from 16 bit value, little endian, with the below order)
+Byte5:(LSB)
+Byte6:(MSB)
+	D0 : Exception bit (0-LTE, 1-Data to Host)
+	D1 : Flush re-ordered packets to ampdu pipe
+	D2 : WLAN or WAN [0-WLAN(Rx2), 1-WAN(Rx3)]
+		[IPA to check and apply Source NAT or Destination NAT]
+	D3 : Intra BSS
+	D4 : FCS
+	D5-D7 : Reserved for future requirement
+
+802.3 Header - 14 bytes
+-----------------------
+Source MAC address 	: 6 bytes
+Destination MAC address : 6 bytes
+Type/Length 		: 2 bytes
+
+LLC SNAP - 8 bytes
+------------------
+(ipv4 / ipv6 settings)
+
+Tx-Pipe (From IPA to HSIC/HSUSB
+-------------------------------
+HTC - 6 Bytes (Byte1: MSB, Byte6 : LSB)
+Byte1,2 : Reserved for WLAN
+Byte3,4 : Length (To be filled by IPA in big endian. Length is calculated from
+	the next byte)
+Byte5,6 : Reserved
+
+WMI - 6 bytes (Byte1: MSB, Byte6 : LSB)
+Byte1,2,3,4 : Reserved for WLAN
+Byte5 : D0,D1 (Device ID, WLAN fills this while adding partial header during
+	interface is up)
+	00 -"wlan0 - AP"
+	01 -"wlan1 - STA"
+	02 -"wlan2" (for future use)
+	03 to 07-Reserved
+Byte6 :
+	D0 : Data from (1-Host, 0-IPA) [Filled by WLAN configuration module]
+	D1 : Endianess (1-Little, 0-Big) [Filled by WLAN configuration module]
+	D2-D7 : Reserved for future requirement
+
+802.3 Header - 14 bytes
+Source MAC Address	 : 6 bytes (filled by WLAN)
+Destination MAC Address  : 6 bytes (To be filled by IPA)
+Type/Length 		 : 2 bytes [Set to zero, WLAN FW will not use this]
+
+LLC SNAP - 8 bytes [Filled by WLAN configuration module]
+
+*/
+
+#define ATH6KL_IPA_WLAN_MAC_ADDR_SIZE		6
+#define ATH6KL_IPA_WLAN_HDR_LENGTH 		34
+#define ATH6KL_IPA_WLAN_MAX_TX_PIPE	 	4
+#define ATH6KL_IPA_WLAN_MAX_RX_PIPE	 	1
+#define ATH6KL_IPA_WLAN_META_DATA_LEN		30
+#define ATH6KL_IPA_WLAN_HDR_PARTIAL		1
+#define ATH6KL_IPA_WLAN_IPA_HDR_COMPLETE	0
+#define ATH6KL_IPA_TX_PKT_LEN_POS		28
+
+/* SYSBAM PIPE defines */
+#define MAX_SYSBAM_PIPE				1
+
+enum ath6kl_ipa_api_result {
+	ATH6KL_IPA_SUCCESS = 0,
+	ATH6KL_IPA_FAILURE = -1,
+};
+
+enum ath6kl_bam_tx_evt_type {
+	AMPDU_FLUSH = 0,
+	BAM_WMM_AC_BK,
+	BAM_WMM_AC_BE,
+	BAM_WMM_AC_VI,
+	BAM_WMM_AC_VO
+};
+
+#endif
+
 static inline struct ath6kl *ath6kl_priv(struct net_device *dev)
 {
 	return ((struct ath6kl_vif *) netdev_priv(dev))->ar;
 }
 
 static inline u32 ath6kl_get_hi_item_addr(struct ath6kl *ar,
-					  u32 item_offset)
+					u32 item_offset)
 {
 	u32 addr = 0;
 
@@ -991,5 +1107,33 @@ void ath6kl_core_cleanup(struct ath6kl *ar);
 void ath6kl_core_destroy(struct ath6kl *ar);
 void ath6kl_ap_restart_timer(unsigned long ptr);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+/* IPA configuration related APIs */
+int ath6kl_ipa_add_flt_rule(struct ath6kl *ar, enum ipa_client_type client);
+int ath6kl_ipa_add_header_info(struct ath6kl *ar, u8 sta_ap, u8 device_id,
+		char *hdr_name, u8 *mac_addr);
+int ath6kl_ipa_get_header_info(char *hdr_name, uint32_t *hdl);
+int ath6kl_ipa_register_interface(struct ath6kl *ar,u8 sta_ap, const char *name,
+		char *hdr_name);
+int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg);
+int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
+								u8 *mac_addr);
+
+/* IPA SYSBAM configuration related APIs */
+void ath6kl_disconnect_sysbam_pipes(void);
+int ath6kl_usb_create_sysbam_pipes(void);
+
+/* Out of order processing APIs */
+void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
+		u8 aid);
+int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
+		u8 ac_category);
+/* Power save event handler */
+void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid);
+/* IPA interface clean up */
+void ath6kl_clean_ipa_interfaces(struct ath6kl *ar, char *name);
+void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar);
+#endif
 
 #endif /* CORE_H */

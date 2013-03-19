@@ -142,7 +142,7 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 			credits_required = 0;
 
 		} else if (ep->eid >= ENDPOINT_2 && ep->eid <= ENDPOINT_5) {
-	
+
 			if (target->avail_tx_credits < credits_required)
 				break;
 			target->avail_tx_credits -= credits_required;
@@ -261,6 +261,11 @@ static int htc_issue_packets(struct htc_target *target,
 
 		/* Endianess? */
 		put_unaligned((u16) payload_len, &htc_hdr->payld_len);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		/* IPA process the data in Big Endian */
+		if (ath6kl_debug_quirks(target->dev->ar, ATH6KL_MODULE_BAM2BAM))
+			htc_hdr->payld_len = cpu_to_be16(htc_hdr->payld_len);
+#endif
 		htc_hdr->flags = packet->info.tx.flags;
 		htc_hdr->eid = (u8) packet->endpoint;
 		htc_hdr->ctrl[0] = 0;
@@ -1090,7 +1095,7 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 		skb = NULL;
 		goto free_skb;
 	}
- 
+
 	htc_hdr = (struct htc_frame_hdr *) netdata;
 
 	ep = &target->endpoint[htc_hdr->eid];
@@ -1402,7 +1407,15 @@ static int ath6kl_htc_pipe_conn_service(struct htc_target *target,
 		/* tell target desired recv alloc for this ep */
 		flags = tx_alloc << HTC_CONN_FLGS_SET_RECV_ALLOC_SHIFT;
 		conn_msg->conn_flags |= cpu_to_le16(flags);
-
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM))
+		{
+			conn_msg->conn_flags |=
+				cpu_to_le16(conn_req->conn_flags
+					| HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL);
+			disable_credit_flowctrl = true;
+		}
+#endif
 		if (conn_req->conn_flags &
 		    HTC_CONN_FLGS_DISABLE_CRED_FLOW_CTRL) {
 			disable_credit_flowctrl = true;
