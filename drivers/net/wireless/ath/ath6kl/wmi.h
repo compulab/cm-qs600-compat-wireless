@@ -195,6 +195,16 @@ enum wmi_data_hdr_flags {
 #define WMI_DATA_HDR_TRIG	    0x10
 #define WMI_DATA_HDR_EOSP	    0x10
 
+#define WMI_DATA_HDR_EXCEPTION_BIT_MASK                  0x1
+#define WMI_DATA_HDR_EXCEPTION_BIT_SHIFT                 8
+
+#define WMI_DATA_HDR_AMPDU_FLUSH_BIT_MASK                0x1
+#define WMI_DATA_HDR_AMPDU_FLUSH_BIT_SHIFT               9
+
+#define WMI_DATA_HDR_DUMMY_DATA_BIT_MASK                0x1
+#define WMI_DATA_HDR_DUMMY_DATA_BIT_SHIFT               12
+
+
 struct wmi_data_hdr {
 	s8 rssi;
 
@@ -273,6 +283,25 @@ static inline u8 wmi_data_hdr_get_if_idx(struct wmi_data_hdr *dhdr)
 	return le16_to_cpu(dhdr->info3) & WMI_DATA_HDR_IF_IDX_MASK;
 }
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+static inline u16 wmi_data_hdr_is_exception(struct wmi_data_hdr *dhdr)
+{
+	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_EXCEPTION_BIT_SHIFT) &
+				WMI_DATA_HDR_EXCEPTION_BIT_MASK;
+}
+
+static inline u16 wmi_data_hdr_is_ampdu_flush(struct wmi_data_hdr *dhdr)
+{
+	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_AMPDU_FLUSH_BIT_SHIFT) &
+				 WMI_DATA_HDR_AMPDU_FLUSH_BIT_MASK;
+}
+
+static inline u16 wmi_data_hdr_is_dummy_data(struct wmi_data_hdr *dhdr)
+{
+	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_DUMMY_DATA_BIT_SHIFT) &
+				 WMI_DATA_HDR_DUMMY_DATA_BIT_MASK;
+}
+#endif
 /* Tx meta version definitions */
 #define WMI_MAX_TX_META_SZ	12
 #define WMI_META_VERSION_1	0x01
@@ -1581,6 +1610,10 @@ enum wmi_event_id {
 	WMI_BSS_RSSI_INFO_EVENTID,
 	WMI_ARGOS_EVENTID,
 	WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID	= 0x9020,
+	WMI_SEND_DUMMY_DATA_EVENTID = 0x9021,
+	WMI_FLUSH_BUFFERED_DATA_EVENTID,
+    WMI_WLAN_INFO_LTE_EVENTID,
+    WMI_CLIENT_POWER_SAVE_EVENTID,
 
 };
 
@@ -2660,6 +2693,23 @@ struct wmi_p2p_capabilities_event {
 	__le16 len;
 	u8 data[0];
 } __packed;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+struct wmi_flush_buffered_data_event {
+        u16 seq_no;
+        u8 aid;
+        u8 tid;
+}__packed;
+
+struct wmi_send_dummy_data_event {
+        u8 num_packets;
+        u8 ac_category;
+}__packed;
+
+struct wmi_client_power_save_event {
+    u8 power_save;
+    u8 aid;
+}__packed;
+#endif
 
 struct wmi_p2p_rx_probe_req_event {
 	__le32 freq;

@@ -639,6 +639,40 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return -EIO;
 	}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM))
+	{
+		/* Enable BAM2BAM support in FW */
+		param = 0;
+		if (ath6kl_bmi_read_hi32(ar, hi_option_flag2, &param) != 0) {
+			ath6kl_err("bmi_read_memory for BAM2BAM failed\n");
+			return -EIO;
+		}
+
+		param |= HI_OPTION_BAM2BAM_MODE;
+
+		if (ath6kl_bmi_write_hi32(ar, hi_option_flag2, param) != 0) {
+			ath6kl_err("bmi_write_memory for BAM2BAM failed\n");
+			return -EIO;
+		}
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "Enabling BAM2BAM mode\n");
+
+		/* AMSDU is offloaded to f/w for BAM2BAM mode */
+		param = 0;
+		if (ath6kl_bmi_read_hi32(ar, hi_option_flag2, &param) != 0) {
+			ath6kl_err("bmi_read_memory for AMSDU failed\n");
+			return -EIO;
+		}
+
+		param |= AMSDU_SLICING_OFFLOAD_TO_FW;
+
+		if (ath6kl_bmi_write_hi32(ar, hi_option_flag2, param) != 0) {
+			ath6kl_err("bmi_write_memory for AMSDU failed\n");
+			return -EIO;
+		}
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "Offloading AMSDU slicing to FW\n");
+	}
+#endif
 	/* set the firmware mode to STA/IBSS/AP */
 	param = 0;
 
@@ -1871,6 +1905,13 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 
 	netif_stop_queue(vif->ndev);
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_IPA_WITH_IPACM))
+	{
+		ath6kl_clean_ipa_interfaces(vif->ar, vif->ndev->name);
+	}
+#endif
+
 	clear_bit(WLAN_ENABLED, &vif->flags);
 
 	if (wmi_ready) {
@@ -1912,7 +1953,12 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	}
 
 	for (i = 0; i < AP_MAX_NUM_STA; i++)
+	{
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		ar->sta_list[i].aggr_conn->vif = ar->sta_list[i].vif;
+#endif
 		aggr_reset_state(ar->sta_list[i].aggr_conn);
+	}
 
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
