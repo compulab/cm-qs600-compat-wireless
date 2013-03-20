@@ -323,14 +323,14 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		// for BK
 		artxprop[8].ip = IPA_IP_v6;
 		memset(&artxprop[8].attrib,0,sizeof(artxprop[8].attrib));
-		artxprop[8].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[8].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[8].attrib.u.v6.tc = 1;
 		artxprop[8].dst_pipe = IPA_CLIENT_HSIC2_CONS;
 		strcpy(artxprop[8].hdr_name,hdr_name);
 
 		artxprop[9].ip = IPA_IP_v6;
 		memset(&artxprop[9].attrib,0,sizeof(artxprop[9].attrib));
-		artxprop[9].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[9].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[9].attrib.u.v6.tc = 2;
 		artxprop[9].dst_pipe = IPA_CLIENT_HSIC2_CONS;
 		strcpy(artxprop[9].hdr_name,hdr_name);
@@ -338,14 +338,14 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		// for BE
 		artxprop[10].ip = IPA_IP_v6;
 		memset(&artxprop[10].attrib,0,sizeof(artxprop[10].attrib));
-		artxprop[10].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[10].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[10].attrib.u.v6.tc = 0;
 		artxprop[10].dst_pipe = IPA_CLIENT_HSIC1_CONS;
 		strcpy(artxprop[10].hdr_name,hdr_name);
 
 		artxprop[11].ip = IPA_IP_v6;
 		memset(&artxprop[11].attrib,0,sizeof(artxprop[11].attrib));
-		artxprop[11].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[11].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[11].attrib.u.v6.tc = 3;
 		artxprop[11].dst_pipe = IPA_CLIENT_HSIC1_CONS;
 		strcpy(artxprop[11].hdr_name,hdr_name);
@@ -353,14 +353,14 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		// for VO
 		artxprop[12].ip = IPA_IP_v6;
 		memset(&artxprop[12].attrib,0,sizeof(artxprop[12].attrib));
-		artxprop[12].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[12].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[12].attrib.u.v6.tc = 4;
 		artxprop[12].dst_pipe = IPA_CLIENT_HSIC3_CONS;
 		strcpy(artxprop[12].hdr_name,hdr_name);
 
 		artxprop[13].ip = IPA_IP_v6;
 		memset(&artxprop[13].attrib,0,sizeof(artxprop[13].attrib));
-		artxprop[13].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[13].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[13].attrib.u.v6.tc = 5;
 		artxprop[13].dst_pipe = IPA_CLIENT_HSIC3_CONS;
 		strcpy(artxprop[13].hdr_name,hdr_name);
@@ -368,14 +368,14 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		// for VI
 		artxprop[14].ip = IPA_IP_v6;
 		memset(&artxprop[14].attrib,0,sizeof(artxprop[14].attrib));
-		artxprop[14].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[14].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[14].attrib.u.v6.tc = 6;
 		artxprop[14].dst_pipe = IPA_CLIENT_HSIC4_CONS;
 		strcpy(artxprop[14].hdr_name,hdr_name);
 
 		artxprop[15].ip = IPA_IP_v6;
 		memset(&artxprop[15].attrib,0,sizeof(artxprop[15].attrib));
-		artxprop[15].attrib.attrib_mask = IPA_FLT_TOS;
+		artxprop[15].attrib.attrib_mask = IPA_FLT_TC;
 		artxprop[15].attrib.u.v6.tc = 7;
 		artxprop[15].dst_pipe = IPA_CLIENT_HSIC4_CONS;
 		strcpy(artxprop[15].hdr_name,hdr_name);
