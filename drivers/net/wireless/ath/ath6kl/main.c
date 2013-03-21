@@ -1067,8 +1067,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	if (vif->nw_type == AP_NETWORK) {
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
-		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
-		{
+		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM)) {
 			ath6kl_dbg(ATH6KL_DBG_OOO,
 				"IPA-CM: OOO: Out of order statistics.\n");
 			ath6kl_dbg(ATH6KL_DBG_OOO,
@@ -1086,18 +1085,14 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		}
 
 		if (!(removed = ath6kl_remove_sta(vif, bssid,
-						prot_reason_status)))
-			return;
-
+						prot_reason_status))) {
 #ifdef CONFIG_ATH6KL_BAM2BAM
-		if( (!removed) && (reason == BSS_DISCONNECTED)) {
-
-			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
-		}
-
-		if (!removed)
-			return;
+			if(reason == BSS_DISCONNECTED)
+				ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT,
+								bssid);
 #endif
+			return;
+		}
 
 		/* if no more associated STAs, empty the mcast PS q */
 		if (ar->sta_list_index == 0) {

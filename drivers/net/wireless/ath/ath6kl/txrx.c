@@ -403,10 +403,15 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		rxintf.num_props = 1;
 	}
 #else
-/* Allocate only for IPV4 by default*/
+	/* Allocate only for IPV4 by default*/
 	txintf.num_props = 8; /* each tos value has 1 */
 	rxintf.num_props = 1;
 #endif
+
+	/* If Rx is SW path, then no need to set Rx properties */
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+		rxintf.num_props = 0;
+
 	// set the properties
 	txintf.prop = artxprop;
 	rxintf.prop = rxprop;
@@ -883,35 +888,7 @@ int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 	return 0; /* Success */
 }
 
-void ath6kl_remove_ipa_header(char *name)
-{
-	int status;
-	uint32_t hdl;
-
-	/* Remove the headers */
-	status = ath6kl_ipa_get_header_hdl(name, &hdl);
-	if (status != 0)
-	{
-		ath6kl_err("IPA-CM: Get header handle Failed for header : %s\n",
-				name);
-		return;
-	}
-	/* Put header release / remove the header */
-	status = ath6kl_ipa_put_header_hdl(name, &hdl);
-	if (status != 0)
-	{
-		ath6kl_err("IPA-CM: Put header handle Failed for header : %s\n",
-				name);
-		return;
-	}
-
-	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Successfully removed the hdr:%s handle:%x\n",
-			name, hdl);
-	return;
-}
-
-void ath6kl_delete_ipa_header(uint32_t *hdl)
+void ath6kl_delete_ipa_header(uint32_t hdl)
 {
 	int status;
 	int len;
@@ -926,14 +903,14 @@ void ath6kl_delete_ipa_header(uint32_t *hdl)
 	if (ipahdr == NULL)
 	{
 		ath6kl_err("IPA-CM: Failed to allocate memory for hdr removal "
-				"for handle: %x\n", *hdl);
+				"for handle: %x\n", hdl);
 		return;
 	}
 	memset(ipahdr,0,len);
 
 	ipahdr->num_hdls = 1;
 	ipahdr->commit = 0;
-	ipahdr->hdl[0].hdl = *hdl;
+	ipahdr->hdl[0].hdl = hdl;
 	ipahdr->hdl[0].status = -1;
 	status = ipa_del_hdr(ipahdr);
 	if (status != 0)
@@ -950,6 +927,27 @@ void ath6kl_delete_ipa_header(uint32_t *hdl)
 			"%x\n", hdl);
 
 	kfree(ipahdr);
+	return;
+}
+void ath6kl_remove_ipa_header(char *name)
+{
+	int status;
+	uint32_t hdl;
+
+	/* Remove the headers */
+	status = ath6kl_ipa_get_header_hdl(name, &hdl);
+	if (status != 0)
+	{
+		ath6kl_err("IPA-CM: Get header handle Failed for header : %s\n",
+				name);
+		return;
+	}
+
+	ath6kl_delete_ipa_header(hdl);
+
+	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
+			"IPA-CM: Successfully removed the hdr:%s handle:%x\n",
+			name, hdl);
 	return;
 }
 
@@ -1012,7 +1010,7 @@ void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar)
 }
 EXPORT_SYMBOL(ath6kl_remove_ipa_exception_filters);
 
-void ath6kl_clean_ipa_interfaces(struct ath6kl *ar, char *name)
+void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name)
 {
 	int status;
 	char name_ipa[30];
@@ -1048,7 +1046,7 @@ void ath6kl_clean_ipa_interfaces(struct ath6kl *ar, char *name)
 			"IPA-CM: Successfully de-register interface:%s\n",name);
 	}
 }
-EXPORT_SYMBOL(ath6kl_clean_ipa_interfaces);
+EXPORT_SYMBOL(ath6kl_clean_ipa_headers);
 
 #ifdef CONFIG_ATH6KL_WITH_IPACM
 /* IPA calls this fn, once the message is processed */
@@ -1111,11 +1109,11 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 		break;
 
 	case WLAN_AP_DISCONNECT:
-		ath6kl_clean_ipa_interfaces(vif->ar, vif->ndev->name);
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 				"IPA-CM: AP Disconnect Event  %s %d\n",
 				__func__,__LINE__);
 		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
+		ath6kl_clean_ipa_headers(vif->ar, vif->ndev->name);
 		break;
 
 	case WLAN_CLIENT_POWER_SAVE_MODE:
@@ -1146,7 +1144,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 			"IPA-CM: STA Disconnect Event %s %d\n",
 			__func__,__LINE__);
 		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		ath6kl_clean_ipa_interfaces(vif->ar, vif->ndev->name);
+		ath6kl_clean_ipa_headers(vif->ar, vif->ndev->name);
 		break;
 	default:
 		ath6kl_err("IPA-CM: Unknown IPA message type : %d\n",
@@ -1703,7 +1701,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 
 		nskb = skb_copy_expand(skb, HTC_HDR_LENGTH, 0, GFP_ATOMIC);
 		if (nskb == NULL)
-			goto fail_tx;
+			goto fail_skbexp;
 		kfree_skb(skb);
 		skb = nskb;
 	}
@@ -1724,6 +1722,10 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 	ath6kl_htc_tx(ar->htc_target, &cookie->htc_pkt);
 
 	return 0;
+
+fail_skbexp:
+	/* Release the cookie */
+	ath6kl_free_cookie(ar, cookie);
 
 fail_tx:
 	dev_kfree_skb(skb);
@@ -2006,10 +2008,8 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 			vif->net_stats.tx_errors++;
 
-			if (status != -ENOSPC && status != -ECANCELED) {
+			if (status != -ENOSPC && status != -ECANCELED)
 				ath6kl_warn("tx complete error: %d\n", status);
-				WARN_ON_ONCE(1);
-			}
 
 			ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
 				"%s: skb=0x%p data=0x%p len=0x%x eid=%d %s\n",
@@ -3199,12 +3199,10 @@ static void aggr_timeout(unsigned long arg)
 				 ATH6KL_MAX_SEQ_NO));
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		if (ath6kl_debug_quirks(aggr_conn->vif->ar,
-					ATH6KL_MODULE_BAM2BAM))
-		{
+					ATH6KL_MODULE_BAM2BAM)) {
 			aggr_deque_frms_bam2bam(aggr_conn, i, 0, 0);
 		}
-		else
-		{
+		else {
 			/* This path for non BAM2BAM path during run time */
 			aggr_deque_frms(aggr_conn, i, 0, 0);
 		}
@@ -3522,6 +3520,7 @@ void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
 #endif
 	}
 }
+
 int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 		u8 ac_category)
 {
@@ -3537,10 +3536,10 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	struct wmi_data_hdr *data_hdr;
 
 	if (WARN_ON_ONCE(ar->state != ATH6KL_STATE_ON))
-		goto fail_tx;
+		goto dfail_tx;
 
 	if (!test_bit(WMI_READY, &ar->flag))
-		goto fail_tx;
+		goto dfail_tx;
 
 	if (skb_headroom(skb) < dev->needed_headroom) {
 		struct sk_buff *tmp_skb = skb;
@@ -3559,17 +3558,17 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 			DATA_MSGTYPE, 0, 0,
 			meta_ver,
 			meta, vif->fw_vif_idx);
+	if (ret) {
+		ath6kl_warn("failed to add wmi data header:%d\n"
+				, ret);
+		goto dfail_tx;
+	}
 
 	data_hdr = (struct wmi_data_hdr *)skb->data;
 
 	data_hdr->info3 |=
 		cpu_to_le16(WMI_DATA_HDR_DUMMY_DATA_BIT_MASK <<
 				WMI_DATA_HDR_DUMMY_DATA_BIT_SHIFT);
-	if (ret) {
-		ath6kl_warn("failed to add wmi data header:%d\n"
-				, ret);
-		goto fail_tx;
-	}
 
 	spin_lock_bh(&ar->lock);
 
@@ -3578,7 +3577,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	if (eid == 0 || eid == ENDPOINT_UNUSED) {
 		ath6kl_err("eid %d is not mapped!\n", eid);
 		spin_unlock_bh(&ar->lock);
-		goto fail_tx;
+		goto dfail_tx;
 	}
 
 	/* allocate resource for this packet */
@@ -3586,7 +3585,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
-		goto fail_tx;
+		goto dfail_tx;
 	}
 
 	/* update counts while the lock is held */
@@ -3608,13 +3607,12 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 
 		nskb = skb_copy_expand(skb, HTC_HDR_LENGTH, 0, GFP_ATOMIC);
 		if (nskb == NULL)
-			goto fail_tx;
+			goto dfail_skbexp;
 		kfree_skb(skb);
 		skb = nskb;
 	}
 
 	cookie->skb = skb;
-	//cookie->map_no = map_no;
 	cookie->map_no = 0;
 	set_htc_pkt_info(&cookie->htc_pkt, cookie, skb->data, skb->len,
 			eid, htc_tag);
@@ -3631,7 +3629,11 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	ath6kl_dbg(ATH6KL_DBG_OOO, "dummy_data_sent\n");
 	return 0;
 
-fail_tx:
+dfail_skbexp:
+	/* Release the cookie */
+	ath6kl_free_cookie(ar, cookie);
+
+dfail_tx:
 	dev_kfree_skb(skb);
 
 	vif->net_stats.tx_dropped++;

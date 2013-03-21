@@ -656,7 +656,11 @@ int ath6kl_configure_target(struct ath6kl *ar)
 			return -EIO;
 		}
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "Enabling BAM2BAM mode\n");
+	}
 
+	if ((ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM)) &&
+		(!ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH)))
+	{
 		/* AMSDU is offloaded to f/w for BAM2BAM mode */
 		param = 0;
 		if (ath6kl_bmi_read_hi32(ar, hi_option_flag2, &param) != 0) {
@@ -1904,13 +1908,6 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	bool discon_issued;
 
 	netif_stop_queue(vif->ndev);
-
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_IPA_WITH_IPACM))
-	{
-		ath6kl_clean_ipa_interfaces(vif->ar, vif->ndev->name);
-	}
-#endif
 
 	clear_bit(WLAN_ENABLED, &vif->flags);
 
