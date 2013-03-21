@@ -3781,22 +3781,6 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	if (register_netdevice(ndev))
 		goto err;
 
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM))
-	{
-		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
-				"%s: Interface is up for : %s, Device Id:%d\n",
-				__func__, ndev->name, vif->fw_vif_idx);
-
-		/* Add partial header with IPA for this interface */
-		/* This is taken care during connect time */
-#ifdef CONFIG_ATH6KL_BAM2BAM_MAY_NEED
-		ath6kl_ipa_add_header_info(vif->fw_vif_idx,  vif->ndev->name,
-				vif->bssid);
-#endif
-	}
-#endif
-
 	ar->avail_idx_map &= ~BIT(fw_vif_idx);
 	vif->sme_state = SME_DISCONNECTED;
 	set_bit(WLAN_ENABLED, &vif->flags);
