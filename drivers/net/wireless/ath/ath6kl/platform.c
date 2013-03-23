@@ -26,8 +26,8 @@
 #include "platform.h"
 
 static struct ath6kl_reg_data ar6004_reg_table[] = {
-	{"qca,ar6004-vbatt", 3140000, 3460000, 720000, 0, true, NULL},
-	{"qca,ar6004-vdd-io", 1710000, 3460000, 30000, 5, true, NULL}
+	{"qca,vbatt", 3140000, 3460000, 720000, 0, true, NULL},
+	{"qca,vdd-io", 1710000, 3460000, 30000, 5, true, NULL}
 };
 
 #define MAX_PROP_SIZE 32
