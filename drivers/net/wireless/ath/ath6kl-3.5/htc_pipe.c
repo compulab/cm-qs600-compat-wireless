@@ -20,6 +20,10 @@
 
 #include <asm/byteorder.h>
 
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+#include <asm/unaligned.h>
+#endif
+
 #define HTC_PACKET_CONTAINER_ALLOCATION 32
 #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
 #define DATA_EP_SIZE 4
@@ -1479,7 +1483,7 @@ static int htc_rx_completion(struct htc_target *context,
 #if CONFIG_CRASH_DUMP
 	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
 
-#define REG_DUMP_COUNT_AR6004   60
+#define REG_DUMP_COUNT_AR6004   76
 		netdata += 4;
 
 		ath6kl_info("Firmware crash detected...\n");
@@ -2441,7 +2445,12 @@ int ath6kl_htc_pipe_stop_netif_queue_full(struct htc_target *target)
 int ath6kl_htc_pipe_wmm_schedule_change(struct htc_target *target,
 		bool change)
 {
-	return 0;
+	struct ath6kl *ar = target->dev->ar;
+
+	if (ar->target_type == TARGET_TYPE_AR6006) /* For KingFisher Only */
+		return 1;
+	else
+		return 0;
 }
 
 int ath6kl_htc_pipe_change_credit_bypass(struct htc_target *target,

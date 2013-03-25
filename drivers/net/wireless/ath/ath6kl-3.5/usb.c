@@ -21,6 +21,10 @@
 #include "core.h"
 #include "cfg80211.h"
 
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+#include <asm/unaligned.h>
+#endif
+
 /* constants */
 #define TX_URB_COUNT            32
 #define RX_URB_COUNT            32
@@ -171,6 +175,15 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 #define USB_CTRL_MAX_DIAG_RESP_SIZE	\
 	(sizeof(struct ath6kl_usb_ctrl_diag_resp_read))
 
+#ifdef ATHTST_SUPPORT
+struct hif_product_info_t {
+	uint16_t	idVendor;
+	uint16_t	idProduct;
+	uint8_t	product[64];
+	uint8_t	manufacturer[64];
+	uint8_t	serial[64];
+};
+#endif
 /* function declarations */
 #ifdef CONFIG_PM
 
@@ -1132,6 +1145,10 @@ fail_ath6kl_usb_create:
 static void ath6kl_usb_device_detached(struct usb_interface *interface)
 {
 	struct ath6kl_usb *ar_usb;
+#ifdef USB_AUTO_SUSPEND
+	struct usb_pm_skb_queue_t *entry, *p_usb_pm_skb_queue;
+	struct ath6kl *ar;
+#endif
 
 	ar_usb = usb_get_intfdata(interface);
 	if (ar_usb == NULL)
@@ -1147,6 +1164,26 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 			   ATH6KL_USB_UNLOAD_STATE_TARGET_RESET);
 #else
 	mdelay(20);
+#endif
+
+#ifdef USB_AUTO_SUSPEND
+	/*
+	 * when packets are in pm_skb_queue,
+	 * and usb remove before resume happens,
+	 * we need to clean pm_skb_queue to avoid memory leak.
+	 */
+
+	ar = ar_usb->ar;
+	p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
+
+	while (get_queue_depth(&(p_usb_pm_skb_queue->list)) > 0) {
+		ath6kl_dbg(ATH6KL_DBG_USB, "%s  resume_wk qeue %d\n", __func__,
+		get_queue_depth(&(p_usb_pm_skb_queue->list)));
+		entry = list_first_entry(&p_usb_pm_skb_queue->list,
+					struct usb_pm_skb_queue_t, list);
+		list_del(&entry->list);
+		kfree(entry);
+	}
 #endif
 
 	ath6kl_core_cleanup(ar_usb->ar);
@@ -1324,9 +1361,9 @@ void usb_auto_pm_disable(struct ath6kl *ar)
 	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
 	struct usb_interface *interface = device->interface;
 	usb_autopm_get_interface_async(interface);
-	ath6kl_dbg(ATH6KL_DBG_USB, "autopm +1 refcnt=%d\n",
-		usb_debugfs_get_pm_usage_cnt(ar));
 	ar->auto_pm_cnt++;
+	ath6kl_dbg(ATH6KL_DBG_USB, "autopm +1 refcnt=%d my=%d\n",
+		usb_debugfs_get_pm_usage_cnt(ar), ar->auto_pm_cnt);
 	/*usb_debugfs_get_pm_usage_cnt(ar);*/
 
 }
@@ -1337,13 +1374,11 @@ void usb_auto_pm_enable(struct ath6kl *ar)
 	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
 	struct usb_interface *interface = device->interface;
 	usb_autopm_put_interface_async(interface);
-	ath6kl_dbg(ATH6KL_DBG_USB, "autopm -1 refcnt=%d\n",
-		usb_debugfs_get_pm_usage_cnt(ar));
 	ar->auto_pm_cnt--;
+	ath6kl_dbg(ATH6KL_DBG_USB, "autopm -1 refcnt=%d my=%d\n",
+		usb_debugfs_get_pm_usage_cnt(ar), ar->auto_pm_cnt);
 	/*usb_debugfs_get_pm_usage_cnt(ar);*/
 }
-
-
 
 
 void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
@@ -1386,7 +1421,6 @@ void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 		device = ath6kl_usb_priv(pm_ar);
 		pipe = &device->pipes[pm_PipeID];
 		pipe_st = &pipe->usb_pipe_stat;
-		list_del(&entry->list);
 
 		urb_context = ath6kl_usb_alloc_urb_from_pipe(pipe);
 
@@ -1434,16 +1468,11 @@ void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 			   pipe->ep_address, len);
 
 		usb_anchor_urb(urb, &pipe->urb_submitted);
+		list_del(&entry->list);
 
-		spin_lock_bh(&pm_ar->state_lock);
-		/*
-		if ((ar->state == ATH6KL_STATE_DEEPSLEEP) ||
-		    (ar->state == ATH6KL_STATE_WOW))
-			usb_status = -EINVAL;
-		else
-		*/
-			usb_status = usb_submit_urb(urb, GFP_ATOMIC);
-		spin_unlock_bh(&pm_ar->state_lock);
+		/* spin_lock_bh(&pm_ar->state_lock); */
+		usb_status = usb_submit_urb(urb, GFP_ATOMIC);
+		/* spin_unlock_bh(&pm_ar->state_lock); */
 
 		if (usb_status) {
 			pipe_st->num_tx_err++;
@@ -1508,6 +1537,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	if (!list_empty(&p_usb_pm_skb_queue->list) ||
 		(ar->state == ATH6KL_STATE_WOW) ||
 		(ar->state == ATH6KL_STATE_DEEPSLEEP)) {
+
 		ath6kl_dbg(ATH6KL_DBG_USB, "usb_send sleep Q  %d  queue len =%d\n",
 			ar->state,
 			get_queue_depth(&(p_usb_pm_skb_queue->list)));
@@ -1516,15 +1546,13 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 		if (p_pmskb == NULL)
 			ath6kl_dbg(ATH6KL_DBG_USB, "p_pmskb = kmalloc fila\n");
 
-		ath6kl_dbg(ATH6KL_DBG_USB, "qlen 1\n");
 		p_pmskb->pipeID = PipeID;
 		p_pmskb->ar = ar;
 		p_pmskb->skb = buf;
 
-		ath6kl_dbg(ATH6KL_DBG_USB, "qlen 2\n");
 		list_add(&(p_pmskb->list), &(p_usb_pm_skb_queue->list));
 		qlen = get_queue_depth(&(p_usb_pm_skb_queue->list));
-		ath6kl_dbg(ATH6KL_DBG_USB, "qlen  3 = %d\n", qlen);
+		ath6kl_dbg(ATH6KL_DBG_USB, "qlen = %d\n", qlen);
 
 		/*
 		msleep_interruptible(3000);
@@ -1538,7 +1566,6 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	}
 
 	spin_unlock_bh(&ar->usb_pm_lock);
-
 	ath6kl_dbg(ATH6KL_DBG_USB, "usb_send 2\n");
 
 #elif defined(CONFIG_ANDROID)
@@ -2170,6 +2197,15 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 #endif
 };
 
+#ifdef ATHTST_SUPPORT
+static struct hif_product_info_t g_product_info;
+void ath6kl_usb_get_usbinfo(void *product_info)
+{
+	memcpy(product_info, &g_product_info, sizeof(g_product_info));
+	return;
+}
+#endif
+
 /* ath6kl usb driver registered functions */
 static int ath6kl_usb_probe(struct usb_interface *interface,
 			    const struct usb_device_id *id)
@@ -2184,6 +2220,21 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	vendor_id = le16_to_cpu(dev->descriptor.idVendor);
 	product_id = le16_to_cpu(dev->descriptor.idProduct);
+#ifdef ATHTST_SUPPORT
+	g_product_info.idVendor = vendor_id =
+					le16_to_cpu(dev->descriptor.idVendor);
+	g_product_info.idProduct = product_id =
+					le16_to_cpu(dev->descriptor.idProduct);
+	if (dev->product)
+		memcpy(g_product_info.product, dev->product,
+				sizeof(g_product_info.product));
+	if (dev->manufacturer)
+		memcpy(g_product_info.manufacturer, dev->manufacturer,
+				sizeof(g_product_info.manufacturer));
+	if (dev->serial)
+		memcpy(g_product_info.serial, dev->serial,
+				sizeof(g_product_info.serial));
+#endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB, "vendor_id = %04x\n", vendor_id);
 	ath6kl_dbg(ATH6KL_DBG_USB, "product_id = %04x\n", product_id);
@@ -2359,6 +2410,7 @@ static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 
 /* table of devices that work with this driver */
 static struct usb_device_id ath6kl_usb_ids[] = {
+	{USB_DEVICE(0x0cf3, 0x9375)},
 	{USB_DEVICE(0x0cf3, 0x9374)},
 	{USB_DEVICE(0x0cf3, 0x9372)},
 	{ /* Terminating entry */ },
