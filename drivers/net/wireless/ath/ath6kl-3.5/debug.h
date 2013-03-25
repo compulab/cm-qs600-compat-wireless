@@ -146,6 +146,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_HIF		= BIT(6),
 	ATH6KL_DBG_IRQ		= BIT(7),     /* interrupt processing */
 	ATH6KL_DBG_ACL		= BIT(8),     /* access control list */
+	ATH6KL_DBG_ADMC		= ATH6KL_DBG_ACL,     /* admission control */
 	/* hole */
 	ATH6KL_DBG_WMI          = BIT(10),    /* wmi tracing */
 	ATH6KL_DBG_TRC	        = BIT(11),    /* generic func tracing */
@@ -167,7 +168,11 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_RTT          = BIT(27),
 	ATH6KL_DBG_FLOWCTRL     = BIT(28),    /* P2P flowctrl */
 	ATH6KL_DBG_KEEPALIVE    = BIT(29),    /* AP keep-alive */
+#ifdef ACS_SUPPORT
+	ATH6KL_DBG_ACS       = BIT(30),              /* ACS */
+#else
 	/* hole */
+#endif
 	ATH6KL_DBG_INFO		= BIT(31),    /* keep last */
 	ATH6KL_DBG_ANY		= 0xffffffff  /* enable all logs */
 };
