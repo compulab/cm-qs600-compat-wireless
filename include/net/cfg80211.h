@@ -815,6 +815,7 @@ struct bss_parameters {
 	u8 basic_rates_len;
 	int ap_isolate;
 	int ht_opmode;
+	u8 ht_2040_mode;
 };
 
 /**
@@ -1023,6 +1024,7 @@ struct cfg80211_scan_request {
 	struct net_device *dev;
 	bool aborted;
 	bool no_cck;
+	bool ht_obss_scan;
 
 	/* keep last */
 	struct ieee80211_channel *channels[0];

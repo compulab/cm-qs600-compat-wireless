@@ -3000,6 +3000,8 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
                            const u8 *mac_addr, const u8 wildcard,
                            enum nl80211_acl_policy_attr acl_policy,
                            u8 acl_action);
+int ath6kl_wmi_set_fixrates(struct wmi *wmi, u8 if_idx,
+		struct wmi_fix_rates_cmd rate);
 
 /* P2P */
 int ath6kl_wmi_disable_11b_rates_cmd(struct wmi *wmi, bool disable);

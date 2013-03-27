@@ -3804,6 +3804,24 @@ int ath6kl_wmi_set_inact_period(struct wmi *wmi, u8 if_idx, int inact_timeout)
 				   NO_SYNC_WMIFLAG);
 }
 
+int ath6kl_wmi_set_fixrates(struct wmi *wmi, u8 if_idx,
+		struct wmi_fix_rates_cmd rate)
+{
+	struct sk_buff *skb;
+	struct wmi_fix_rates_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_fix_rates_cmd *)skb->data;
+	memcpy(cmd->fix_rate_mask, &rate, sizeof(struct wmi_fix_rates_cmd));
+
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_FIXRATES_CMDID,
+			NO_SYNC_WMIFLAG);
+}
+
 int ath6kl_wmi_set_acl_policy(struct wmi *wmi, u8 if_idx, bool enable_acl)
 {
        struct sk_buff *skb;
