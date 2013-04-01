@@ -741,7 +741,12 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return status;
 
         /* set the max number of sta-s(for AP mode) to 15 */
-	param = (AP_MAX_NUM_STA << HI_OPTION_AP_CLIENT_CNT_SHIFT);
+	param = 0;
+	if (ath6kl_bmi_read_hi32(ar, hi_option_flag2, &param) != 0) {
+		ath6kl_err("bmi_read_memory for setting MAX_CLIENT failed\n");
+		return -EIO;
+	}
+	param |= (AP_MAX_NUM_STA << HI_OPTION_AP_CLIENT_CNT_SHIFT);
 
 	status = ath6kl_bmi_write_hi32(ar, hi_option_flag2, param);
 
