@@ -197,9 +197,15 @@ enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 	return ar->ac2ep_map[ac];
 }
 
-struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar)
+struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
+					enum htc_endpoint_id eid)
 {
 	struct ath6kl_cookie *cookie;
+
+	if((ar->cookie_count <= CTRL_EP_RSVD_COOKIE_NUM)
+				&& (eid != ar->ctrl_ep)) {
+		return NULL;
+	}
 
 	cookie = ar->cookie_list;
 	if (cookie != NULL) {

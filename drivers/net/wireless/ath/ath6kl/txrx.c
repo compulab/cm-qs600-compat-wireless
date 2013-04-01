@@ -1486,7 +1486,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		ath6kl_err("wmi ctrl ep full, dropping pkt : 0x%p, len:%d\n",
 				skb, skb->len);
 	} else
-		cookie = ath6kl_alloc_cookie(ar);
+		cookie = ath6kl_alloc_cookie(ar, eid);
 
 	if (cookie == NULL) {
 		spin_unlock_bh(&ar->lock);
@@ -1516,6 +1516,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	return 0;
 
 fail_ctrl_tx:
+	ath6kl_err("ath6kl_control_tx failed !");
 	dev_kfree_skb(skb);
 	return status;
 }
@@ -1675,7 +1676,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar);
+	cookie = ath6kl_alloc_cookie(ar, eid);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
@@ -3581,7 +3582,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	}
 
 	/* allocate resource for this packet */
-	cookie = ath6kl_alloc_cookie(ar);
+	cookie = ath6kl_alloc_cookie(ar, eid);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
