@@ -714,12 +714,38 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_AP_SET_IDLE_CLOSE_TIME_CMDID,
     WMI_SET_LTE_COEX_STATE_CMDID,
     WMI_SET_MCC_PROFILE_CMDID,
+    WMI_SET_MEDIA_STREAM_CMDID = 0xF0BB,
+
+    /* More customer private commands */
+    WMI_SET_CUSTOM_REG, /* F0BC */
+    WMI_GET_CUSTOM_REG,
+    WMI_GET_CUSTOM_PRODUCT_INFO,
+    WMI_SET_CUSTOM_TESTMODE,
+    WMI_GET_CUSTOM_TESTMODE,    /* F0C0 */
+    WMI_GET_CUSTOM_STAINFO,
+    WMI_GET_CUSTOM_SCANTIME,
+    WMI_SET_CUSTOM_SCAN,
+    WMI_GET_CUSTOM_SCAN,
+    WMI_GET_CUSTOM_VERSION_INFO,
+    WMI_GET_CUSTOM_WIFI_TXPOW,
+    WMI_GET_CUSTOM_ATHSTATS,
+
+    WMI_TX99TOOL_CMDID,/* F0C8 */
+    WMI_SET_CUSTOM_PROBE_RESP_REPORT_CMDID,
+    WMI_SET_CUSTOM_WIDI,
+    WMI_GET_CUSTOM_WIDI,
+
+    /*Diversity control*/
+    WMI_SET_ANTDIVCFG_CMDID, /* F0CC */
+    WMI_GET_ANTDIVSTAT_CMDID,
+
+    WMI_SET_SEAMLESS_MCC_SCC_SWITCH_FREQ_CMDID,
+    WMI_SET_CHAIN_MASK_CMDID,
     WMI_SET_MCASTRATE_CMDID,
     WMI_SET_RECOVERY_TEST_PARAMETER_CMDID,
     WMI_VOICE_DETECTION_ENABLE_CMDID,
     WMI_SET_KEEPALIVE_CMDID_EXT,
     WMI_SET_TXE_NOTIFY_CMDID,
-
 };
 
 /* WMI_SETPMKID_CMDID */
@@ -948,6 +974,7 @@ struct wmi_begin_scan_cmd {
 	/* channels in Mhz */
 	__le16 ch_list[1];
 } __packed;
+#endif
 
 /* wmi_start_scan_cmd is to be deprecated. Use
  * wmi_begin_scan_cmd instead. The new structure supports P2P mgmt
@@ -975,7 +1002,6 @@ struct wmi_start_scan_cmd {
 	__le16 ch_list[1];
 } __packed;
 
-#endif
 /*
  *  Warning: scan control flag value of 0xFF is used to disable
  *  all flags in WMI_SCAN_PARAMS_CMD. Do not add any more
@@ -1039,7 +1065,6 @@ struct wmi_scan_params_cmd {
 	__le32 max_dfsch_act_time;
 } __packed;
 
-#ifdef __KERNEL__
 /* WMI_SET_BSS_FILTER_CMDID */
 enum wmi_bss_filter {
 	/* no beacons forwarded */
@@ -1083,6 +1108,7 @@ struct wmi_bss_filter_cmd {
 	__le32 ie_mask;
 } __packed;
 
+#ifdef __KERNEL__
 /* WMI_SET_PROBED_SSID_CMDID */
 #define MAX_PROBED_SSIDS   16
 
@@ -1265,6 +1291,17 @@ enum wmi_ap_acs_policy_list {
 	AP_ACS_DISABLE_CH1_6,   /* dont use 1 & 6 */
 	AP_ACS_POLICY_MAX
 };
+
+enum wmi_chain_mask {
+	CHAIN_MASK_2x2 = 0x0, /*default*/
+	CHAIN_MASK_1x1,
+	CHAIN_MASK_DYNAMIC,
+};
+
+struct wmi_set_chain_mask_cmd {
+	u8 chain_mask; /* refer enum wmi_chain_mask */
+	u8 reserved;
+} __packed;
 
 /*
  * Policy to determnine whether power save failure event should be sent to
