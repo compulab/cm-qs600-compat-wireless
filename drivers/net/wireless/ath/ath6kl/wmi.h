@@ -1763,7 +1763,9 @@ struct wmi_connect_event {
 			u8 bssid[ETH_ALEN];
 			__le16 listen_intvl;
 			__le16 beacon_intvl;
-			__le32 nw_type;
+			__le16 nw_type;
+			u8 tx_scheduler_enabled;
+			u8 aid;
 		} sta;
 		struct {
 			u8 phymode;
@@ -1778,7 +1780,9 @@ struct wmi_connect_event {
 		struct {
 			__le16 ch;
 			u8 bssid[ETH_ALEN];
-			u8 unused[8];
+			u8 tx_scheduler_enabled;
+			u8 aid;
+			u8 unused[6];
 		} ap_bss;
 	} u;
 	u8 beacon_ie_len;
@@ -2829,6 +2833,13 @@ enum wmi_sync_flag {
 	/* end marker */
 	END_WMIFLAG
 };
+
+/* flow control indication parameters */
+struct wmi_flowctrl_ind_event {
+	u8 num_of_conn;
+	u8 ac_map[NUM_CONN];
+	u8 ac_queue_depth[NUM_CONN];
+} __packed;
 
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);

@@ -24,6 +24,7 @@
 #include "../regd_common.h"
 #include <ctype.h>
 
+
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
 static const s32 wmi_rate_tbl[][2] = {
@@ -659,6 +660,38 @@ static int ath6kl_wmi_p2p_info_event_rx(u8 *datap, int len)
 	return 0;
 }
 
+static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len,
+					struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	struct wmi_flowctrl_ind_event *ev;
+
+	/*
+	 *FIXME	Bypass this event if only one interface be used to
+	 *	avoid uncessary code processing if STA enter PS mode
+	 */
+	if ((!(ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL)) ||
+		(ar->vif_max == 1))
+		return 0;
+
+	if (len < sizeof(*ev))
+		return -EINVAL;
+
+	ev = (struct wmi_flowctrl_ind_event *) datap;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "flowctrl_info: num_of_conn=%d"
+			"ac_map[0]=0x%x ac_map[1]=0x%x ac_map[2]=0x%x\n",
+			ev->num_of_conn, ev->ac_map[0],
+			ev->ac_map[1], ev->ac_map[2]);
+
+	ath6kl_mcc_flowctrl_state_update(ar, ev->num_of_conn, ev->ac_map,
+					ev->ac_queue_depth);
+	ath6kl_mcc_flowctrl_state_change(ar);
+	ath6kl_mcc_flowctrl_tx_schedule(ar);
+
+	return 0;
+}
+
 static inline struct sk_buff *ath6kl_wmi_get_new_buf(u32 size)
 {
 	struct sk_buff *skb;
@@ -823,6 +856,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				   "%s: freq %d bssid %pM (AP started)\n",
 				   __func__, le16_to_cpu(ev->u.ap_bss.ch),
 				   ev->u.ap_bss.bssid);
+			ath6kl_mcc_flowctrl_set_conn_id(vif,
+							ev->u.ap_bss.bssid,
+							ev->u.ap_bss.aid);
 			ath6kl_connect_ap_mode_bss(
 				vif, le16_to_cpu(ev->u.ap_bss.ch));
 		} else {
@@ -834,7 +870,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				   ev->u.ap_sta.keymgmt,
 				   le16_to_cpu(ev->u.ap_sta.cipher),
 				   ev->u.ap_sta.apsd_info);
-
+			ath6kl_mcc_flowctrl_set_conn_id(vif,
+							ev->u.ap_sta.mac_addr,
+							ev->u.ap_sta.aid);
 			ath6kl_connect_ap_mode_sta(
 				vif, ev->u.ap_sta.aid, ev->u.ap_sta.mac_addr,
 				ev->u.ap_sta.keymgmt,
@@ -882,6 +920,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 		pie += pie[1] + 2;
 	}
 
+	ath6kl_mcc_flowctrl_set_conn_id(vif,
+					vif->ndev->dev_addr,
+					ev->u.sta.aid);
 	ath6kl_connect_event(vif, le16_to_cpu(ev->u.sta.ch),
 			     ev->u.sta.bssid,
 			     le16_to_cpu(ev->u.sta.listen_intvl),
@@ -4098,6 +4139,7 @@ static int ath6kl_wmi_proc_events(struct wmi *wmi, struct sk_buff *skb)
 	u16 id;
 	u8 if_idx;
 	u8 *datap;
+	struct ath6kl_vif *vif = NULL;
 
 	cmd = (struct wmi_cmd_hdr *) skb->data;
 	id = le16_to_cpu(cmd->cmd_id);
@@ -4227,6 +4269,19 @@ static int ath6kl_wmi_proc_events(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_P2P_INFO_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_P2P_INFO_EVENTID\n");
 		ret = ath6kl_wmi_p2p_info_event_rx(datap, len);
+		break;
+        case WMI_FLOWCTRL_IND_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_FLOWCTRL_IND_EVENTID\n");
+		vif = ath6kl_get_vif_by_index(wmi->parent_dev, if_idx);
+		if(!vif) {
+			ath6kl_dbg(ATH6KL_DBG_WMI,
+			"Wmi event for unavailable vif, vif_index:%d\n",
+			if_idx);
+			ret = -EINVAL;
+			break;
+		}
+		ret = ath6kl_wmi_flowctrl_ind_event_rx(datap,
+						len, vif);
 		break;
 	default:
 		/* may be the event is interface specific */

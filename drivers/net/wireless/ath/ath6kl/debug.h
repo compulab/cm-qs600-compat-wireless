@@ -32,13 +32,16 @@ enum ATH6KL_MODULE_QUIRKS {
 	ATH6KL_MODULE_BAM_AMPDU_TO_NETIF	= BIT(13),
 	/* Use Rx SW path instead of BAM */
 	ATH6KL_MODULE_BAM_RX_SW_PATH		= BIT(14),
+	/* Enable SCC or by default MCC */
+	ATH6KL_MODULE_MCC_FLOWCTRL		= BIT(15),
 };
 
 #define ATH6KL_DEF_DEBUG_QUIRKS (ATH6KL_MODULE_BAM2BAM |		\
 				ATH6KL_MODULE_IPA_WITH_IPV6 |		\
 				ATH6KL_MODULE_IPA_WITH_IPACM|		\
 				ATH6KL_MODULE_BAM_AMPDU_TO_NETIF |	\
-				ATH6KL_MODULE_BAM_RX_SW_PATH)
+				ATH6KL_MODULE_BAM_RX_SW_PATH|		\
+				ATH6KL_MODULE_MCC_FLOWCTRL)
 
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
@@ -68,7 +71,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_BAM2BAM	= BIT(24),
 	ATH6KL_DBG_OOO		= BIT(25),   /* Out of order tracing */
 	ATH6KL_DBG_IPA_MSG	= BIT(26),   /* IPA message tracing */
-
+	ATH6KL_DBG_FLOWCTRL     = BIT(27),
 	ATH6KL_DBG_ANY	        = 0xffffffff  /* enable all logs */
 };
 
@@ -176,4 +179,5 @@ static inline void ath6kl_debug_cleanup(struct ath6kl *ar)
 }
 
 #endif
+
 #endif
