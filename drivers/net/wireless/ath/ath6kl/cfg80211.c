@@ -2613,6 +2613,7 @@ static int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 			continue;
 		htcap = &vif->htcap[band];
 		htcap->cap_info = 0;
+		htcap->ht_enable = wiphy->bands[band]->ht_cap.ht_supported;
 		ret = ath6kl_set_htcap(vif, band,
 				wiphy->bands[band]->ht_cap.ht_supported);
 		if (ret)
