@@ -2913,7 +2913,7 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 				  u8 tsid);
 int ath6kl_wmi_disctimeout_cmd(struct wmi *wmi, u8 if_idx, u8 timeout);
 
-int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u16 threshold);
+int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u8 if_idx, u16 threshold);
 int ath6kl_wmi_set_lpreamble_cmd(struct wmi *wmi, u8 if_idx, u8 status,
 				 u8 preamble_policy);
 
