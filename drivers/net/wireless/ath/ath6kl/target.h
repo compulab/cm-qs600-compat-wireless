@@ -343,6 +343,8 @@ struct host_interest {
 #define HI_OPTION_AP_CLIENT_CNT_SHIFT	0xA
 /* 4-bits(bit13-bit10) to notify number of clients in AP mode */
 #define HI_OPTION_AP_CLIENT_CNT_MASK	0xF
+/* Enable Multichannel Concurrency (MCC) */
+#define HI_OPTION_MCC_ENABLE            0x80000000
 
 /* Convert a Target virtual address into a Target physical address */
 #define AR6003_VTOP(vaddr) ((vaddr) & 0x001fffff)

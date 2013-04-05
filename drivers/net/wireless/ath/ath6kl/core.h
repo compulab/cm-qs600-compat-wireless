@@ -346,7 +346,6 @@ struct ath6kl_traffic_activity_change {
 #define ATH6KL_CONF_ENABLE_11N			BIT(2)
 #define ATH6KL_CONF_ENABLE_TX_BURST		BIT(3)
 #define ATH6KL_CONF_UART_DEBUG			BIT(4)
-#define ATH6KL_CONF_ENABLE_FLOWCTRL		BIT(5)
 
 #define P2P_WILDCARD_SSID_LEN			7 /* DIRECT- */
 
