@@ -2802,7 +2802,7 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_ap_settings *info)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
-	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct ath6kl_vif *vif = netdev_priv(dev),*tmp_vif = NULL;
 	struct ieee80211_mgmt *mgmt;
 	bool hidden = false;
 	u8 *ies, band;
@@ -2810,10 +2810,10 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct wmi_connect_cmd p;
 	int res;
 	int i, ret;
-	u16 rsn_capab = 0;
+	u16 rsn_capab = 0,othervif_ch = 0;
 	struct ath6kl_htcap *htcap;
 	int inactivity_timeout = 0;
-
+	struct ieee80211_channel *tmp_channel = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:\n", __func__);
 
@@ -2964,6 +2964,46 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			return res;
 	}
 
+	/* update phy mode here rather than at the end so
+	 * that it can be used to get band value in acs case.
+	 */
+	switch (info->beacon.ap_cap_wmode) {
+	case NL80211_AP_CAP_WMODE_11A:
+		vif->phy_mode = WMI_11A_MODE;
+		break;
+	case NL80211_AP_CAP_WMODE_11BONLY:
+		vif->phy_mode = WMI_11B_MODE;
+		break;
+	case NL80211_AP_CAP_WMODE_11G:
+	case NL80211_AP_CAP_WMODE_11AG:
+		vif->phy_mode = WMI_11G_MODE;
+		break;
+	case NL80211_AP_CAP_WMODE_11GONLY:
+		vif->phy_mode = WMI_11GONLY_MODE;
+		break;
+	default:
+		ath6kl_err("wmode (wireless mode) %d is not supported in AP mode\n",
+			info->beacon.ap_cap_wmode);
+		return -ENOTSUPP;
+	}
+
+	/* In case of scc if the host is requested to start ap with acs option
+	 * or particular channel before proceeding check if there is any other
+	 * vif already in connected state and use it's channel to start up rather
+	 * than acs or deny the ap start if the ch requested is different .
+	 */
+        if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL)) {
+		list_for_each_entry(tmp_vif, &ar->vif_list, list)
+		if((test_bit(CONNECTED, &tmp_vif->flags)) && (tmp_vif != vif)){
+			othervif_ch = tmp_vif->bss_ch;
+			tmp_channel = ieee80211_get_channel(ar->wiphy,othervif_ch);
+			if (tmp_channel == NULL)
+				return -EINVAL;
+			else
+				break;
+		}
+	}
+
 	if (info->auto_channel_select)  {
 
                 if (vif->phy_mode == WMI_11A_MODE)
@@ -2973,9 +3013,30 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
                 ar->want_ch_switch |= 1 << vif->fw_vif_idx;
                 p.ch = info->auto_channel_select - 1;
-        } else {
+
+		/* in case of scc use other vif's channle if it is present
+		 * and else deny the ap start if both are in different band.
+		 */
+		if(othervif_ch > 0){
+			if(tmp_channel->band == band){
+				p.ch = othervif_ch;
+			}
+			else {
+				ath6kl_warn("Denied to start ap on %d band in scc\n", band);
+				return -EINVAL;
+			}
+		}
+	} else {
                 band = info->channel->band;
                 p.ch = cpu_to_le16(info->channel->center_freq);
+
+		/* in case of scc, if ch specified differnt than
+		 * other running vif's channel, deny the softap
+		 */
+		if((othervif_ch > 0 ) && (othervif_ch != p.ch)){
+			ath6kl_warn("Denied to start ap on %d channel in scc\n", p.ch);
+			return -EINVAL;
+		}
         }
 
         htcap  = &vif->htcap[band];
@@ -3017,26 +3078,6 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		if (res < 0)
 			return res;
 	}
-
-        switch (info->beacon.ap_cap_wmode) {
-        case NL80211_AP_CAP_WMODE_11A:
-                vif->phy_mode = WMI_11A_MODE;
-                break;
-        case NL80211_AP_CAP_WMODE_11BONLY:
-                vif->phy_mode = WMI_11B_MODE;
-                break;
-        case NL80211_AP_CAP_WMODE_11G:
-        case NL80211_AP_CAP_WMODE_11AG:
-                vif->phy_mode = WMI_11G_MODE;
-                break;
-        case NL80211_AP_CAP_WMODE_11GONLY:
-                vif->phy_mode = WMI_11GONLY_MODE;
-                break;
-        default:
-                ath6kl_err("wmode (wireless mode) %d is not supported in AP mode\n",
-                          info->beacon.ap_cap_wmode);
-                return -ENOTSUPP;
-        }
 
         res = ath6kl_wmi_set_ch_params(ar->wmi, vif->fw_vif_idx, vif->phy_mode);
         if (res)
