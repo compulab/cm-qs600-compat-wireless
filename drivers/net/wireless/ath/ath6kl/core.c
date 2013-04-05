@@ -156,6 +156,11 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	ar->conf_flags = ATH6KL_CONF_IGNORE_ERP_BARKER |
 			 ATH6KL_CONF_ENABLE_11N | ATH6KL_CONF_ENABLE_TX_BURST;
 
+	ar->mcc_flowctrl_ctx = ath6kl_mcc_flowctrl_conn_list_init(ar);
+
+	if(ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL))
+		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
+
 	if (suspend_mode &&
 	    suspend_mode >= WLAN_POWER_STATE_CUT_PWR &&
 	    suspend_mode <= WLAN_POWER_STATE_WOW)
@@ -341,6 +346,7 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_debug_cleanup(ar);
 
+	ath6kl_mcc_flowctrl_conn_list_deinit(ar);
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
 	if (ar->testmode == 0)

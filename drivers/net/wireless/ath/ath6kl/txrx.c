@@ -1521,6 +1521,59 @@ fail_ctrl_tx:
 	return status;
 }
 
+int ath6kl_conn_list_init(struct ath6kl *ar)
+{
+	int i;
+	struct ath6kl_fw_conn_list *pcon;
+
+	for (i = 0; i < NUM_CONN; i++) {
+		pcon = &ar->mcc_flowctrl_ctx->fw_conn_list[i];
+		INIT_LIST_HEAD(&pcon->conn_queue);
+		INIT_LIST_HEAD(&pcon->re_queue);
+		pcon->connect_status = 0;
+		pcon->previous_can_send = true;
+	}
+	return 0;
+}
+
+void ath6kl_conn_list_cleanup(struct ath6kl *ar)
+{
+	int i;
+	struct ath6kl_fw_conn_list *pcon;
+	struct htc_packet *packet, *tmp_pkt;
+	struct list_head container;
+
+	INIT_LIST_HEAD(&container);
+
+	for (i = 0; i < NUM_CONN; i++) {
+		pcon = &ar->mcc_flowctrl_ctx->fw_conn_list[i];
+
+		spin_lock_bh(&ar->lock);
+
+		if (!list_empty(&pcon->re_queue)) {
+			list_for_each_entry_safe(packet, tmp_pkt, &pcon->re_queue,
+						list) {
+				list_del(&packet->list);
+				packet->status = 0;
+				list_add_tail(&packet->list, &container);
+			}
+		}
+
+		if (!list_empty(&pcon->conn_queue)) {
+			list_for_each_entry_safe(packet, tmp_pkt, &pcon->conn_queue,
+						list) {
+				list_del(&packet->list);
+				packet->status = 0;
+				list_add_tail(&packet->list, &container);
+			}
+		}
+
+		spin_unlock_bh(&ar->lock);
+	}
+
+	ath6kl_tx_complete(ar->htc_target, &container);
+}
+
 int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
@@ -1715,6 +1768,20 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 
 	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "tx ",
 			skb->data, skb->len);
+
+	/* MCC Flowctrl */
+	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
+		enum htc_send_queue_result queue_result;
+
+		cookie->htc_pkt.connid = ath6kl_mcc_flowctrl_get_conn_id(vif, skb);
+		cookie->htc_pkt.recycle_count = 0;
+
+		queue_result = ath6kl_mcc_flowctrl_tx_schedule_pkt(ar, (void *)cookie);
+		if (queue_result == HTC_SEND_QUEUE_OK)	/* Queue it */
+			return 0;
+		else if (queue_result == HTC_SEND_QUEUE_DROP)	/* Error, drop it. */
+			goto fail_tx;
+	}
 
 	/*
 	 * HTC interface is asynchronous, if this fails, cleanup will
@@ -2071,6 +2138,7 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar)
 	for (i = 0; i < WMM_NUM_AC; i++)
 		ath6kl_htc_flush_txep(ar->htc_target, ar->ac2ep_map[i],
 				ATH6KL_DATA_PKT_TAG);
+	ath6kl_conn_list_cleanup(ar);
 }
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -3464,6 +3532,444 @@ void aggr_module_destroy(struct aggr_info *aggr_info)
 	skb_queue_purge(&aggr_info->rx_amsdu_freeq);
 	kfree(aggr_info->aggr_conn);
 	kfree(aggr_info);
+}
+
+struct
+ath6kl_mcc_flowctrl *ath6kl_mcc_flowctrl_conn_list_init(struct ath6kl *ar)
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl;
+	struct ath6kl_fw_conn_list *fw_conn;
+	int i;
+
+	mcc_flowctrl = kzalloc(sizeof(struct ath6kl_mcc_flowctrl), GFP_KERNEL);
+	if (!mcc_flowctrl) {
+		ath6kl_err("failed to alloc memory for mcc_flowctrl\n");
+		return NULL;
+	}
+
+	mcc_flowctrl->ar = ar;
+	spin_lock_init(&mcc_flowctrl->mcc_flowctrl_lock);
+
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &mcc_flowctrl->fw_conn_list[i];
+		INIT_LIST_HEAD(&fw_conn->conn_queue);
+		INIT_LIST_HEAD(&fw_conn->re_queue);
+		fw_conn->connect_status = 0;
+		fw_conn->previous_can_send = true;
+		fw_conn->conn_id = ATH6KL_MCC_FLOWCTRL_NULL_CONNID;
+		memset(fw_conn->mac_addr, 0, ETH_ALEN);
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl init (ar %p) NUM_CONN %d\n",
+		ar,
+		NUM_CONN);
+
+	return mcc_flowctrl;
+}
+
+void ath6kl_mcc_flowctrl_conn_list_deinit(struct ath6kl *ar)
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+
+	if (mcc_flowctrl) {
+		/*
+		 * It's better to check whether any conn_queue/re_queue
+		 * need to reclaim.
+		 */
+
+		kfree(mcc_flowctrl);
+	}
+
+	ar->mcc_flowctrl_ctx = NULL;
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl deinit (ar %p)\n",
+		ar);
+
+	return;
+}
+
+void ath6kl_mcc_flowctrl_conn_list_cleanup(struct ath6kl *ar)
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct htc_packet *packet, *tmp_pkt;
+	struct list_head container;
+	int i, reclaim = 0;
+
+	WARN_ON(!mcc_flowctrl);
+
+	INIT_LIST_HEAD(&container);
+
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &mcc_flowctrl->fw_conn_list[i];
+
+		spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+		if (!list_empty(&fw_conn->re_queue)) {
+			list_for_each_entry_safe(packet, tmp_pkt,
+				&fw_conn->re_queue, list) {
+				list_del(&packet->list);
+				packet->status = 0;
+				list_add_tail(&packet->list, &container);
+				reclaim++;
+			}
+		}
+
+		if (!list_empty(&fw_conn->conn_queue)) {
+			list_for_each_entry_safe(packet, tmp_pkt,
+				&fw_conn->conn_queue, list) {
+				list_del(&packet->list);
+				packet->status = 0;
+				list_add_tail(&packet->list, &container);
+				reclaim++;
+			}
+		}
+		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+	}
+
+	ath6kl_tx_complete(ar->htc_target, &container);
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl cleanup (ar %p) reclaim %d\n",
+		ar,
+		reclaim);
+
+	return;
+}
+
+/* Check if this connId is off-channel
+ * return 0 - the connId is off-channel
+ *        1 - the device is in connId channel, so tx can be sent
+ */
+static bool ath6kl_check_can_send(struct ath6kl_mcc_flowctrl *mcc_flowctrl,
+				u8 conn_id)
+{
+	struct ath6kl_fw_conn_list *fw_conn;
+	bool can_send = false;
+
+	fw_conn = &mcc_flowctrl->fw_conn_list[conn_id];
+
+	do {
+		if (fw_conn->ocs)
+			break;
+
+		can_send = true;
+	} while(false);
+
+	return can_send;
+}
+
+void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar)
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct htc_packet *packet, *tmp_pkt;
+	int i, tx, re_tx;
+
+	WARN_ON(!mcc_flowctrl);
+
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &mcc_flowctrl->fw_conn_list[i];
+
+		spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+		/* Bypass this fw_conn if it not yet used. */
+		if (fw_conn->conn_id == ATH6KL_MCC_FLOWCTRL_NULL_CONNID) {
+			spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+			continue;
+		}
+
+		tx = re_tx = 0;
+		if (ath6kl_check_can_send(mcc_flowctrl, i)) {
+			if (!list_empty(&fw_conn->re_queue)) {
+				list_for_each_entry_safe(packet, tmp_pkt,
+						&fw_conn->re_queue, list) {
+					list_del(&packet->list);
+					if (packet == NULL)
+						continue;
+
+					if (packet->endpoint >= ENDPOINT_MAX)
+						continue;
+
+					re_tx++;
+					ath6kl_htc_tx(ar->htc_target, packet);
+				}
+			}
+
+			if (!list_empty(&fw_conn->conn_queue)) {
+				list_for_each_entry_safe(packet, tmp_pkt,
+						&fw_conn->conn_queue, list) {
+					list_del(&packet->list);
+
+					if (packet == NULL)
+						continue;
+
+					if (packet->endpoint >= ENDPOINT_MAX)
+						continue;
+
+					tx++;
+					ath6kl_htc_tx(ar->htc_target, packet);
+				}
+			}
+		}
+		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+		ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+			"mcc_flowctrl schedule(ar %p)connId %d tx%d re_tx%d\n",
+			ar, i, tx, re_tx);
+	}
+
+	return;
+}
+
+/* Check if this packet needs to be held(cached) in host.
+ * If not, send the packets that were cached earlier for this conn
+ *
+ * for home channel packet : netif -> ep txq -> fw
+ * for off channel packet : netif -> conn queue -> channel switch event ->
+ *				conn queue -> ep txq
+ * for tx epq packets that are not drained : channel switch event -> eq txq
+ *				-> conn queue
+ */
+enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar,
+					void *pkt)
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct ath6kl_cookie *cookie = (struct ath6kl_cookie *)pkt;
+	int conn_id = cookie->htc_pkt.connid;
+	enum htc_send_queue_result ret = HTC_SEND_QUEUE_OK;
+
+	WARN_ON(!mcc_flowctrl);
+
+	if (conn_id == ATH6KL_MCC_FLOWCTRL_NULL_CONNID) {
+		ath6kl_err("mcc_flowctrl tx schedule packet fail, NULL connId,"
+				"just send??\n");
+		/* Just send it */
+		return HTC_SEND_QUEUE_SENT;
+	}
+
+	spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+	fw_conn = &mcc_flowctrl->fw_conn_list[conn_id];
+
+	if (!ath6kl_check_can_send(mcc_flowctrl, conn_id)) {
+		list_add_tail(&cookie->htc_pkt.list, &fw_conn->conn_queue);
+		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+		goto result;
+	} else if (!list_empty(&fw_conn->conn_queue)) {
+		list_add_tail(&cookie->htc_pkt.list, &fw_conn->conn_queue);
+		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+		ath6kl_mcc_flowctrl_tx_schedule(ar);
+
+		goto result;
+	} else {
+		ret = HTC_SEND_QUEUE_SENT;
+	}
+
+	spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+result:
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl schedule pkt (ar %p) %s\n",
+		ar,
+		((ret == HTC_SEND_QUEUE_OK) ? "queue" : "send"));
+
+	return ret;
+}
+
+/* channel switch event -> ep txq -> conn queue
+ * if packets are cycled between eq txq and conn queue for more than
+ * ATH6KL_MCC_FLOWCTRL_RECYCLE_LIMIT times, drop the pkt
+ */
+void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar)
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct htc_packet *packet, *tmp_pkt;
+	struct htc_endpoint *endpoint;
+	struct list_head    *tx_queue, container;
+	int i, eid, re_tx, drop_tx;
+
+	WARN_ON(!mcc_flowctrl);
+
+	INIT_LIST_HEAD(&container);
+
+	re_tx = drop_tx = 0;
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &mcc_flowctrl->fw_conn_list[i];
+
+		if (!ath6kl_check_can_send(mcc_flowctrl, i) &&
+			fw_conn->previous_can_send) {
+			spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+			for (eid = ENDPOINT_2; eid <= ENDPOINT_5; eid++) {
+				endpoint = &ar->htc_target->endpoint[eid];
+				tx_queue = &endpoint->txq;
+				if (list_empty(tx_queue))
+					continue;
+
+				list_for_each_entry_safe(packet, tmp_pkt,
+						tx_queue, list) {
+					if (packet->connid != i)
+						continue;
+
+					list_del(&packet->list);
+					if (packet->recycle_count >
+					ATH6KL_MCC_FLOWCTRL_RECYCLE_LIMIT) {
+						ath6kl_info("recycle packet"
+						"exceeded limitation\n");
+						packet->status = 0;
+						list_add_tail(&packet->list,
+								&container);
+						drop_tx++;
+					} else {
+						packet->recycle_count++;
+						list_add_tail(&packet->list,
+							&fw_conn->re_queue);
+						re_tx++;
+					}
+				}
+			}
+			spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+		}
+
+		fw_conn->previous_can_send = ath6kl_check_can_send(mcc_flowctrl, i);
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl state_change (ar %p) re_tx %d drop_tx %d \n",
+		ar, re_tx, drop_tx);
+
+	ath6kl_tx_complete(ar->htc_target, &container);
+
+	return;
+}
+
+/* Update the bit-map for each conn, as sent in flowctrl event from FW
+ * This flag needs to be checked for all Tx
+ */
+void ath6kl_mcc_flowctrl_state_update(struct ath6kl *ar,
+					u8 num_conn,
+					u8 ac_map[],
+					u8 ac_queue_depth[])
+{
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	int i;
+
+	WARN_ON(!mcc_flowctrl);
+
+	spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &mcc_flowctrl->fw_conn_list[i];
+		fw_conn->connect_status = ac_map[i];
+	}
+	spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl state_update(ar %p)ac_map %02x %02x %02x %02x\n",
+		ar, ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
+
+	return;
+}
+
+/* Find conn based on the mac address.
+ * If this packet doesnt have any of the matching mac, assume doing
+ * transmit of this packet is fine
+ */
+void ath6kl_mcc_flowctrl_set_conn_id(struct ath6kl_vif *vif,
+					u8 mac_addr[],
+					u8 conn_id)
+{
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+
+	WARN_ON(!mcc_flowctrl);
+
+	/* Here using "connection" based concept.
+	 * For STA/AP mode, set mac address as STA/AP-Client's.
+	 * For AP node, set mac address as AP's.
+	 * For AP's client, set mac address as client's.
+	 *
+	 * Mac address is a "hint" used to find the connection id when TX.
+	 * Host driver need to
+	 * 1.Call this API w/ NULL mac address if DISCONNECT event.
+	 * 2.Recycle the conn_queue/re_queue.
+	 * 3.Reset the flowctrl status.
+	 */
+
+	fw_conn = &mcc_flowctrl->fw_conn_list[conn_id];
+	spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+	if (mac_addr) {
+		fw_conn->conn_id = conn_id;
+		memcpy(fw_conn->mac_addr, mac_addr, ETH_ALEN);
+	} else {
+		fw_conn->conn_id = ATH6KL_MCC_FLOWCTRL_NULL_CONNID;
+		memset(fw_conn->mac_addr, 0, ETH_ALEN);
+	}
+
+	spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl set conn_id (ar %p) mode %d connId %d"
+		"mac_addr %pM\n",
+		ar, vif->nw_type, conn_id,
+		mac_addr);
+
+	return;
+}
+
+u8 ath6kl_mcc_flowctrl_get_conn_id(struct ath6kl_vif *vif,
+				struct sk_buff *skb)
+{
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	struct ethhdr *ethhdr;
+	u8 *hint;
+	u8 conn_id = ATH6KL_MCC_FLOWCTRL_NULL_CONNID;
+	int i;
+
+	if (!mcc_flowctrl) {
+		return conn_id;
+	}
+
+	ethhdr = (struct ethhdr *)(skb->data + sizeof(struct wmi_data_hdr));
+
+	if (vif->nw_type != AP_NETWORK) {
+		hint = ethhdr->h_source;
+	} else {
+		if (is_multicast_ether_addr(ethhdr->h_dest))
+			hint = ethhdr->h_source;
+		else
+			hint = ethhdr->h_dest;
+	}
+
+	fw_conn = &mcc_flowctrl->fw_conn_list[0];
+	spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+	for (i = 0; i < NUM_CONN; i++, fw_conn++) {
+		if (fw_conn->conn_id == ATH6KL_MCC_FLOWCTRL_NULL_CONNID)
+			continue;
+
+		if (memcmp(fw_conn->mac_addr, hint, ETH_ALEN) == 0) {
+			conn_id = fw_conn->conn_id;
+			break;
+		}
+	}
+	spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		"mcc_flowctrl get conn_id (ar %p) connId %d"
+		"hint %pM\n",
+		ar,
+		conn_id,
+		hint);
+
+	return conn_id;
 }
 
 #ifdef CONFIG_ATH6KL_BAM2BAM

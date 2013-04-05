@@ -55,6 +55,11 @@
 #define ATH6KL_APSD_NUM_OF_AC		0x4
 #define ATH6KL_APSD_FRAME_MASK		0xF
 
+#define ROUTER_DUAL_CONC
+
+#define ATH6KL_MCC_FLOWCTRL_NULL_CONNID 	(0xFF)
+#define ATH6KL_MCC_FLOWCTRL_RECYCLE_LIMIT 	(10)
+
 #define BDATA_CHECKSUM_OFFSET                 4
 #define BDATA_MAC_ADDR_OFFSET                 8
 
@@ -341,6 +346,7 @@ struct ath6kl_traffic_activity_change {
 #define ATH6KL_CONF_ENABLE_11N			BIT(2)
 #define ATH6KL_CONF_ENABLE_TX_BURST		BIT(3)
 #define ATH6KL_CONF_UART_DEBUG			BIT(4)
+#define ATH6KL_CONF_ENABLE_FLOWCTRL		BIT(5)
 
 #define P2P_WILDCARD_SSID_LEN			7 /* DIRECT- */
 
@@ -728,6 +734,45 @@ enum ath6kl_state {
 	ATH6KL_STATE_SCHED_SCAN,
 };
 
+struct ath6kl_fw_conn_list
+{
+	struct list_head conn_queue;
+	struct list_head re_queue;
+
+	u8 conn_id;
+	u8 mac_addr[ETH_ALEN];
+	struct ath6kl_vif *vif;
+
+	union
+	{
+		struct
+		{
+			u8 bk_uapsd    : 1;
+			u8 be_uapsd    : 1;
+			u8 vi_uapsd    : 1;
+			u8 vo_uapsd    : 1;
+			u8 ps          : 1;
+			u8 ocs         : 1;
+			u8 res         : 2;
+		};
+		u8 connect_status;
+	};
+	bool previous_can_send;
+
+	/* stats  */
+	int sche_tx_queued;
+	u32 sche_tx;
+	u32 sche_re_tx;
+	u32 sche_re_tx_aging;
+};
+
+struct ath6kl_mcc_flowctrl {
+	struct ath6kl *ar;
+	spinlock_t mcc_flowctrl_lock;
+	struct ath6kl_fw_conn_list fw_conn_list[NUM_CONN];
+	u32 mcc_flowctrl_event_cnt;
+};
+
 struct ath6kl {
 	struct device *dev;
 	struct wiphy *wiphy;
@@ -899,6 +944,7 @@ struct ath6kl {
 		struct sk_buff_head cdlog_queue;
 	} debug;
 #endif /* CONFIG_ATH6KL_DEBUG */
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl_ctx;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -1040,7 +1086,9 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar);
 struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar, enum htc_endpoint_id eid);
 void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie);
 int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev);
-
+int ath6kl_conn_list_init(struct ath6kl *ar);
+void ath6kl_tx_scheduler(struct ath6kl_vif *vif);
+void ath6kl_flowctrl_change(struct ath6kl_vif *vif);
 struct aggr_info *aggr_init(struct ath6kl_vif *vif);
 void aggr_conn_init(struct ath6kl_vif *vif, struct aggr_info *aggr_info,
 		    struct aggr_info_conn *aggr_conn);
@@ -1137,5 +1185,17 @@ void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid);
 void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name);
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar);
 #endif
+
+struct ath6kl_mcc_flowctrl *ath6kl_mcc_flowctrl_conn_list_init(struct ath6kl *ar);
+void ath6kl_mcc_flowctrl_conn_list_deinit(struct ath6kl *ar);
+void ath6kl_mcc_flowctrl_conn_list_cleanup(struct ath6kl *ar);
+void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar);
+enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar, void *pkt);
+void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar);
+void ath6kl_mcc_flowctrl_state_update(struct ath6kl *ar,u8 numConn,
+                                     u8 ac_map[], u8 ac_queue_depth[]);
+void ath6kl_mcc_flowctrl_set_conn_id(struct ath6kl_vif *vif, u8 mac_addr[],u8 connId);
+u8 ath6kl_mcc_flowctrl_get_conn_id(struct ath6kl_vif *vif, struct sk_buff *skb);
+int ath6kl_mcc_flowctrl_stat(struct ath6kl *ar, u8 *buf, int buf_len);
 
 #endif /* CORE_H */

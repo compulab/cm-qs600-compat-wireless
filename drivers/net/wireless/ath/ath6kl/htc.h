@@ -134,6 +134,9 @@
 #define NUM_CONTROL_TX_BUFFERS  2
 #define NUM_CONTROL_RX_BUFFERS  (NUM_CONTROL_BUFFERS - NUM_CONTROL_TX_BUFFERS)
 
+#define NUM_DEV			4
+#define NUM_CONN		(AP_MAX_NUM_STA + NUM_DEV - 1 )
+
 #define HTC_RECV_WAIT_BUFFERS        (1 << 0)
 #define HTC_OP_STATE_STOPPING        (1 << 0)
 #define HTC_OP_STATE_SETUP_COMPLETE  (1 << 1)
@@ -328,6 +331,8 @@ struct htc_packet {
 	 * a network buffer
 	 */
 	struct sk_buff *skb;
+	u8 connid;
+	u8 recycle_count;
 };
 
 enum htc_send_full_action {
@@ -542,7 +547,8 @@ struct htc_pipe_txcredit_alloc {
 
 enum htc_send_queue_result {
 	HTC_SEND_QUEUE_OK = 0,	/* packet was queued */
-	HTC_SEND_QUEUE_DROP = 1,	/* this packet should be dropped */
+	HTC_SEND_QUEUE_DROP = 1,/* this packet should be dropped */
+	HTC_SEND_QUEUE_SENT = 2,/* packet was not queued, but sent */
 };
 
 struct ath6kl_htc_ops {
