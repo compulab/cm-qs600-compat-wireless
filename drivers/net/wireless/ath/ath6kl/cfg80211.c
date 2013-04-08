@@ -1071,7 +1071,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
         }
 
         /* enable deterministic scan if sta is not in conn state */
-        if (!(test_bit(CONNECTED, &vif->flags))) {
+        if (!(test_bit(CONNECTED, &vif->flags)) || request->ht_obss_scan) {
                 force_scan_interval = ATH6KL_FG_SCAN_INTERVAL;
         }
 
@@ -2776,6 +2776,7 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 			   struct bss_parameters *info)
 {
 	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct wmi_fix_rates_cmd rate;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:\n", __func__);
 
@@ -2785,7 +2786,15 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 	if (vif->next_mode != AP_NETWORK)
 		return -EOPNOTSUPP;
 
+	memset(&rate, sizeof(struct wmi_fix_rates_cmd), 0);
 	vif->intra_bss = !(info->ap_isolate);
+
+	if (info->ht_2040_mode) {
+		rate.fix_rate_mask[0] = 0xfffffff;
+		ath6kl_wmi_set_fixrates(vif->ar->wmi, vif->fw_vif_idx,
+				rate); /* Masking the HT 40 rates */
+	}
+
 	return 0;
 }
 
@@ -3793,6 +3802,8 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	spin_lock_bh(&ar->list_lock);
 	list_add_tail(&vif->list, &ar->vif_list);
 	spin_unlock_bh(&ar->list_lock);
+
+	ath6kl_set_htcap(vif, IEEE80211_BAND_5GHZ, true);
 
 	return ndev;
 
