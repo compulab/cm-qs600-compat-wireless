@@ -46,6 +46,7 @@ unsigned int ath6kl_vap = ATH6KL_MODULEVAP_DEF_MODE;
 unsigned int ath6kl_scan_timeout;
 unsigned int ath6kl_roam_mode = ATH6KL_MODULEROAM_DEFAULT;
 static unsigned int recovery_enable_mode = ATH6KL_RECOVERY_MODE_NONE;
+unsigned int starving_prevention;
 unsigned int ath6kl_ath0_name;
 #ifdef CE_SUPPORT
 unsigned int ath6kl_ce_flags = 1;
@@ -87,6 +88,7 @@ module_param(ath6kl_ath0_name, uint, 0644);
 #ifdef CE_SUPPORT
 module_param(ath6kl_ce_flags, uint, 0644);
 #endif
+module_param(starving_prevention, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -305,8 +307,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.reserved_ram_size		= 7168,
 		.board_addr			= 0x436400,
 		.testscript_addr		= 0,
-		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED	|
-						ATH6KL_HW_USB_FLOWCTRL,
+		.flags			= ATH6KL_HW_SINGLE_PIPE_SCHED,
 
 		.fw = {
 			.dir		= AR6004_HW_3_0_FW_DIR,
@@ -497,6 +498,12 @@ static int ath6kl_connectservice(struct ath6kl *ar,
 		return status;
 	}
 
+	if (response.endpoint >= ENDPOINT_MAX
+		|| response.endpoint <= ENDPOINT_UNUSED) {
+		ath6kl_err("Invalid endpoint: %d\n", response.endpoint);
+		return -EINVAL;
+	}
+
 	switch (con_req->svc_id) {
 	case WMI_CONTROL_SVC:
 		if (test_bit(WMI_ENABLED, &ar->flag))
@@ -675,12 +682,24 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE)
 		vif->sc_params.scan_ctrl_flags |= ROAM_SCAN_CTRL_FLAGS;
 
+#ifdef CE_SUPPORT
+	/* avoid association reject by AP not found */
+	vif->sc_params.maxact_chdwell_time = 60;
+	vif->sc_params.maxact_scan_per_ssid = 2;
+#else
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
+#endif
 
 	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 		vif->sc_params.pas_chdwell_time =
 			ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM;
 
+	/*
+	 * restore the initial scan parameters for usage
+	 * Note that debugfs may revise sc_params_default as well
+	 */
+	memcpy(&vif->sc_params_default, &vif->sc_params,
+			sizeof(struct wmi_scan_params_cmd));
 }
 
 /*
@@ -924,7 +943,8 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
+	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
+		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
 		param = 0;
 	else
 		param = 3;
@@ -1091,6 +1111,10 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_p2p_flowctrl_conn_list_deinit(ar);
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
+	ath6kl_reg_deinit(ar);
+#endif
+
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
 	kfree(ar->fw);
@@ -1171,7 +1195,7 @@ static bool check_device_tree(struct ath6kl *ar)
 
 static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 {
-	int i;
+	int i, ret;
 	u16 *p;
 	u32 sum = 0;
 	u32 param;
@@ -1197,10 +1221,15 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
 
-	ath6kl_bmi_read(ar,
+	ret = ath6kl_bmi_read(ar,
 				ath6kl_get_hi_item_addr(ar,
 				HI_ITEM(hi_option_flag2)),
 				(u8 *) &param, 4);
+
+	if (ret) {
+		ath6kl_err("failed to do bmi read %d\n", ret);
+		return;
+	}
 
 	param |= HI_OPTION_DISABLE_MAC_OTP;
 	ath6kl_bmi_write(ar,
@@ -1212,7 +1241,7 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 
 static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 {
-	int i;
+	int i, ret;
 	u16 *p;
 	u32 sum = 0;
 	u32 param;
@@ -1243,10 +1272,15 @@ static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
 
-	ath6kl_bmi_read(ar,
+	ret = ath6kl_bmi_read(ar,
 				ath6kl_get_hi_item_addr(ar,
 				HI_ITEM(hi_option_flag2)),
 				(u8 *) &param, 4);
+
+	if (ret) {
+		ath6kl_err("failed to do bmi read %d\n", ret);
+		return ret;
+	}
 
 	param |= HI_OPTION_DISABLE_MAC_OTP;
 	ath6kl_bmi_write(ar,
@@ -2755,6 +2789,8 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	ar->testmode = testmode;
 
+	ar->starving_prevention = starving_prevention;
+
 	ret = ath6kl_fetch_firmwares(ar);
 	if (ret)
 		goto err_htc_cleanup;
@@ -2883,6 +2919,14 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
+	/* Disable P2P-in-passive-chan channels by default. */
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB))
+		ar->reg_ctx = ath6kl_reg_init(ar, true, false);
+	else
+		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
+#endif
+
 	set_bit(FIRST_BOOT, &ar->flag);
 
 	ret = ath6kl_init_hw_start(ar);
@@ -2940,6 +2984,15 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
+	ar->green_tx_params.enable = true;
+	ar->green_tx_params.next_probe_count =
+		ATH6KL_GTX_NEXT_PROBE_COUNT;
+	ar->green_tx_params.max_back_off =
+		ATH6KL_GTX_MAX_BACK_OFF;
+	ar->green_tx_params.min_gtx_rssi =
+		ATH6KL_GTX_MIN_RSSI;
+	ar->green_tx_params.force_back_off =
+		ATH6KL_GTX_FORCE_BACKOFF;
 
 	return ret;
 
