@@ -351,6 +351,10 @@ bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif,
 		if (!conn)
 			return false;
 
+		if (ieee80211_is_probe_resp(mgmt->frame_control)) {
+			return false;
+		}
+
 		if (conn->sta_flags & STA_PS_SLEEP) {
 			if (!(conn->sta_flags & STA_PS_POLLED)) {
 				/* Queue the frames if the STA is sleeping */
