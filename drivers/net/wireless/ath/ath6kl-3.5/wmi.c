@@ -373,9 +373,11 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 
 	spin_lock_bh(&wmi->lock);
 	stream_exist = wmi->fat_pipe_exist;
-	spin_unlock_bh(&wmi->lock);
 
 	if (!(stream_exist & (1 << traffic_class))) {
+		wmi->fat_pipe_exist |= (1 << traffic_class);
+		spin_unlock_bh(&wmi->lock);
+
 		memset(&cmd, 0, sizeof(cmd));
 		cmd.traffic_class = traffic_class;
 		cmd.user_pri = usr_pri;
@@ -384,7 +386,10 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 		/* Implicit streams are created with TSID 0xFF */
 		cmd.tsid = WMI_IMPLICIT_PSTREAM;
 		ath6kl_wmi_create_pstream_cmd(wmi, if_idx, &cmd);
+
+		spin_lock_bh(&wmi->lock);
 	}
+	spin_unlock_bh(&wmi->lock);
 
 	*ac = traffic_class;
 

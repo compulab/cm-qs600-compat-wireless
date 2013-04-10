@@ -1479,7 +1479,7 @@ static int htc_rx_completion(struct htc_target *context,
 #if CONFIG_CRASH_DUMP
 	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
 
-#define REG_DUMP_COUNT_AR6004   60
+#define REG_DUMP_COUNT_AR6004   76
 		netdata += 4;
 
 		ath6kl_info("Firmware crash detected...\n");
