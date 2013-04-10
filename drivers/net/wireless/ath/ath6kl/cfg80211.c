@@ -3935,6 +3935,7 @@ int ath6kl_cfg80211_init(struct ath6kl *ar)
 	if (test_bit(ATH6KL_FW_CAPABILITY_2GIG_HT40_SUPPORT,
                      ar->fw_capabilities)) {
 		ath6kl_band_2ghz.ht_cap.cap = ath6kl_a_htcap;
+		ar->wiphy->features = NL80211_FEATURE_HT_2040_COEX;
 	}
 
 	if (band_2gig)
@@ -3973,7 +3974,7 @@ int ath6kl_cfg80211_init(struct ath6kl *ar)
 
 	if (test_bit(ATH6KL_FW_CAPABILITY_INACTIVITY_TIMEOUT,
 		     ar->fw_capabilities))
-		ar->wiphy->features = NL80211_FEATURE_INACTIVITY_TIMER;
+		ar->wiphy->features |= NL80211_FEATURE_INACTIVITY_TIMER;
 
 	ar->wiphy->probe_resp_offload =
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_WPS |
