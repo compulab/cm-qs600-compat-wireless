@@ -1954,7 +1954,7 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 		return;
 	}
 
-	for (i = 0; i < AP_MAX_NUM_STA; i++)
+	for (i = 0; i < NUM_CONN; i++)
 	{
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		ar->sta_list[i].aggr_conn->vif = ar->sta_list[i].vif;

@@ -61,7 +61,7 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 	struct ath6kl_sta *conn = NULL;
 	u8 i, max_conn;
 
-	max_conn = (vif->nw_type == AP_NETWORK) ? AP_MAX_NUM_STA : 0;
+	max_conn = (vif->nw_type == AP_NETWORK) ? NUM_CONN : 0;
 
 	for (i = 0; i < max_conn; i++) {
 		if (memcmp(node_addr, ar->sta_list[i].mac, ETH_ALEN) == 0) {
@@ -80,7 +80,7 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 	struct ath6kl_sta *conn = NULL;
 	u8 ctr;
 
-	for (ctr = 0; ctr < AP_MAX_NUM_STA; ctr++) {
+	for (ctr = 0; ctr < NUM_CONN; ctr++) {
 		if (ar->sta_list[ctr].aid == aid) {
 			if (ar->sta_list[ctr].vif == vif)
 				conn = &ar->sta_list[ctr];
@@ -169,14 +169,14 @@ static u8 ath6kl_remove_sta(struct ath6kl_vif *vif, u8 *mac, u16 reason)
 	if (is_broadcast_ether_addr(mac)) {
 		ath6kl_dbg(ATH6KL_DBG_TRC, "deleting all station\n");
 
-		for (i = 0; i < AP_MAX_NUM_STA; i++) {
+		for (i = 0; i < NUM_CONN; i++) {
 			if (!is_zero_ether_addr(ar->sta_list[i].mac)) {
 				ath6kl_sta_cleanup(vif, i);
 				removed = 1;
 			}
 		}
 	} else {
-		for (i = 0; i < AP_MAX_NUM_STA; i++) {
+		for (i = 0; i < NUM_CONN; i++) {
 			if (memcmp(ar->sta_list[i].mac, mac, ETH_ALEN) == 0) {
 				ath6kl_dbg(ATH6KL_DBG_TRC,
 				   "deleting station %pM aid=%d reason=%d\n",
@@ -929,7 +929,7 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 		if (len < sizeof(*p))
 			return;
 
-		for (ac = 0; ac < AP_MAX_NUM_STA; ac++) {
+		for (ac = 0; ac < NUM_CONN; ac++) {
 			st_ap = &ap->sta[ac];
 			st_p = &p->sta[ac];
 

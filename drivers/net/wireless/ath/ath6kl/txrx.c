@@ -1396,7 +1396,7 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 		u8 ctr = 0;
 		bool q_mcast = false;
 
-		for (ctr = 0; ctr < AP_MAX_NUM_STA; ctr++) {
+		for (ctr = 0; ctr < NUM_CONN; ctr++) {
 			if (ar->sta_list[ctr].sta_flags & STA_PS_SLEEP) {
 				q_mcast = true;
 				break;

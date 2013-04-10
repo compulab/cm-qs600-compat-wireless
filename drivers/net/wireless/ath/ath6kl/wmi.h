@@ -2581,7 +2581,7 @@ struct wmi_per_sta_stat {
 
 struct wmi_ap_mode_stat {
 	__le32 action;
-	struct wmi_per_sta_stat sta[AP_MAX_NUM_STA + 1];
+	struct wmi_per_sta_stat sta[NUM_CONN];
 } __packed;
 
 #define MAX_ACL_MAC_ADDRS      10
