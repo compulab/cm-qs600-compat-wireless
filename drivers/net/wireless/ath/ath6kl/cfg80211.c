@@ -4068,7 +4068,7 @@ void ath6kl_cfg80211_destroy(struct ath6kl *ar)
 {
 	int i;
 
-	for (i = 0; i < AP_MAX_NUM_STA; i++)
+	for (i = 0; i < NUM_CONN; i++)
 		kfree(ar->sta_list[i].aggr_conn);
 
 	wiphy_free(ar->wiphy);

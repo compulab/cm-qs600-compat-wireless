@@ -295,10 +295,10 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar->state = ATH6KL_STATE_OFF;
 
 	memset((u8 *)ar->sta_list, 0,
-	       AP_MAX_NUM_STA * sizeof(struct ath6kl_sta));
+	       NUM_CONN * sizeof(struct ath6kl_sta));
 
 	/* Init the PS queues */
-	for (ctr = 0; ctr < AP_MAX_NUM_STA; ctr++) {
+	for (ctr = 0; ctr < NUM_CONN; ctr++) {
 		spin_lock_init(&ar->sta_list[ctr].psq_lock);
 		skb_queue_head_init(&ar->sta_list[ctr].psq);
 		skb_queue_head_init(&ar->sta_list[ctr].apsdq);

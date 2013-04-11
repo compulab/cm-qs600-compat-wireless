@@ -824,7 +824,7 @@ struct ath6kl {
 	u32 connect_ctrl_flags;
 	u32 user_key_ctrl;
 	u8 usr_bss_filter;
-	struct ath6kl_sta sta_list[AP_MAX_NUM_STA];
+	struct ath6kl_sta sta_list[NUM_CONN];
 	u8 sta_list_index;
 	struct ath6kl_req_key ap_mode_bkey;
 	struct sk_buff_head mcastpsq;
