@@ -465,6 +465,9 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	ik = &ar->ap_mode_bkey;
 
+	/* update the ch info */
+	vif->bss_ch = channel;
+
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	ath6kl_send_msg_ipa(vif, WLAN_AP_CONNECT, vif->ndev->dev_addr);
 #endif
