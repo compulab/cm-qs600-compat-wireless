@@ -1770,7 +1770,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 			skb->data, skb->len);
 
 	/* MCC Flowctrl */
-	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL)) {
 		enum htc_send_queue_result queue_result;
 
 		cookie->htc_pkt.connid = ath6kl_mcc_flowctrl_get_conn_id(vif, skb);

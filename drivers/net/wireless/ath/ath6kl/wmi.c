@@ -670,7 +670,7 @@ static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len,
 	 *FIXME	Bypass this event if only one interface be used to
 	 *	avoid uncessary code processing if STA enter PS mode
 	 */
-	if ((!(ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL)) ||
+	if ((!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL))) ||
 		(ar->vif_max == 1))
 		return 0;
 

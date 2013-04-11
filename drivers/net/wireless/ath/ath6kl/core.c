@@ -158,9 +158,6 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 
 	ar->mcc_flowctrl_ctx = ath6kl_mcc_flowctrl_conn_list_init(ar);
 
-	if(ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL))
-		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
-
 	if (suspend_mode &&
 	    suspend_mode >= WLAN_POWER_STATE_CUT_PWR &&
 	    suspend_mode <= WLAN_POWER_STATE_WOW)

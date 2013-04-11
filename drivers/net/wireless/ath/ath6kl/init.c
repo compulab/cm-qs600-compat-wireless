@@ -754,6 +754,21 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		return status;
 	}
 
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL)) {
+
+		param = 0;
+		if (ath6kl_bmi_read_hi32(ar, hi_option_flag2, &param) != 0) {
+			ath6kl_err("bmi_read_memory for MCC FLOWCTRL\n");
+			return -EIO;
+		}
+
+		param |= HI_OPTION_MCC_ENABLE;
+		status = ath6kl_bmi_write_hi32(ar, hi_option_flag2, param);
+
+		if (status)
+			return status;
+	}
+
 	return 0;
 }
 
