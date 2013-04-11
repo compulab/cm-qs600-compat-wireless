@@ -18,10 +18,11 @@
 #include "core.h"
 #include "debug.h"
 #include "testmode.h"
-#include "../regd.h"
-#include "../regd_common.h"
 #include "wlan_location_defs.h"
 #include "rttapi.h"
+#ifndef CONFIG_ATH6KL_INTERNAL_REGDB
+#include "../regd_common.h"
+#endif
 #ifdef ATHTST_SUPPORT
 #include "ce_athtst.h"
 #endif
@@ -909,9 +910,8 @@ static int ath6kl_wmi_rx_probe_req_event_rx(struct wmi *wmi, u8 *datap, int len,
 	freq = le32_to_cpu(ev->freq);
 	dlen = le16_to_cpu(ev->len);
 #ifdef CE_SUPPORT
-	{
+	if (ath6kl_ce_flags == 1)
 		dlen = dlen+4;/* enlarge packet and put rssi to the end */
-	}
 #endif
 	if (datap + len < ev->data + dlen) {
 		ath6kl_err("invalid wmi_p2p_rx_probe_req_event: "
@@ -947,9 +947,8 @@ static int ath6kl_wmi_rx_probe_resp_event_rx(struct ath6kl_vif *vif,
 	freq = le32_to_cpu(ev->freq);
 	dlen = le16_to_cpu(ev->len);
 #ifdef CE_SUPPORT
-	{
+	if (ath6kl_ce_flags == 1)
 		dlen = dlen+4;/* enlarge packet and put rssi to the end */
-	}
 #endif
 	if (datap + len < ev->data + dlen) {
 		ath6kl_err("invalid wmi_p2p_rx_probe_resp_event: "
@@ -970,6 +969,60 @@ static int ath6kl_wmi_rx_probe_resp_event_rx(struct ath6kl_vif *vif,
 					GFP_ATOMIC);
 
 	return 0;
+}
+
+static int ath6kl_wmi_fake_probe_resp_event_by_bssinfo(struct wmi *wmi,
+		u8 *datap, int len, struct ath6kl_vif *vif)
+{
+#define _DEFAULT_SNR	(96)	/* -96 dBm */
+	struct wmi_p2p_rx_probe_resp_event *ev;
+	struct wmi_bss_info_hdr2 *bih;
+	u8 *buf, *fake_datap;
+	struct ieee80211_mgmt *mgmt;
+	u32 rssi, fake_len;
+	struct net_device *dev = vif->ndev;
+
+	if (len <= sizeof(struct wmi_bss_info_hdr2))
+		return -EINVAL;
+
+	bih = (struct wmi_bss_info_hdr2 *) datap;
+	buf = datap + sizeof(struct wmi_bss_info_hdr2);
+	len -= sizeof(struct wmi_bss_info_hdr2);
+
+	if (bih->frame_type != PROBERESP_FTYPE)
+		return 0; /* Only update BSS table for now */
+
+	if (bih->snr == 0x80)
+		return -EINVAL;
+	fake_len = sizeof(struct wmi_p2p_rx_probe_resp_event) + 24 + len + 4;
+	fake_datap = kmalloc(fake_len, GFP_ATOMIC);
+	if (fake_datap == NULL)
+		return -EINVAL;
+	ev = (struct wmi_p2p_rx_probe_resp_event *)fake_datap;
+	ev->freq = cpu_to_le32(-1);
+	ev->len = cpu_to_le16(24 + len);
+
+	mgmt = (struct ieee80211_mgmt *)(fake_datap +
+		sizeof(struct wmi_p2p_rx_probe_resp_event));
+	if (mgmt == NULL)
+		return -EINVAL;
+
+	mgmt->frame_control = cpu_to_le16(IEEE80211_STYPE_PROBE_RESP);
+	memcpy(mgmt->da, dev->dev_addr, ETH_ALEN);
+
+	mgmt->duration = cpu_to_le16(0);
+	memcpy(mgmt->sa, bih->bssid, ETH_ALEN);
+	memcpy(mgmt->bssid, bih->bssid, ETH_ALEN);
+	mgmt->seq_ctrl = cpu_to_le16(0);
+
+	memcpy(&mgmt->u.probe_resp, buf, len);
+	rssi = bih->snr;
+	memcpy(fake_datap + fake_len - 4, &rssi, 4);
+
+	ath6kl_wmi_rx_probe_resp_event_rx(vif, fake_datap, fake_len);
+	kfree(fake_datap);
+	return 0;
+#undef _DEFAULT_SNR
 }
 #endif
 
@@ -1031,9 +1084,8 @@ static int ath6kl_wmi_rx_action_event_rx(struct wmi *wmi, u8 *datap, int len,
 	freq = le32_to_cpu(ev->freq);
 	dlen = le16_to_cpu(ev->len);
 #ifdef CE_SUPPORT
-	{
+	if (ath6kl_ce_flags == 1)
 		dlen = dlen+4;/* enlarge packet and put rssi to the end */
-	}
 #endif
 	if (datap + len < ev->data + dlen) {
 		ath6kl_err("invalid wmi_rx_action_event: "
@@ -1384,6 +1436,27 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 	return 0;
 }
 
+#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
+static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
+{
+	struct ath6kl_wmi_regdomain *ev;
+	struct ath6kl *ar = wmi->parent_dev;
+	u32 reg_code;
+
+	ev = (struct ath6kl_wmi_regdomain *) datap;
+	reg_code = le32_to_cpu(ev->reg_code);
+
+#ifdef CONFIG_QC_INTERNAL
+	ath6kl_info("%s: 0x%x WWR:%d\n",
+			reg_code & BIT(31) ? "Country Code" : "Reg Domain",
+			reg_code & 0xfff, !!(reg_code & BIT(30)));
+#endif
+
+	ath6kl_reg_target_notify(ar, reg_code);
+
+	return;
+}
+#else
 static struct country_code_to_enum_rd *
 ath6kl_regd_find_country(u16 countryCode)
 {
@@ -1428,7 +1501,6 @@ ath6kl_regd_find_country_by_rd(u16 regdmn)
 
 static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 {
-
 	struct ath6kl_wmi_regdomain *ev;
 	struct country_code_to_enum_rd *country = NULL;
 	struct reg_dmn_pair_mapping *regpair = NULL;
@@ -1466,7 +1538,9 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 
 	wmi->parent_dev->current_reg_domain = country;
 
+	return;
 }
+#endif
 
 static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len,
 					  struct ath6kl_vif *vif)
@@ -1663,6 +1737,11 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	kfree(mgmt);
 	if (bss == NULL)
 		return -ENOMEM;
+
+#ifdef CE_SUPPORT
+	bss->coming_from_dev = vif->ndev;
+#endif
+
 	cfg80211_put_bss(bss);
 
 	return 0;
@@ -1715,7 +1794,10 @@ static int ath6kl_wmi_bitrate_reply_rx(struct wmi *wmi, u8 *datap, int len)
 	} else {
 		index = reply->rate_index & 0x7f;
 		sgi = (reply->rate_index & 0x80) ? 1 : 0;
-		rate = wmi_rate_tbl[index][sgi];
+		if (index >= sizeof(wmi_rate_tbl)/sizeof(wmi_rate_tbl[0]))
+			rate = 0;
+		else
+			rate = wmi_rate_tbl[index][sgi];
 	}
 
 	ath6kl_wakeup_event(wmi->parent_dev);
@@ -3500,6 +3582,11 @@ s32 ath6kl_wmi_get_rate(s8 rate_index)
 		return 0;
 
 	sgi = (rate_index & 0x80) ? 1 : 0;
+
+	if ((rate_index & 0x7f) >=
+		(sizeof(wmi_rate_tbl)/sizeof(wmi_rate_tbl[0])))
+		return 0;
+
 	return wmi_rate_tbl[(u32) (rate_index&0x7f)][sgi];
 }
 
@@ -3510,6 +3597,11 @@ s32 ath6kl_wmi_get_rate_ar6004(s8 rate_index)
 		return 0;
 
 	sgi = (rate_index & 0x80) ? 1 : 0;
+
+	if ((rate_index & 0x7f) >=
+		(sizeof(wmi_rate_tbl_ar6004)/sizeof(wmi_rate_tbl_ar6004[0])))
+		return 0;
+
 	return wmi_rate_tbl_ar6004[(u32) (rate_index&0x7f)][sgi];
 }
 
@@ -4399,6 +4491,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 #endif
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_BSSINFO_EVENTID\n");
 		ret = ath6kl_wmi_bssinfo_event_rx(wmi, datap, len, vif);
+#ifdef CE_SUPPORT
+		ath6kl_wmi_fake_probe_resp_event_by_bssinfo(wmi, datap,
+			len, vif);
+#endif
 		break;
 	case WMI_REGDOMAIN_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_REGDOMAIN_EVENTID\n");
@@ -4664,6 +4760,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		break;
 #endif
 #endif
+	case WMI_GET_ANTDIVSTAT_CMDID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_ANTDIVSTAT_CMDID\n");
+		ret =  ath6kl_wmi_antdivstate_event_rx(vif, datap, len);
+		break;
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
 		ret = -EINVAL;
@@ -5128,6 +5228,26 @@ int ath6kl_wmi_set_tx_select_rates_on_all_mode(struct wmi *wmi,
 
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 				  WMI_SET_TX_SELECT_RATES_CMDID,
+				  NO_SYNC_WMIFLAG);
+	return ret;
+}
+
+int ath6kl_wmi_set_antdivcfg(struct wmi *wmi,
+	u8 if_idx, u8 diversity_control)
+{
+	struct sk_buff *skb;
+	struct wmi_ant_div_cmd *cmd;
+	int ret;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_ant_div_cmd *) skb->data;
+	cmd->diversity_control = diversity_control;
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+				  WMI_SET_ANTDIVCFG_CMDID,
 				  NO_SYNC_WMIFLAG);
 	return ret;
 }
@@ -5665,6 +5785,22 @@ int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile)
 				NO_SYNC_WMIFLAG);
 }
 
+int ath6kl_wmi_set_seamless_mcc_scc_switch_freq_cmd(struct wmi *wmi, u32 freq)
+{
+	struct sk_buff *skb;
+	u32 *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (u32 *)skb->data;
+	*cmd = freq;
+
+	return ath6kl_wmi_cmd_send(wmi, 0, skb,
+		WMI_SET_SEAMLESS_MCC_SCC_SWITCH_FREQ_CMDID, NO_SYNC_WMIFLAG);
+}
+
 int ath6kl_wmi_set_inact_cmd(struct wmi *wmi, u32 inacperiod)
 {
 	struct sk_buff *skb;
@@ -5758,4 +5894,10 @@ int ath6kl_wmi_set_ap_num_sta_cmd(struct wmi *wmi, u8 if_idx, u8 sta_nums)
 				  NO_SYNC_WMIFLAG);
 }
 #endif
+
+int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len)
+{
+	memcpy(&vif->ant_div_stat, datap, sizeof(struct wmi_ant_div_stat));
+	return 0;
+}
 
