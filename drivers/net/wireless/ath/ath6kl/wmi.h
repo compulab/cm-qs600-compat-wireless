@@ -195,11 +195,14 @@ enum wmi_data_hdr_flags {
 #define WMI_DATA_HDR_TRIG	    0x10
 #define WMI_DATA_HDR_EOSP	    0x10
 
-#define WMI_DATA_HDR_EXCEPTION_BIT_MASK                  0x1
-#define WMI_DATA_HDR_EXCEPTION_BIT_SHIFT                 8
+#define WMI_DATA_HDR_EXCEPTION_BIT_MASK                 0x1
+#define WMI_DATA_HDR_EXCEPTION_BIT_SHIFT                8
 
-#define WMI_DATA_HDR_AMPDU_FLUSH_BIT_MASK                0x1
-#define WMI_DATA_HDR_AMPDU_FLUSH_BIT_SHIFT               9
+#define WMI_DATA_HDR_AMPDU_FLUSH_BIT_MASK               0x1
+#define WMI_DATA_HDR_AMPDU_FLUSH_BIT_SHIFT              9
+
+#define WMI_DATA_HDR_OUT_OF_ORDER_BIT_MASK              0x1
+#define WMI_DATA_HDR_OUT_OF_ORDER_BIT_SHIFT             11
 
 #define WMI_DATA_HDR_DUMMY_DATA_BIT_MASK                0x1
 #define WMI_DATA_HDR_DUMMY_DATA_BIT_SHIFT               12
@@ -294,6 +297,12 @@ static inline u16 wmi_data_hdr_is_ampdu_flush(struct wmi_data_hdr *dhdr)
 {
 	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_AMPDU_FLUSH_BIT_SHIFT) &
 				 WMI_DATA_HDR_AMPDU_FLUSH_BIT_MASK;
+}
+
+static inline u16 wmi_data_hdr_is_out_of_order(struct wmi_data_hdr *dhdr)
+{
+	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_OUT_OF_ORDER_BIT_SHIFT) &
+				 WMI_DATA_HDR_OUT_OF_ORDER_BIT_MASK;
 }
 
 static inline u16 wmi_data_hdr_is_dummy_data(struct wmi_data_hdr *dhdr)
