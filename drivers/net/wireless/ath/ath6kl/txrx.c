@@ -2902,7 +2902,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	u16 seq_no, offset;
 	u8 tid, if_idx;
 #ifdef CONFIG_ATH6KL_BAM2BAM
-	bool is_flush=0, is_exception=0;
+	bool is_flush=0, is_out_of_order=0;
 #endif
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_RX,
@@ -3127,7 +3127,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
 	{
-		is_exception = wmi_data_hdr_is_exception(dhdr);
+		is_out_of_order = wmi_data_hdr_is_out_of_order(dhdr);
 		is_flush = wmi_data_hdr_is_ampdu_flush(dhdr);
 	}
 #endif
@@ -3226,7 +3226,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
 		{
-			if (is_exception &&
+			if (is_out_of_order &&
 			aggr_process_recv_frm_bam2bam(aggr_conn, tid, seq_no,
 					is_amsdu, skb)) {
 				/* Counter */
