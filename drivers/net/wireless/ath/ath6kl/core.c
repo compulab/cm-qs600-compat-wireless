@@ -296,6 +296,7 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 
 	ar->tx_pwr = 0;
 	ar->lrssi_roam_threshold = DEF_LRSSI_ROAM_THRESHOLD;
+	ar->tx_psq_threshold = ATH6KL_CONN_TX_PSQ_MAX_LEN;
 
 	ar->state = ATH6KL_STATE_OFF;
 
