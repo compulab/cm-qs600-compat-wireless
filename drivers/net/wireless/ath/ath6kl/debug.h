@@ -116,7 +116,6 @@ void ath6kl_debug_set_disconnect_timeout(struct ath6kl *ar, u8 timeout);
 void ath6kl_debug_init(struct ath6kl *ar);
 int ath6kl_debug_init_fs(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
-void ath6kl_print_mac_addr(enum ATH6K_DEBUG_MASK mask, u8 *mac_addr);
 
 #else
 static inline int ath6kl_dbg(enum ATH6K_DEBUG_MASK dbg_mask,

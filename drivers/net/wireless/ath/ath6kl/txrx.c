@@ -568,7 +568,7 @@ int ath6kl_ipa_get_header_hdl(char *hdr_name, uint32_t *hdl)
 	struct ipa_ioc_get_hdr hdrlookup;
 
 	memset(&hdrlookup,0,sizeof(hdrlookup));
-	strcpy(hdrlookup.name,hdr_name);
+	strcpy(hdrlookup.name, hdr_name);
 
 	if(ATH6KL_IPA_SUCCESS != ipa_get_hdr(&hdrlookup))
 	{
@@ -810,8 +810,7 @@ int ath6kl_usb_create_sysbam_pipes(void)
 	int status,i;
 
 	/* The config is similar to the RX Bam pipe configuration */
-	for (i = 0; i < MAX_SYSBAM_PIPE; i++)
-	{
+	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
 		sysbam_pipe[i].ipa_params.client = sysbam_info[i].client;
 
 		ath6kl_ipacm_get_ep_config_info(sysbam_pipe[i].ipa_params.client,
@@ -833,13 +832,11 @@ int ath6kl_usb_create_sysbam_pipes(void)
 					,sysbam_pipe[i].ipa_params.client);
 			return status;
 		}
-		else
-		{
-			ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+
+		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
 				"BAM-CM: Successfully created SYSBAM pipe "
 				"client: %d, Control handle: %d\n",
 				sysbam_info[i].client, sysbam_pipe[i].clnt_hdl);
-		}
 	}
 
 	return status;
@@ -1063,12 +1060,37 @@ void ath6kl_ipa_msg_free_fn(void *buff, u32 len, u32 type)
 				type);
 }
 
+#ifdef CONFIG_ATH6KL_DEBUG
+/* Based on msm_ipa.h */
+const char *ath6kl_ipa_event_name[IPA_EVENT_MAX] = {
+	__stringify(WLAN_CLIENT_CONNECT),
+	__stringify(WLAN_CLIENT_DISCONNECT),
+	__stringify(WLAN_CLIENT_POWER_SAVE_MODE),
+	__stringify(WLAN_CLIENT_NORMAL_MODE),
+	__stringify(SW_ROUTING_ENABLE),
+	__stringify(SW_ROUTING_DISABLE),
+	__stringify(WLAN_AP_CONNECT),
+	__stringify(WLAN_AP_DISCONNECT),
+	__stringify(WLAN_STA_CONNECT),
+	__stringify(WLAN_STA_DISCONNECT),
+};
+
+#define ATH6KL_DBG_PRINT_IPA_EVENT(_mask, _iface_name, _type, _mac_addr) \
+	ath6kl_dbg(_mask, \
+			"IPA-CM: %s: %s event received, MAC Addr: %pM\n", \
+			_iface_name, ath6kl_ipa_event_name[_type], _mac_addr);
+#else
+
+#define ATH6KL_DBG_PRINT_IPA_EVENT(_mask, _iface_name, _type, _mac_addr)
+
+#endif
+
 int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 		u8 *mac_addr)
 {
 	struct ipa_msg_meta meta;
 	struct ipa_wlan_msg *buff;
-	char iface_name[30];
+	char iface_name[IPA_RESOURCE_NAME_MAX];
 	int status;
 
 	if (!ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
@@ -1077,79 +1099,50 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 	if (!ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_IPA_WITH_IPACM))
 		return 0;
 
+	if (type >= IPA_EVENT_MAX) {
+		ath6kl_err("IPA-CM: Unknown IPA event type: %d\n", type);
+		return -EINVAL;
+	}
+
 	iface_name[0] = '\0';
 	strcpy(iface_name, vif->ndev->name);
 
-	switch(type)
-	{
-	case WLAN_CLIENT_CONNECT:
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: Client Connect Event Received: %s %d\n"
-				,__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		break;
+	ATH6KL_DBG_PRINT_IPA_EVENT(ATH6KL_DBG_IPA_MSG, iface_name, type,
+			mac_addr);
 
-	case WLAN_CLIENT_DISCONNECT:
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: Client disconnect event Received\n");
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		break;
+	switch(type) {
 
 	case WLAN_AP_CONNECT:
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: AP Connect Event Received : %s %d\n",
-				__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: AP mode Adding Partial hdr : %s %d\n",
-				__func__,__LINE__);
+				"IPA-CM: AP mode Adding Partial hdr: %s, %d\n",
+				vif->ndev->name, vif->ndev->dev_addr);
 		/* Add partial header with IPA for this interface */
 		ath6kl_ipa_add_header_info(vif->ar, 1, vif->fw_vif_idx,
 				vif->ndev->name, vif->ndev->dev_addr);
 		break;
 
 	case WLAN_AP_DISCONNECT:
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: AP Disconnect Event  %s %d\n",
-				__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
 		ath6kl_clean_ipa_headers(vif->ar, vif->ndev->name);
 		break;
 
-	case WLAN_CLIENT_POWER_SAVE_MODE:
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: STA Entering PS : %s %d\n",
-				__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		break;
-	case WLAN_CLIENT_NORMAL_MODE:
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: STA Out of PS : %s %d\n",
-				__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		break;
 	case WLAN_STA_CONNECT:
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: STA Connect Event Received:%s %d\n",
-				__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: STA Connect adding partial hdr : %s %d\n",
-			__func__,__LINE__);
+			"IPA-CM: STA Connect adding partial hdr: %s, %d\n",
+				vif->ndev->name, vif->ndev->dev_addr);
 		ath6kl_ipa_add_header_info(vif->ar, 0, vif->fw_vif_idx,
 				vif->ndev->name, vif->ndev->dev_addr);
 		break;
+
 	case WLAN_STA_DISCONNECT:
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: STA Disconnect Event %s %d\n",
-			__func__,__LINE__);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
 		ath6kl_clean_ipa_headers(vif->ar, vif->ndev->name);
 		break;
+
+	case WLAN_CLIENT_CONNECT:
+	case WLAN_CLIENT_DISCONNECT:
+	case WLAN_CLIENT_POWER_SAVE_MODE:
+	case WLAN_CLIENT_NORMAL_MODE:
 	default:
-		ath6kl_err("IPA-CM: Unknown IPA message type : %d\n",
-				type);
-		ath6kl_print_mac_addr(ATH6KL_DBG_IPA_MSG, mac_addr);
+		/* Nothing to be done for these events */
 		break;
 	}
 
@@ -1162,7 +1155,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 	if (buff == NULL) {
 		ath6kl_err("IPA-CM: Failed to allocate memory for msg type:%d\n"
 				, type);
-		return -1;
+		return -ENOMEM;
 	}
 
 	/* Fill the message type*/
@@ -1170,7 +1163,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 
 	/* Fill the message */
 	strcpy(buff->name, iface_name); /* need to be changed later */
-	memcpy(buff->mac_addr, mac_addr, 6);
+	memcpy(buff->mac_addr, mac_addr, ETH_ALEN);
 
 	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 		"IPA-CM: IPA send msg : Event ID : %d, interface name: %s \n",
@@ -1178,16 +1171,10 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 
 	status = ipa_send_msg(&meta, buff, ath6kl_ipa_msg_free_fn);
 
-	if(status != 0)
-	{
+	if(status != 0) {
 		ath6kl_err ("IPA-CM: Failed to send msg for type: %d\n", type);
 		kfree(buff);
 		return status;
-	}
-	else
-	{
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Successfully send msg for type:%d\n", type);
 	}
 
 	/*Note:
