@@ -843,18 +843,18 @@ int ath6kl_usb_create_sysbam_pipes(void)
 }
 EXPORT_SYMBOL(ath6kl_usb_create_sysbam_pipes);
 
-/* Send data to the IPA HW via BAM */
+/* Send data to the IPA HW via SYSBAM */
 int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 {
 	int status=0;
 
-	ath6kl_dbg(ATH6KL_DBG_OOO,
-		"BAM-CM: TX:(AMPDU_PROD) Sending packet of size %d (dec)\n",
-			skb->len);
 #ifdef CONFIG_ATH6KL_WITH_IPACM
 	if ( (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPACM)) &&
-	!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_AMPDU_TO_NETIF)))
+		!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_AMPDU_TO_NETIF)))
 	{
+		ath6kl_dbg(ATH6KL_DBG_OOO,
+			"BAM-CM: TX:(AMPDU_PROD)Sending reorderd pkt of size %d (dec)\n",
+			skb->len);
 		/* Add the Hdr (HTC+WMI+802.3+LLC SNAP = 34(wlan hdr len) back ,
 		   as required by the AMPDU pipe, since the filter settings are
 		   same as HSIC1_PROD pipe */
@@ -868,21 +868,20 @@ int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 		skb->data[11] &= 0xfe; /* Reset the D0 bit */
 
 		status = ipa_tx_dp(IPA_CLIENT_A5_WLAN_AMPDU_PROD, skb, NULL);
+		if (status != 0)
+			ath6kl_err("BAM-CM: Failed to send data over sysbam :%d \n",
+					IPA_CLIENT_A5_WLAN_AMPDU_PROD);
+		return status;
 	}
-	else
-		netif_rx_ni(skb);
-#else
-/* Use netif to send re-ordered packets in absence of IPACM */
-	netif_rx_ni(skb);
 #endif
-	if (status != 0)
-	{
-		ath6kl_err("BAM-CM: Failed to send data over sysbam :%d \n",
-				IPA_CLIENT_A5_WLAN_AMPDU_PROD);
-		return -1; /* Failed */
-	}
 
-	return 0; /* Success */
+	/* Use netif to send re-ordered packets in absence of IPACM */
+	ath6kl_dbg(ATH6KL_DBG_OOO,
+		"BAM-CM: TX:(To Netif)Sending reordered pkt of size %d (dec)\n",
+		skb->len);
+	netif_rx_ni(skb);
+
+	return status;
 }
 
 void ath6kl_delete_ipa_header(uint32_t hdl)
