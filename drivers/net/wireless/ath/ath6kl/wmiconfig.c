@@ -46,6 +46,13 @@ enum ath6kl_tm_cmd {
 };
 
 #define AP_ACS_NONE AP_ACS_POLICY_MAX
+#define ATH6KL_AP_APPLY_ACS_DISABLED 0
+#define ATH6KL_AP_APPLY_ACS_ENABLED  1
+
+#define ATH6KL_AP_ACS_RESET       0x00
+#define ATH6KL_AP_ACS_IN_PROGRESS 0x01
+#define ATH6KL_AP_ACS_COMPLETED   0x02
+#define ATH6KL_AP_ACS_NOT_NEEDED  0x04
 
 struct app_lte_coex_wwan_data_t {
 	uint32_t cmd;
@@ -148,61 +155,62 @@ struct _lte_coex_chk {
 	uint8_t	sta_lte_coex_mode;
 	uint8_t ap_lte_coex_mode;
 	uint8_t ap_acs_ch;
+	bool    apply_acs;
 	uint8_t wwan_band;
 } lte_coex_chk[LTE_COEX_REF_LOOKUP_ROWS] = {
 /* wwan_min_freq  wwan_max_freq    wlan_freq    sta_lte_coex_mode
  *      ap_lte_coex_mode                        ap_acs
- *						wwan_band
+ *	apply_acs					wwan_band
  */
 {ATH6KL_WWAN_FREQ_2300,  ATH6KL_WWAN_FREQ_2350, CH1, CH5,
 						LTE_COEX_MODE_3WIRE,
 	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	AP_ACS_DISABLE_CH1,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_ENABLED,			ATH6KL_WWAN_B40},
 
 {ATH6KL_WWAN_FREQ_2300,  ATH6KL_WWAN_FREQ_2350, CH6, CH14,
 						LTE_COEX_MODE_DISABLED,
 	LTE_COEX_MODE_DISABLED,		AP_ACS_DISABLE_CH1,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_DISABLED,			ATH6KL_WWAN_B40},
 
 {ATH6KL_WWAN_FREQ_2350,  ATH6KL_WWAN_FREQ_2370, CH1, CH10,
 						LTE_COEX_MODE_3WIRE,
 	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	AP_ACS_DISABLE_CH1_6,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_ENABLED,			ATH6KL_WWAN_B40},
 
 {ATH6KL_WWAN_FREQ_2350,  ATH6KL_WWAN_FREQ_2370, CH11, CH14,
 						LTE_COEX_MODE_DISABLED,
 	LTE_COEX_MODE_DISABLED,		AP_ACS_DISABLE_CH1_6,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_DISABLED,		ATH6KL_WWAN_B40},
 
-{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2380, CH1, CH11,
+{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2380, CH1, CH10,
 						LTE_COEX_MODE_PWR_BACKOFF,
 	LTE_COEX_MODE_PWR_BACKOFF,		AP_ACS_DISABLE_CH1_6,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_ENABLED,			ATH6KL_WWAN_B40},
 
-{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2380, CH12, CH14,
+{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2380, CH11, CH14,
 						LTE_COEX_MODE_PWR_BACKOFF,
 	LTE_COEX_MODE_PWR_BACKOFF,		AP_ACS_DISABLE_CH1_6,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_DISABLED,			ATH6KL_WWAN_B40},
 
-{ATH6KL_WWAN_FREQ_2380,  ATH6KL_WWAN_FREQ_2400, CH1, CH11,
+{ATH6KL_WWAN_FREQ_2380,  ATH6KL_WWAN_FREQ_2400, CH1, CH10,
 						LTE_COEX_MODE_3WIRE,
 	LTE_COEX_MODE_3WIRE,		AP_ACS_DISABLE_CH1_6,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_ENABLED,		ATH6KL_WWAN_B40},
 
-{ATH6KL_WWAN_FREQ_2380,  ATH6KL_WWAN_FREQ_2400, CH12, CH14,
+{ATH6KL_WWAN_FREQ_2380,  ATH6KL_WWAN_FREQ_2400, CH11, CH14,
 						LTE_COEX_MODE_3WIRE,
 	LTE_COEX_MODE_3WIRE,		AP_ACS_DISABLE_CH1_6,
-						ATH6KL_WWAN_B40},
+	ATH6KL_AP_APPLY_ACS_DISABLED,		ATH6KL_WWAN_B40},
 
 /* Coex mode same for TDD B41 and FDD B7 */
 {ATH6KL_WWAN_FREQ_2496,  ATH6KL_WWAN_FREQ_2570, CH1, CH9,
 						LTE_COEX_MODE_DISABLED,
 	LTE_COEX_MODE_DISABLED,		AP_ACS_DISABLE_CH11,
-						ATH6KL_WWAN_B41|ATH6KL_WWAN_B7},
+	ATH6KL_AP_APPLY_ACS_DISABLED,		ATH6KL_WWAN_B41|ATH6KL_WWAN_B7},
 {ATH6KL_WWAN_FREQ_2496,  ATH6KL_WWAN_FREQ_2570, CH10, CH14,
 						LTE_COEX_MODE_3WIRE,
 	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	AP_ACS_DISABLE_CH11,
-						ATH6KL_WWAN_B41|ATH6KL_WWAN_B7},
+	ATH6KL_AP_APPLY_ACS_ENABLED,		ATH6KL_WWAN_B41|ATH6KL_WWAN_B7},
 
 /* No lte_coex needed for TDD B38
  *{ATH6KL_WWAN_FREQ_2570, ATH6KL_WWAN_FREQ_2620, CH1, CH14,
@@ -249,7 +257,7 @@ struct sk_buff *ath6kl_wmi_get_buf(u32 size)
 	return skb;
 }
 
-static int ath6kl_lte_coex_wlan_get_max_tx_pwr(struct ath6kl *ar, int wlan_freq)
+static int ath6kl_lte_coex_calc_txpwr(struct ath6kl *ar, int wlan_freq)
 {
 	int8_t i, j;
 	int8_t *max_tx_pwr_arr;
@@ -312,41 +320,52 @@ static int ath6kl_lte_coex_send_wmi_cmd(struct ath6kl *ar)
 	return 0;
 }
 
-static void ath6kl_lte_coex_change_ap_acs(struct ath6kl *ar)
+static void ath6kl_lte_coex_ap_reset(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif;
 
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (vif->nw_type == AP_NETWORK) {
-			vif->profile.ch = cpu_to_le16(ar->lte_coex->ap_acs_ch);
-			ath6kl_wmi_ap_profile_commit(ar->wmi, vif->fw_vif_idx,
-						&vif->profile);
+			ar->lte_coex->dev_ctx[vif->fw_vif_idx].acs_evt
+						= ATH6KL_AP_ACS_RESET;
 		}
 	}
 	spin_unlock_bh(&ar->list_lock);
+
 }
 
 static void ath6kl_setup_wlan_sta_lte_coex_mode(struct ath6kl *ar,
 						int send_wmi_cmd)
 {
 	int i, j;
+	struct ath6kl_vif *vif;
+	uint32_t sta_freq = 0;
 
 	if (ar->lte_coex->wwan_operational == 0)
 		return ;
 
 	ar->lte_coex->wmi_lte_data.sta_lte_coex_mode =
 						LTE_COEX_MODE_DISABLED;
+
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (vif->nw_type == INFRA_NETWORK) {
+			sta_freq = ar->lte_coex->
+				   dev_ctx[vif->fw_vif_idx].op_freq;
+			break;
+		}
+	}
+	spin_unlock_bh(&ar->list_lock);
 	/* Select wwan band */
 	for (i = 0; i < LTE_COEX_REF_LOOKUP_ROWS; i++) {
 		if (ar->lte_coex->wwan_freq >= lte_coex_chk[i].wwan_min_freq
 		&& ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq) {
 			/*select wlan band */
 			for (j = i; j <= i + 1; j++) {
-				if (ar->lte_coex->sta_freq
-				>= lte_coex_chk[j].wlan_min_freq
-				&& ar->lte_coex->sta_freq
-				<= lte_coex_chk[j].wlan_max_freq) {
+				if (sta_freq >= lte_coex_chk[j].wlan_min_freq
+				&& sta_freq  <=
+					lte_coex_chk[j].wlan_max_freq) {
 					ar->lte_coex->wmi_lte_data.
 					sta_lte_coex_mode
 					= lte_coex_chk[j].sta_lte_coex_mode;
@@ -359,15 +378,89 @@ static void ath6kl_setup_wlan_sta_lte_coex_mode(struct ath6kl *ar,
 		}
 	}
 	ar->lte_coex->wmi_lte_data.sta_max_tx_pwr =
-		ath6kl_lte_coex_wlan_get_max_tx_pwr(ar, ar->lte_coex->sta_freq);
+		ath6kl_lte_coex_calc_txpwr(ar, sta_freq);
 	if (send_wmi_cmd)
 		ath6kl_lte_coex_send_wmi_cmd(ar);
+}
+
+static void ath6kl_lte_coex_check_acs(struct ath6kl_vif *vif,
+					 uint32_t ap_freq, uint8_t index)
+{
+	struct ath6kl *ar = vif->ar;
+	uint8_t j = 0;
+	bool calc_tx_pwr = false;
+	uint8_t vif_idx  = vif->fw_vif_idx;
+	for (j = index; j <= index+1; j++) {
+		if (ap_freq >= lte_coex_chk[j].wlan_min_freq &&
+			   ap_freq <= lte_coex_chk[j].wlan_max_freq) {
+			/* AP up */
+			ar->lte_coex->wmi_lte_data.ap_lte_coex_mode =
+					lte_coex_chk[j].ap_lte_coex_mode;
+			ar->lte_coex->ap_acs_ch = lte_coex_chk[j].ap_acs_ch;
+			ar->lte_coex->wwan_band &= lte_coex_chk[j].wwan_band;
+			if (!(ar->lte_coex->dev_ctx[vif_idx].acs_evt &
+					(ATH6KL_AP_ACS_COMPLETED|
+						ATH6KL_AP_ACS_NOT_NEEDED))) {
+				if (lte_coex_chk[j].apply_acs) {
+					ar->lte_coex->dev_ctx[vif_idx].acs_evt
+						|= ATH6KL_AP_ACS_IN_PROGRESS;
+					calc_tx_pwr = false;
+					ath6kl_wmi_ap_profile_commit(ar->wmi,
+							vif_idx, &vif->profile);
+				} else {
+					ar->lte_coex->dev_ctx[vif_idx].acs_evt
+						|= ATH6KL_AP_ACS_NOT_NEEDED;
+					calc_tx_pwr = true;
+				}
+			} else if (ar->lte_coex->dev_ctx[vif_idx].acs_evt &
+					ATH6KL_AP_ACS_COMPLETED) {
+					calc_tx_pwr = true;
+			}
+			ar->lte_coex->wmi_lte_data.ap_max_tx_pwr = -1;
+			if (calc_tx_pwr)
+				ar->lte_coex->wmi_lte_data.ap_max_tx_pwr =
+					ath6kl_lte_coex_calc_txpwr(ar, ap_freq);
+			break;
+		}
+	}
+}
+
+
+static void ath6kl_lte_coex_set_ap_mode(struct ath6kl *ar, uint8_t index)
+{
+	struct ath6kl_vif *vif;
+	uint32_t ap_freq;
+	uint8_t vif_idx = 0;
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (vif->nw_type != AP_NETWORK)
+			continue;
+		vif_idx = vif->fw_vif_idx;
+		ap_freq = ar->lte_coex->dev_ctx[vif_idx].op_freq;
+		/* select wlan band */
+		if (!ap_freq) {
+			/* AP not up, note down for future update */
+			ar->lte_coex->ap_acs_ch =
+				lte_coex_chk[index].ap_acs_ch;
+			ar->lte_coex->wwan_band &=
+				lte_coex_chk[index].wwan_band;
+			ar->lte_coex->wmi_lte_data.ap_max_tx_pwr = -1;
+			ar->lte_coex->dev_ctx[vif_idx].acs_evt =
+							ATH6KL_AP_ACS_RESET;
+		} else {
+			ath6kl_lte_coex_check_acs(vif, ap_freq, index);
+			if (ar->lte_coex->dev_ctx[vif_idx].acs_evt
+						& ATH6KL_AP_ACS_IN_PROGRESS)
+				break;
+		}
+	}
+	spin_unlock_bh(&ar->list_lock);
 }
 
 static void ath6kl_setup_wlan_ap_lte_coex_mode(struct ath6kl *ar,
 							int send_wmi_cmd)
 {
-	int i, j;
+	int i;
 
 	if (ar->lte_coex->wwan_operational == 0)
 		return ;
@@ -376,57 +469,13 @@ static void ath6kl_setup_wlan_ap_lte_coex_mode(struct ath6kl *ar,
 						LTE_COEX_MODE_DISABLED;
 	ar->lte_coex->ap_acs_ch = AP_ACS_NONE;
 	/* Select wwan band */
-	for (i = 0; i < 10; i++) {
+	for (i = 0; i < LTE_COEX_REF_LOOKUP_ROWS; i++) {
 		if (ar->lte_coex->wwan_freq >= lte_coex_chk[i].wwan_min_freq &&
 		ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq) {
-			/* select wlan band */
-			if (!ar->lte_coex->ap_freq) {
-				/* AP not up, note down for future update */
-				ar->lte_coex->ap_acs_ch =
-					lte_coex_chk[i].ap_acs_ch;
-				ar->lte_coex->wwan_band &=
-					lte_coex_chk[i].wwan_band;
-				break;
-			}
-			for (j = i; j <= i + 1; j++) {
-				if (ar->lte_coex->ap_freq >=
-					lte_coex_chk[j].wlan_min_freq
-				&& ar->lte_coex->ap_freq <=
-					lte_coex_chk[j].wlan_max_freq) {
-					/* AP up */
-				ar->lte_coex->wmi_lte_data.ap_lte_coex_mode
-					= lte_coex_chk[j].ap_lte_coex_mode;
-					ar->lte_coex->ap_acs_ch =
-						lte_coex_chk[j].ap_acs_ch;
-					ar->lte_coex->wwan_band &=
-						lte_coex_chk[j].wwan_band;
-					break;
-				}
-			}
+			ath6kl_lte_coex_set_ap_mode(ar, i);
 			break;
 		}
 	}
-
-	if (ar->lte_coex->ap_acs_ch != AP_ACS_NONE
-	&& ar->lte_coex->ap_acs_ch != ar->lte_coex->prev_ap_acs_ch
-	&& ar->lte_coex->ap_freq
-	&& ar->lte_coex->wmi_lte_data.ap_lte_coex_mode !=
-						LTE_COEX_MODE_DISABLED) {
-		ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: Moving AP to ACS:%s",
-				GET_ACS_POLICY(ar->lte_coex->ap_acs_ch));
-		ar->lte_coex->prev_ap_acs_ch = ar->lte_coex->ap_acs_ch;
-		ath6kl_lte_coex_change_ap_acs(ar->lte_coex->ar);
-		send_wmi_cmd = 0;
-	} else {
-		ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
-			"LTE_COEX: Active AP ACS: %s %d %d %d %d",
-			GET_ACS_POLICY(ar->lte_coex->ap_acs_ch),
-			ar->lte_coex->ap_acs_ch,
-			ar->lte_coex->prev_ap_acs_ch, ar->lte_coex->ap_freq,
-			ar->lte_coex->wmi_lte_data.ap_lte_coex_mode);
-	}
-	ar->lte_coex->wmi_lte_data.ap_max_tx_pwr =
-		ath6kl_lte_coex_wlan_get_max_tx_pwr(ar, ar->lte_coex->ap_freq);
 
 	if (send_wmi_cmd)
 		ath6kl_lte_coex_send_wmi_cmd(ar);
@@ -492,13 +541,15 @@ void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf)
 	if (wwan->off_period_valid == 1)
 		ar->lte_coex->wmi_lte_data.wwan_off_period = wwan->off_period;
 
-
-	ath6kl_setup_wlan_sta_lte_coex_mode(ar, 0); /* send wmi cmd only once */
-	ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD);
-	ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: WWAN BAND: %s",
+	if (ar->lte_coex->wmi_lte_data.wwan_state != LTE_COEX_WWAN_STATE_IDLE) {
+		ath6kl_lte_coex_ap_reset(ar);
+		ath6kl_setup_wlan_sta_lte_coex_mode(ar, 0);
+		/* send wmi cmd only once */
+		ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD);
+		ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: WWAN BAND: %s",
 				GET_ATH6KL_WWAN_BAND(ar->lte_coex->wwan_band));
-
-	ar->lte_coex->wmi_lte_data.wwan_off_period = 0;
+		ar->lte_coex->wmi_lte_data.wwan_off_period = 0;
+	}
 }
 
 void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
@@ -506,7 +557,7 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 	struct ath6kl *ar = vif->ar;
 
 	if (vif->nw_type == INFRA_NETWORK) {
-		ar->lte_coex->sta_freq = chan;
+		ar->lte_coex->dev_ctx[vif->fw_vif_idx].op_freq = chan;
 		if (chan != 0)
 			ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
 				"LTE_COEX: Station connected at %d Mhz", chan);
@@ -516,14 +567,17 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 
 		ath6kl_setup_wlan_sta_lte_coex_mode(ar, SEND_WMI_CMD);
 	} else if (vif->nw_type == AP_NETWORK) {
-		ar->lte_coex->ap_freq = chan;
+		ar->lte_coex->dev_ctx[vif->fw_vif_idx].op_freq = chan;
 		if (chan != 0) {
 			ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
 				"LTE_COEX: AP Enabled at freq %d Mhz", chan);
 
-			if (ar->lte_coex->ap_evt_acs == 1) {
-				ar->lte_coex->ap_evt_acs = 0;
-				return;
+			if (ar->lte_coex->dev_ctx[vif->fw_vif_idx].acs_evt
+						& ATH6KL_AP_ACS_IN_PROGRESS) {
+				ar->lte_coex->dev_ctx[vif->fw_vif_idx].acs_evt
+						&= ~ATH6KL_AP_ACS_IN_PROGRESS;
+				ar->lte_coex->dev_ctx[vif->fw_vif_idx].acs_evt
+						|= ATH6KL_AP_ACS_COMPLETED;
 			}
 		} else
 			ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
@@ -532,6 +586,20 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 		ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD);
 	}
 
+}
+
+bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint8_t *ap_acs_ch)
+{
+	bool ret = false;
+
+	if (ar->lte_coex && ar->lte_coex->ap_acs_ch != AP_ACS_NONE) {
+		*ap_acs_ch = ar->lte_coex->ap_acs_ch;
+		ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
+				"Changing ACS config for lte_coex to %s\n",
+				GET_ACS_POLICY(*ap_acs_ch));
+		ret = true;
+	}
+	return ret;
 }
 
 int ath6kl_lte_coex_init(struct ath6kl *ar)

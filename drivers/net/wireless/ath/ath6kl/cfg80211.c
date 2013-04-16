@@ -3044,10 +3044,6 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		}
         }
 
-	if (ar->lte_coex && ar->lte_coex->ap_acs_ch != AP_ACS_POLICY_MAX) {
-		ath6kl_warn("%s: Changing ACS config for lte_coex", __func__);
-		p.ch = ar->lte_coex->ap_acs_ch;
-	}
         htcap  = &vif->htcap[band];
 
 
