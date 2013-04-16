@@ -128,11 +128,7 @@ static struct ieee80211_channel ath6kl_5ghz_a_channels[] = {
 	CHAN5G(140, 0), CHAN5G(144, 0),
 	CHAN5G(149, 0),	CHAN5G(153, 0),
 	CHAN5G(157, 0),	CHAN5G(161, 0),
-	CHAN5G(165, 0),	CHAN5G(184, 0),
-	CHAN5G(188, 0),	CHAN5G(192, 0),
-	CHAN5G(196, 0),	CHAN5G(200, 0),
-	CHAN5G(204, 0),	CHAN5G(208, 0),
-	CHAN5G(212, 0),	CHAN5G(216, 0),
+	CHAN5G(165, 0),
 };
 
 static struct ieee80211_supported_band ath6kl_band_2ghz = {
@@ -764,6 +760,38 @@ static void switch_tid_rx_timeout(
 	}
 }
 
+#ifdef USB_AUTO_SUSPEND
+void ath6kl_check_autopm_onoff(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif_temp;
+	/*
+	 * Switch Auto PM On/Off
+	 * In folloing case, we will turn off AUTOPM
+	 * 1. p2p0-P2P-xxx is connected
+	 * 2. any nw_type is AP network
+	 */
+	int vif_cnt = 0;
+	int autopm_turn_on = 1;
+	list_for_each_entry(vif_temp, &ar->vif_list, list) {
+		vif_cnt++;
+		if (test_bit(CONNECTED, &vif_temp->flags)) {
+			if (vif_cnt > 1) {
+				autopm_turn_on = 0;
+				break;
+			}
+			if (vif_temp->nw_type == AP_NETWORK) {
+				autopm_turn_on = 0;
+				break;
+			}
+		}
+	}
+	if (autopm_turn_on)
+		ath6kl_hif_auto_pm_turnon(ar);
+	else
+		ath6kl_hif_auto_pm_turnoff(ar);
+}
+#endif
+
 /* This function is used by sta/p2pclient/go interface to switch paramters
   * needed for MCC/connection specific parameters
   */
@@ -865,6 +893,10 @@ void ath6kl_switch_parameter_based_on_connection(
 			}
 		}
 	}
+
+#ifdef USB_AUTO_SUSPEND
+	ath6kl_check_autopm_onoff(ar);
+#endif /* USB_AUTO_SUSPEND */
 }
 
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
@@ -872,7 +904,7 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
-	int status;
+	int status, left;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -900,10 +932,14 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		/*
 		 * sleep until the command queue drains
 		 */
-		wait_event_interruptible_timeout(ar->event_wq,
+		left = wait_event_interruptible_timeout(ar->event_wq,
 			ar->tx_pending[ath6kl_wmi_get_control_ep(ar->wmi)] == 0,
 			WMI_TIMEOUT);
-		if (signal_pending(current)) {
+		if (left == 0) {
+			ath6kl_warn("clear wmi ctrl data timeout connect\n");
+			up(&ar->sem);
+			return -ETIMEDOUT;
+		} else if (signal_pending(current)) {
 			ath6kl_err("cmd queue drain timeout\n");
 			up(&ar->sem);
 			return -EINTR;
@@ -1431,11 +1467,13 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 		prevent driver goes into deep sleep mode
 		*/
 
-		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-			"%s: warnning pm_usage_cnt =0\n", __func__);
-		} else {
-			ath6kl_hif_auto_pm_enable(ar);
+		if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
+			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+				"%s: warnning pm_usage_cnt =0\n", __func__);
+			} else {
+				ath6kl_hif_auto_pm_enable(ar);
+			}
 		}
 
 #endif
@@ -1546,11 +1584,13 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 		prevent driver goes into deep sleep mode
 		*/
 
-		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-			"%s: warnning pm_usage_cnt =0\n", __func__);
-		} else {
-			ath6kl_hif_auto_pm_enable(ar);
+		if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
+			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+				"%s: warnning pm_usage_cnt =0\n", __func__);
+			} else {
+				ath6kl_hif_auto_pm_enable(ar);
+			}
 		}
 
 #endif
@@ -1874,11 +1914,14 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
 #ifdef USB_AUTO_SUSPEND
+		set_bit(SCANNING, &ar->usb_autopm_scan);
 		ath6kl_hif_auto_pm_disable(ar);
 #endif
 	}
 
 	kfree(channels);
+
+	ath6kl_p2p_rc_scan_start(vif);
 
 	up(&ar->sem);
 
@@ -1920,11 +1963,13 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	prevent driver goes into deep sleep mode
 	*/
 
-	if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-		"%s: warnning pm_usage_cnt =0\n", __func__);
-	} else {
-		ath6kl_hif_auto_pm_enable(ar);
+	if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
+		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+			"%s: warnning pm_usage_cnt =0\n", __func__);
+		} else {
+			ath6kl_hif_auto_pm_enable(ar);
+		}
 	}
 
 #endif
@@ -3186,16 +3231,6 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
-#ifdef ATH6KL_SUPPORT_WLAN_HB
-	if (ar->wlan_hb_enable != 0) {
-		if (ath6kl_wmi_set_heart_beat_params(ar->wmi, vif->fw_vif_idx,
-			ar->wlan_hb_enable)) {
-			ath6kl_warn("set wlan heart beat params failed in suspend\n");
-			return -EINVAL;
-		}
-	}
-#endif
-
 #if (!defined(CONFIG_ANDROID) && !defined(USB_AUTO_SUSPEND))
 
 	/* Clear existing WOW patterns */
@@ -3452,10 +3487,12 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 		left = wait_event_interruptible_timeout(ar->event_wq,
 				ar->tx_pending[ar->ctrl_ep] == 0, WMI_TIMEOUT);
 		if (left == 0) {
-			ath6kl_warn("clear wmi ctrl data timeout\n");
+			ath6kl_warn("clear wmi ctrl data timeout txpend %d\n",
+			ar->tx_pending[ar->ctrl_ep]);
 			ret = -ETIMEDOUT;
 		} else if (left < 0) {
-			ath6kl_warn("clear wmi ctrl data failed: %d\n", left);
+			ath6kl_warn("clear wmi ctrl data failed:%d tx_pend=%d\n",
+			left, ar->tx_pending[ar->ctrl_ep]);
 			ret = left;
 		}
 	}
@@ -3500,7 +3537,7 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep suspend\n");
 
 #ifdef USB_AUTO_SUSPEND
-		ar->state = ATH6KL_STATE_PRE_SUSPEND;
+		ar->state = ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP;
 #endif
 		ret = ath6kl_cfg80211_deepsleep_suspend(ar);
 		if (ret) {
@@ -3578,21 +3615,6 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 			return ret;
 		}
 
-#ifdef ATH6KL_SUPPORT_WLAN_HB
-		if (ar->wlan_hb_enable != 0) {
-			vif = ath6kl_vif_first(ar);
-			if (vif) {
-				ret = ath6kl_wmi_set_heart_beat_params(
-					ar->wmi, vif->fw_vif_idx, 0);
-				if (ret) {
-					ath6kl_warn("set wlan heart beat params failed "
-						"in resume: %d\n",
-						ret);
-					return ret;
-				}
-			}
-		}
-#endif
 		break;
 
 	case ATH6KL_STATE_DEEPSLEEP:
@@ -3686,6 +3708,11 @@ static int __ath6kl_cfg80211_suspend(struct wiphy *wiphy,
 				 struct cfg80211_wowlan *wow)
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
+
+#if defined(USB_AUTO_SUSPEND)
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
+		return 0;
+#endif
 
 	return ath6kl_hif_suspend(ar, wow);
 }
@@ -5421,9 +5448,9 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 {
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif, *tmp_vif;
 
-	list_for_each_entry(vif, &ar->vif_list, list)
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list)
 		ath6kl_cfg80211_stop(vif);
 }
 
@@ -5480,6 +5507,9 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 	ar->p2p_concurrent_ap =
 		!!(p2p_config & ATH6KL_MODULEP2P_CONCURRENT_AP);
 
+	ar->p2p_in_pasv_chan =
+		!!(p2p_config & ATH6KL_MODULEP2P_P2P_IN_PASSIVE_CHAN);
+
 	WARN_ON((!ar->p2p_concurrent) && (ar->p2p_multichan_concurrent));
 	WARN_ON((ar->p2p_concurrent_ap) &&
 		((!ar->p2p_concurrent) || (!ar->p2p_dedicate)));
@@ -5529,7 +5559,7 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 
 	ath6kl_info("%dVAP/%d, P2P %s, concurrent %s %s,"
 		" %s dedicate p2p-device,"
-		" multi-channel-concurrent %s, p2p-compat %s\n",
+		" multi-channel-concurrent %s, p2p-compat %s%s\n",
 		ar->vif_max,
 		ar->max_norm_iface,
 		(ar->p2p ? "enable" : "disable"),
@@ -5537,7 +5567,8 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 		(ar->p2p_concurrent_ap ? "with softAP" : ""),
 		(ar->p2p_dedicate ? "with" : "without"),
 		(ar->p2p_multichan_concurrent ? "enable" : "disable"),
-		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"));
+		(ar->p2p_compat ? "enable (ignore p2p_dedicate)" : "disable"),
+		(ar->p2p_in_pasv_chan ? ", p2p_in_pasv_chan enable" : ""));
 
 	return;
 }
@@ -6033,11 +6064,6 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 		ar->ibss_if_active = false;
 
 	del_timer(&vif->vifscan_timer);
-
-#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
-	if (atomic_read(&vif->ndev->refcnt) > 1)
-		dev_put(vif->ndev);
-#endif
 
 	unregister_netdevice(vif->ndev);
 
