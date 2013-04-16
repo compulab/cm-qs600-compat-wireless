@@ -1910,6 +1910,58 @@ static const struct file_operations fops_crash_dump = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_hif_stats_read(struct file *file,
+		char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(4096)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath6kl_hif_get_stats(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+static ssize_t ath6kl_hif_stats_write(struct file *file,
+		const char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int ret;
+	u32 val;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val == 0)
+		ath6kl_hif_clear_stats(ar);
+
+	return count;
+}
+
+
+/* debug fs for HIF Stats. */
+static const struct file_operations fops_hif_stats = {
+	.read = ath6kl_hif_stats_read,
+	.write= ath6kl_hif_stats_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 /*
  * Initialisation needs to happen in two stages as fwlog events can come
  * before cfg80211 is initialised, and debugfs depends on cfg80211
@@ -1987,11 +2039,15 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 
 	debugfs_create_file("crash_dump", S_IRUSR, ar->debugfs_phy, ar,
 			    &fops_crash_dump);
+
 	debugfs_create_file("hif_rxq_threshold", S_IWUSR,
 			ar->debugfs_phy, ar, &fops_hif_pipe_rxq_threshold);
 
 	debugfs_create_file("tx_psq_threshold", S_IWUSR,
 				ar->debugfs_phy, ar, &fops_tx_psq_threshold);
+
+	debugfs_create_file("hif_stats", S_IRUSR | S_IWUSR,
+			ar->debugfs_phy, ar, &fops_hif_stats);
 
 	return 0;
 }
