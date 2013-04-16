@@ -790,6 +790,11 @@ enum auth_mode {
  * 802.11 rate set.
  */
 #define ATH6KL_RATE_MAXSIZE  15	/* max rates we'll handle */
+#define ATH6KL_HT40_RATE_MASK	0xfffffff	/* Bits 28 to 44 are used for HT
+						   40 rates, masking only HT
+						   40 rates */
+#define ATH6KL_RATE_MASK	0x00000fffffffffff /* Rate mask to enable all
+						      the rates */
 
 #define ATH_OUI_TYPE            0x01
 #define WPA_OUI_TYPE            0x01
