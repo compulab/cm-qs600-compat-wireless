@@ -794,6 +794,7 @@ struct mpath_info {
  *
  * Used to change BSS parameters (mainly for AP mode).
  *
+ * @rts_threshold: RTS threshold (dot11RTSThreshold); -1 = RTS/CTS disabled
  * @use_cts_prot: Whether to use CTS protection
  *	(0 = no, 1 = yes, -1 = do not change)
  * @use_short_preamble: Whether the use of short preambles is allowed
@@ -816,6 +817,7 @@ struct bss_parameters {
 	int ap_isolate;
 	int ht_opmode;
 	u8 ht_2040_mode;
+	int rts_threshold;
 };
 
 /**

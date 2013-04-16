@@ -1411,7 +1411,6 @@ static int ath6kl_cfg80211_set_wiphy_params(struct wiphy *wiphy, u32 changed)
 {
 	struct ath6kl *ar = (struct ath6kl *)wiphy_priv(wiphy);
 	struct ath6kl_vif *vif;
-	int ret;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: changed 0x%x\n", __func__,
 		   changed);
@@ -1422,15 +1421,6 @@ static int ath6kl_cfg80211_set_wiphy_params(struct wiphy *wiphy, u32 changed)
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
-
-	if (changed & WIPHY_PARAM_RTS_THRESHOLD) {
-		ret = ath6kl_wmi_set_rts_cmd(ar->wmi, wiphy->rts_threshold);
-		if (ret != 0) {
-			ath6kl_err("ath6kl_wmi_set_rts_cmd failed\n");
-			return -EIO;
-		}
-	}
-
 	return 0;
 }
 
@@ -2780,8 +2770,10 @@ static int ath6kl_get_rsn_capab(struct cfg80211_beacon_data *beacon,
 static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 			   struct bss_parameters *info)
 {
+	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	struct wmi_fix_rates_cmd rate;
+	int ret;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:\n", __func__);
 
@@ -2790,6 +2782,15 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 
 	if (vif->next_mode != AP_NETWORK)
 		return -EOPNOTSUPP;
+
+	if (info->rts_threshold != -1) {
+		ret = ath6kl_wmi_set_rts_cmd(ar->wmi, vif->fw_vif_idx,
+				info->rts_threshold);
+		if (ret != 0) {
+			ath6kl_err("ath6kl_wmi_set_rts_cmd failed\n");
+			return -EIO;
+		}
+	}
 
 	memset(&rate, sizeof(struct wmi_fix_rates_cmd), 0);
 	vif->intra_bss = !(info->ap_isolate);

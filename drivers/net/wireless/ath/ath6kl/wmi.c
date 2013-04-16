@@ -3035,7 +3035,7 @@ int ath6kl_wmi_set_lpreamble_cmd(struct wmi *wmi, u8 if_idx, u8 status,
 	return ret;
 }
 
-int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u16 threshold)
+int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u8 if_idx, u16 threshold)
 {
 	struct sk_buff *skb;
 	struct wmi_set_rts_cmd *cmd;
@@ -3048,7 +3048,7 @@ int ath6kl_wmi_set_rts_cmd(struct wmi *wmi, u16 threshold)
 	cmd = (struct wmi_set_rts_cmd *) skb->data;
 	cmd->threshold = cpu_to_le16(threshold);
 
-	ret = ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_RTS_CMDID,
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_RTS_CMDID,
 				  NO_SYNC_WMIFLAG);
 	return ret;
 }
