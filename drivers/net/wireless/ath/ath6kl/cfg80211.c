@@ -2601,6 +2601,9 @@ static int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 	struct wiphy *wiphy = vif->ar->wiphy;
 	int band, ret = 0;
 	struct ath6kl_htcap *htcap;
+	u64 ht_40_rate = ATH6KL_RATE_MASK;
+	struct wmi_fix_rates_cmd rate;
+	struct ath6kl *ar = vif->ar;
 
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		if (!wiphy->bands[band])
@@ -2612,6 +2615,14 @@ static int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 				wiphy->bands[band]->ht_cap.ht_supported);
 		if (ret)
 			return ret;
+		/* Only AR6004 will use 44 bit rates,so restoring rates only for
+		 * AR6004 hardware */
+		if (ar->target_type == TARGET_TYPE_AR6004) {
+			memcpy(&rate, &ht_40_rate, sizeof(struct
+						wmi_fix_rates_cmd));
+			ath6kl_wmi_set_fixrates(vif->ar->wmi, vif->fw_vif_idx,
+					rate); /* Restoring all the rates */
+		}
 	}
 
 	return ret;
@@ -2792,11 +2803,11 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 		}
 	}
 
-	memset(&rate, sizeof(struct wmi_fix_rates_cmd), 0);
+	memset(&rate, 0, sizeof(struct wmi_fix_rates_cmd));
 	vif->intra_bss = !(info->ap_isolate);
 
 	if (info->ht_2040_mode) {
-		rate.fix_rate_mask[0] = 0xfffffff;
+		rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK;
 		ath6kl_wmi_set_fixrates(vif->ar->wmi, vif->fw_vif_idx,
 				rate); /* Masking the HT 40 rates */
 	}
