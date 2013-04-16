@@ -192,4 +192,19 @@ static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
 	return ar->hif_ops->pipe_set_rxq_threshold(ar, rxq_threshold);
 }
 
+static inline u16 ath6kl_hif_get_stats(struct ath6kl *ar,
+		u8 *buf, int buf_len)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe get stats: %d\n", buf_len);
+
+	return ar->hif_ops->get_stats(ar, buf, buf_len);
+}
+
+static inline u16 ath6kl_hif_clear_stats(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe clear stats\n");
+
+	return ar->hif_ops->clear_stats(ar);
+}
+
 #endif
