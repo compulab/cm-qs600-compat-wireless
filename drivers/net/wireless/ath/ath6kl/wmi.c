@@ -23,7 +23,7 @@
 #include "../regd.h"
 #include "../regd_common.h"
 #include <ctype.h>
-
+#include "wmiconfig.h"
 
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
@@ -3315,7 +3315,9 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 {
 	struct sk_buff *skb;
 	struct wmi_connect_cmd *cm;
+	struct ath6kl *ar = wmip->parent_dev;
 	int res;
+	u8 ap_acs_ch = 0;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cm));
 	if (!skb)
@@ -3323,12 +3325,14 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 
 	cm = (struct wmi_connect_cmd *) skb->data;
 	memcpy(cm, p, sizeof(*cm));
+	if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch))
+		cm->ch = cpu_to_le16(ap_acs_ch);
 
 	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_CONFIG_COMMIT_CMDID,
 				  NO_SYNC_WMIFLAG);
 	ath6kl_dbg(ATH6KL_DBG_WMI,
 		   "%s: nw_type=%u auth_mode=%u ch=%u ctrl_flags=0x%x-> res=%d\n",
-		   __func__, p->nw_type, p->auth_mode, le16_to_cpu(p->ch),
+		   __func__, p->nw_type, p->auth_mode, le16_to_cpu(cm->ch),
 		   le32_to_cpu(p->ctrl_flags), res);
 	return res;
 }
