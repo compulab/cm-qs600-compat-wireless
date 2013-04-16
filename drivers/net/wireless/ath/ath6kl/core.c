@@ -26,6 +26,7 @@
 #include "hif-ops.h"
 #include "htc-ops.h"
 #include "cfg80211.h"
+#include "wmiconfig.h"
 
 unsigned int debug_mask;
 static unsigned int suspend_mode;
@@ -211,6 +212,9 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 
 	rtnl_lock();
 
+	ret = ath6kl_lte_coex_init(ar);
+	if (ret)
+		goto err_rxbuf_cleanup;
 	/* Add an initial station interface */
 	ndev = ath6kl_interface_add(ar, "wlan%d", NL80211_IFTYPE_STATION, 0,
 				    INFRA_NETWORK);
@@ -226,6 +230,7 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 
 	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
 		   __func__, ndev->name, ndev, ar);
+
 
 	return ret;
 
@@ -344,6 +349,8 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	ath6kl_debug_cleanup(ar);
 
 	ath6kl_mcc_flowctrl_conn_list_deinit(ar);
+	ath6kl_lte_coex_deinit(ar);
+
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
 	if (ar->testmode == 0)

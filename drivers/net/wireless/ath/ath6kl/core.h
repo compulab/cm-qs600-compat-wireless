@@ -944,6 +944,8 @@ struct ath6kl {
 	} debug;
 #endif /* CONFIG_ATH6KL_DEBUG */
 	struct ath6kl_mcc_flowctrl *mcc_flowctrl_ctx;
+	struct ath6kl_lte_coex_priv *lte_coex;
+
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM

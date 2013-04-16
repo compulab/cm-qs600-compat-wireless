@@ -709,12 +709,17 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_BEGIN_SCAN_CMDID,
     WMI_SET_IE_CMDID,
     WMI_SET_RSSI_FILTER_CMDID,
+    WMI_SET_CREDIT_REVERSE_CMDID   = 0xF0B6,
+    WMI_SET_RCV_DATA_CLASSIFIER_CMDID,
     WMI_AP_SET_IDLE_CLOSE_TIME_CMDID,
-    WMI_SET_MCASTRATE_CMDID,	/* F0B7 */
+    WMI_SET_LTE_COEX_STATE_CMDID,
+    WMI_SET_MCC_PROFILE_CMDID,
+    WMI_SET_MCASTRATE_CMDID,
     WMI_SET_RECOVERY_TEST_PARAMETER_CMDID,
     WMI_VOICE_DETECTION_ENABLE_CMDID,
     WMI_SET_KEEPALIVE_CMDID_EXT,
     WMI_SET_TXE_NOTIFY_CMDID,
+
 };
 
 /* WMI_SETPMKID_CMDID */
@@ -1137,6 +1142,124 @@ struct wmi_power_mode_cmd {
 	/* see, enum wmi_power_mode */
 	u8 pwr_mode;
 } __packed;
+
+enum wmi_lte_coex_mode {
+	LTE_COEX_MODE_DISABLED          = 0x0,
+	LTE_COEX_MODE_CHANNEL_AVOIDANCE = 0x1,
+	LTE_COEX_MODE_3WIRE             = 0x2,
+	LTE_COEX_MODE_PWR_BACKOFF       = 0x3,
+	LTE_COEX_MODE_NUM
+};
+
+enum wmi_lte_coex_wwan_state {
+	LTE_COEX_WWAN_STATE_DEACTIVATED   = 0x0,
+	LTE_COEX_WWAN_STATE_CONNECTED     = 0x1,
+	LTE_COEX_WWAN_STATE_IDLE          = 0x2,
+	LTE_COEX_WWAN_STATE_NUM
+};
+
+enum wmi_lte_coex_wwan_mode {
+	LTE_COEX_WWAN_MODE_INVALID    = 0x0,
+	LTE_COEX_WWAN_MODE_TDD_CONFIG = 0x1,
+	LTE_COEX_WWAN_MODE_FDD_CONFIG = 0x2,
+	LTE_COEX_WWAN_MODE_NUM        = 0x2
+};
+
+enum wmi_lte_coex_tdd_config {
+	LTE_COEX_TDD_CONFIG_INVALID = 0x0,
+	LTE_COEX_TDD_CONFIG_0       = 0x1,
+	LTE_COEX_TDD_CONFIG_1       = 0x2,
+	LTE_COEX_TDD_CONFIG_2       = 0x3,
+	LTE_COEX_TDD_CONFIG_3       = 0x4,
+	LTE_COEX_TDD_CONFIG_4       = 0x5,
+	LTE_COEX_TDD_CONFIG_5       = 0x6,
+	LTE_COEX_TDD_CONFIG_6       = 0x7,
+	LTE_COEX_TDD_CONFIG_NUM     = 0x7,
+};
+
+struct wmi_set_lte_coex_state_cmd {
+	u8    wwan_state;		/* One of enum ewwan_state*/
+	u8    wwan_mode;		/* One of enum ewwan_mode*/
+	u8    wwan_tdd_cfg;		/* One of enum etdd_config*/
+
+	u8    sta_lte_coex_mode;	/* One of enum ecoex_mode*/
+	s8    sta_max_tx_pwr;		/* Derived Value based on the LTE Freq
+					 * & WLAN Freq for WLAN Power BackOff */
+
+	u8    ap_lte_coex_mode;		/* One of enum ecoex_mode */
+	s8    ap_max_tx_pwr;		/* Derived Value based on the LTE Freq
+					 * & WLAN Freq for WLAN Power BackOff */
+	u8    reserved[1];		/* Reserved for Byte Alignment */
+	__le32   wwan_off_period;	/* Valid when wwan_state is
+					* WWAN_STATE_IDLE else '0' */
+} __packed;
+
+enum wmi_lte_coex_wlan_event_notify {
+	LTE_COEX_WLAN_SCAN_OPERATION       = 0x0,
+	LTE_COEX_WLAN_CONNECTION_OPERATION = 0x1,
+	LTE_COEX_WLAN_NUM_LTECOEX_EVENT
+};
+
+enum wmi_lte_coex_wlan_conn_state {
+	LTE_COEX_WLAN_CONN_DISABLED = 0,
+	LTE_COEX_WLAN_CONN_SETUP    = 1,
+	LTE_COEX_WLAN_CONN_STEADY   = 2
+};
+
+struct wmi_wlan_scan_info_lte {
+	__le32    center_freq;    /* Frequency in MHz */
+
+	u8     bandwidth;      /* bandwidth
+				 * 0  -- 11B/G
+				 * 1  -- 11NHT20
+				 * 2  -- 11NHT40
+				 */
+
+	u8     scan_state;     /* scan_state
+				 * 0x00 -- LTE_COEX_WLAN_SCAN_STOP
+				 * 0x01 -- LTE_COEX_WLAN_SCAN_START
+				 */
+} __packed;
+
+struct wmi_wlan_conn_info_lte {
+	__le32   center_freq;    /* Frequency in MHz */
+
+	u8     bandwidth;      /* bandwidth
+				 * 0  -- 11B/G
+				 * 1  -- 11NHT20
+				 * 2  -- 11NHT40
+				 */
+
+	u8 conn_state;         /* conn_state
+				 * 0x00 -- LTE_COEX_WLAN_CONN_DISABLED
+				 * 0x01 -- LTE_COEX_WLAN_CONN_SETUP
+				 * 0x02 -- LTE_COEX_WLAN_CONN_STEADY
+				 */
+
+	u8 conn_mode;          /* conn_mode
+				 * 0x00 -- LTE_COEX_WLAN_CONN_MODE_NONE
+				 * 0x01 -- LTE_COEX_WLAN_CONN_MODE_STATION
+				 * 0x02 -- LTE_COEX_WLAN_CONN_MODE_SOFTAP
+				 */
+} __packed;
+
+struct wmi_wlan_info_lte_event {
+	u8 wlan_info_id;
+	union {
+		struct wmi_wlan_scan_info_lte wlan_scan_info_lte;
+		struct wmi_wlan_conn_info_lte wlan_conn_info_lte;
+	} __packed;
+} __packed;
+
+/* ACS scan policy */
+enum wmi_ap_acs_policy_list {
+	AP_ACS_NORMAL = 0,      /* 1, 6, 11 */
+	AP_ACS_DISABLE_CH11,    /* 1, 6 */
+	AP_ACS_INCLUDE_CH13,    /* 1, 5, 9, 13 */
+	AP_ACS_DISABLE_CH1,     /* dont use 1 */
+	AP_ACS_DISABLE_CH1_6,   /* dont use 1 & 6 */
+	AP_ACS_POLICY_MAX
+};
 
 /*
  * Policy to determnine whether power save failure event should be sent to
@@ -1614,7 +1737,6 @@ enum wmi_event_id {
 	WMI_FLUSH_BUFFERED_DATA_EVENTID,
     WMI_WLAN_INFO_LTE_EVENTID,
     WMI_CLIENT_POWER_SAVE_EVENTID,
-
 };
 
 struct wmi_get_wow_list_cmd {
