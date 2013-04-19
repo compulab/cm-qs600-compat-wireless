@@ -3790,6 +3790,7 @@ void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar)
 		if (!ath6kl_check_can_send(mcc_flowctrl, i) &&
 			fw_conn->previous_can_send) {
 			spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
+			spin_lock_bh(&ar->htc_target->tx_lock);
 			for (eid = ENDPOINT_2; eid <= ENDPOINT_5; eid++) {
 				endpoint = &ar->htc_target->endpoint[eid];
 				tx_queue = &endpoint->txq;
@@ -3818,6 +3819,7 @@ void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar)
 					}
 				}
 			}
+			spin_unlock_bh(&ar->htc_target->tx_lock);
 			spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
 		}
 
