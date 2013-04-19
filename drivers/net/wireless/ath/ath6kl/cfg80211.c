@@ -3866,7 +3866,10 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	list_add_tail(&vif->list, &ar->vif_list);
 	spin_unlock_bh(&ar->list_lock);
 
-	ath6kl_set_htcap(vif, IEEE80211_BAND_5GHZ, true);
+	if (ar->testmode == 0) {
+		vif->htcap[IEEE80211_BAND_2GHZ].cap_info = ath6kl_a_htcap;
+		ath6kl_set_htcap(vif, IEEE80211_BAND_2GHZ, true);
+	}
 
 	return ndev;
 
