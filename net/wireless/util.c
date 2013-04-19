@@ -985,12 +985,16 @@ EXPORT_SYMBOL(cfg80211_calculate_bitrate);
 int cfg80211_validate_beacon_int(struct cfg80211_registered_device *rdev,
 				 u32 beacon_int)
 {
+#ifndef CONFIG_ATH6KL
 	struct wireless_dev *wdev;
+#endif
 	int res = 0;
 
-	if (!beacon_int)
-		return -EINVAL;
-
+	if (!beacon_int) {
+		res = -EINVAL;
+		goto done;
+	}
+#ifndef CONFIG_ATH6KL
 	mutex_lock(&rdev->devlist_mtx);
 
 	list_for_each_entry(wdev, &rdev->netdev_list, list) {
@@ -1003,7 +1007,8 @@ int cfg80211_validate_beacon_int(struct cfg80211_registered_device *rdev,
 	}
 
 	mutex_unlock(&rdev->devlist_mtx);
-
+#endif
+done:
 	return res;
 }
 
