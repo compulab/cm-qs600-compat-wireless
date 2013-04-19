@@ -657,9 +657,7 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		}
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "Enabling BAM2BAM mode\n");
 	}
-
-	if ((ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM)) &&
-		(!ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH)))
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM))
 	{
 		/* AMSDU is offloaded to f/w for BAM2BAM mode */
 		param = 0;
@@ -669,7 +667,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		}
 
 		param |= AMSDU_SLICING_OFFLOAD_TO_FW;
-
 		if (ath6kl_bmi_write_hi32(ar, hi_option_flag2, param) != 0) {
 			ath6kl_err("bmi_write_memory for AMSDU failed\n");
 			return -EIO;
