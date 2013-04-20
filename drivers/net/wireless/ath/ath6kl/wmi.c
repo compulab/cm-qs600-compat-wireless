@@ -3466,13 +3466,13 @@ int ath6kl_wmi_send_dummy_data_event_rx(struct wmi *wmi, u8 *datap, int len,
         ath6kl_dbg(ATH6KL_DBG_OOO,
             "IPA-CM:OOO:ac_category= %d\n", ev->ac_category);
 	for (i = 0 ; i < ev->num_packets ; i++){
-        if (!ath6kl_send_dummy_data(vif, ev->num_packets, ev->ac_category))
-        {
-            ath6kl_dbg(ATH6KL_DBG_OOO,
-		        "IPA-CM:OOO:Successfully sent dummy packets\n");
-	    } else {
-            ath6kl_err("IPA-CM:OOO:Failed to send dummy packets\n");
-	     }
+		if (!ath6kl_send_dummy_data(vif, ev->num_packets, ev->ac_category))
+		{
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+					"IPA-CM:OOO:Successfully sent dummy packets\n");
+		} else {
+			ath6kl_err("IPA-CM:OOO:Failed to send dummy packets\n");
+		}
 	}
 	return 0;
 }
