@@ -3282,7 +3282,7 @@ static bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif,
 	if (is_multicast_ether_addr(mgmt->da))
 		return false;
 
-	conn = ath6kl_find_sta(vif, mgmt->da);
+	conn = ath6kl_find_sta(vif, mgmt->da, false);
 	if (!conn)
 		return false;
 

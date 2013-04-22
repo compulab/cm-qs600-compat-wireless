@@ -1894,6 +1894,10 @@ struct wmi_greentx_params_cmd {
 	u8 forceBackOff;
 } __packed;
 
+struct wmi_setinterbss_cmd {
+	bool enable;
+} __packed;
+
 #define AP_11BG_RATESET1        1
 #define AP_11BG_RATESET2        2
 #define DEF_AP_11BG_RATESET     AP_11BG_RATESET1
