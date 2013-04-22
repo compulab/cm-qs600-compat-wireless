@@ -1461,7 +1461,7 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 			}
 		}
 	} else {
-		conn = ath6kl_find_sta(vif, datap->h_dest);
+		conn = ath6kl_find_sta(vif, datap->h_dest, false);
 		if (!conn) {
 			dev_kfree_skb(skb);
 
@@ -3024,7 +3024,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		}
 
 		datap = (struct ethhdr *) (skb->data + offset);
-		conn = ath6kl_find_sta(vif, datap->h_source);
+		conn = ath6kl_find_sta(vif, datap->h_source, false);
 
 		if (!conn) {
 			dev_kfree_skb(skb);
@@ -3204,18 +3204,26 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 			 * frame to it on the air else send the
 			 * frame up the stack.
 			 */
-			conn = ath6kl_find_sta(vif, datap->h_dest);
+			conn = ath6kl_find_sta(vif, datap->h_dest,
+					ar->inter_bss);
 
-			if (conn && vif->intra_bss) {
-				skb1 = skb;
-				skb = NULL;
-			} else if (conn && !vif->intra_bss) {
-				dev_kfree_skb(skb);
-				skb = NULL;
+			if (conn) {
+				if (vif->intra_bss) {
+					skb1 = skb;
+					skb = NULL;
+				} else {
+					if(vif == conn->vif) {
+						dev_kfree_skb(skb);
+						skb = NULL;
+					} else {
+						skb1 = skb;
+						skb = NULL;
+					}
+				}
 			}
 		}
-		if (skb1)
-			ath6kl_data_tx(skb1, vif->ndev);
+		if (skb1 && conn)
+			ath6kl_data_tx(skb1, conn->vif->ndev);
 
 		if (skb == NULL) {
 			/* nothing to deliver up the stack */
@@ -3227,7 +3235,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 	if (is_unicast_ether_addr(datap->h_dest)) {
 		if (vif->nw_type == AP_NETWORK) {
-			conn = ath6kl_find_sta(vif, datap->h_source);
+			conn = ath6kl_find_sta(vif, datap->h_source, false);
 			if (!conn)
 				return;
 			aggr_conn = conn->aggr_conn;
