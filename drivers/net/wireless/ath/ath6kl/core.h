@@ -55,8 +55,6 @@
 #define ATH6KL_APSD_NUM_OF_AC		0x4
 #define ATH6KL_APSD_FRAME_MASK		0xF
 
-#define ROUTER_DUAL_CONC
-
 #define ATH6KL_MCC_FLOWCTRL_NULL_CONNID 	(0xFF)
 #define ATH6KL_MCC_FLOWCTRL_RECYCLE_LIMIT 	(10)
 
@@ -79,6 +77,8 @@
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM + CTRL_EP_RSVD_COOKIE_NUM)
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
+
+#define MAX_OFFCH_HOLD_COOKIE_NUM         (MAX_DEF_COOKIE_NUM/3)
 
 #define DISCON_TIMER_INTVAL               10000  /* in msec */
 
@@ -1193,7 +1193,7 @@ void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar);
 struct ath6kl_mcc_flowctrl *ath6kl_mcc_flowctrl_conn_list_init(struct ath6kl *ar);
 void ath6kl_mcc_flowctrl_conn_list_deinit(struct ath6kl *ar);
 void ath6kl_mcc_flowctrl_conn_list_cleanup(struct ath6kl *ar);
-void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar);
+void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg);
 enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar, void *pkt);
 void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar);
 void ath6kl_mcc_flowctrl_state_update(struct ath6kl *ar,u8 numConn,

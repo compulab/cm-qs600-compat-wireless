@@ -687,7 +687,7 @@ static int ath6kl_wmi_flowctrl_ind_event_rx(u8 *datap, int len,
 	ath6kl_mcc_flowctrl_state_update(ar, ev->num_of_conn, ev->ac_map,
 					ev->ac_queue_depth);
 	ath6kl_mcc_flowctrl_state_change(ar);
-	ath6kl_mcc_flowctrl_tx_schedule(ar);
+	ath6kl_mcc_flowctrl_tx_schedule(ar, 1);
 
 	return 0;
 }
