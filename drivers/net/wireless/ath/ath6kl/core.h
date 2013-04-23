@@ -949,6 +949,7 @@ struct ath6kl {
 	struct ath6kl_lte_coex_priv *lte_coex;
 
 	u32 tx_psq_threshold;
+	bool is_mcc_enabled;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -1188,6 +1189,8 @@ void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid);
 /* IPA interface clean up */
 void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name);
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar);
+/* MCC related functions */
+int ath6kl_ipa_enable_host_route_config (struct ath6kl_vif *vif, bool enable);
 #endif
 
 struct ath6kl_mcc_flowctrl *ath6kl_mcc_flowctrl_conn_list_init(struct ath6kl *ar);
@@ -1201,5 +1204,6 @@ void ath6kl_mcc_flowctrl_state_update(struct ath6kl *ar,u8 numConn,
 void ath6kl_mcc_flowctrl_set_conn_id(struct ath6kl_vif *vif, u8 mac_addr[],u8 connId);
 u8 ath6kl_mcc_flowctrl_get_conn_id(struct ath6kl_vif *vif, struct sk_buff *skb);
 int ath6kl_mcc_flowctrl_stat(struct ath6kl *ar, u8 *buf, int buf_len);
+int ath6kl_is_mcc_enabled (struct ath6kl *ar);
 
 #endif /* CORE_H */
