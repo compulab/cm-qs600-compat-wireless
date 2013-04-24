@@ -2557,6 +2557,10 @@ struct wmi_del_wow_pattern_cmd {
 	__le16 filter_id;
 } __packed;
 
+struct wmi_ap_idle_close_time_cmd {
+	u32 time_val_sec;
+};
+
 #ifdef __KERNEL__
 /* WMI_SET_AKMP_PARAMS_CMD */
 
