@@ -102,6 +102,19 @@ struct ath6kl_usb_pipe {
 #define ATH6KL_USB_PIPE_FLAG_TX    (1 << 0)
 #define ATH6KL_USB_PIPE_FLAG_RX    (1 << 1)
 
+#ifdef CONFIG_ATH6KL_AUTO_PM
+struct ath6kl_usb_pm_stats {
+	u32 suspended;
+	u32 resumed;
+	u32 reset_resume;
+	u32 tx_processed;
+	u32 tx_queued;
+	u32 max_queue_len;
+	u32 bam_activity;
+	u32 bam_inactivity;
+};
+#endif
+
 /* usb device object */
 struct ath6kl_usb {
 	/* protects pipe->urb_list_head and  pipe->urb_cnt */
@@ -119,6 +132,7 @@ struct ath6kl_usb {
 	struct list_head pm_q;
 	spinlock_t pm_lock;
 	struct work_struct pm_resume_work;
+	struct ath6kl_usb_pm_stats pm_stats;
 #endif
 };
 
@@ -351,30 +365,30 @@ static void ath6kl_ipa_data_callback(void *priv, enum ipa_dp_evt_type evt,
 #ifdef CONFIG_ATH6KL_AUTO_PM
 int ath6kl_usb_bam_activity_cb(void *priv)
 {
-	struct ath6kl_usb_pipe *pipe;
-
-	pipe = (struct ath6kl_usb_pipe *) priv;
+	struct ath6kl_usb_pipe *pipe = (struct ath6kl_usb_pipe *) priv;
+	struct ath6kl_usb *ar_usb = pipe->ar_usb;
 
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
 			"BAM Activity indication callback, pipe_num: %d\n",
 			pipe->logical_pipe_num);
 
-	usb_autopm_get_interface_async(pipe->ar_usb->interface);
+	usb_autopm_get_interface_async(ar_usb->interface);
+	ar_usb->pm_stats.bam_activity++;
 
 	return 0;
 }
 
 int ath6kl_usb_bam_inactivity_cb(void *priv)
 {
-	struct ath6kl_usb_pipe *pipe;
-
-	pipe = (struct ath6kl_usb_pipe *) priv;
+	struct ath6kl_usb_pipe *pipe = (struct ath6kl_usb_pipe *) priv;
+	struct ath6kl_usb *ar_usb = pipe->ar_usb;
 
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
 			"BAM Inactivity indication callback, pipe_num: %d\n",
 			pipe->logical_pipe_num);
 
-	usb_autopm_put_interface_async(pipe->ar_usb->interface);
+	usb_autopm_put_interface_async(ar_usb->interface);
+	ar_usb->pm_stats.bam_inactivity++;
 
 	return 0;
 }
@@ -1441,6 +1455,7 @@ static void ath6kl_auto_pm_wakeup_resume(struct work_struct *work)
 			struct ath6kl_usb, pm_resume_work);
 	struct ath6kl_urb_context *urb_context;
 	int status = 0;
+	u32 tx_processed = 0;
 
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
 			"Auto PM Resume, sumitting URBs, Queue len: %d\n",
@@ -1455,6 +1470,8 @@ static void ath6kl_auto_pm_wakeup_resume(struct work_struct *work)
 		list_del(&urb_context->link);
 		spin_unlock_bh(&ar_usb->pm_lock);
 
+		tx_processed++;
+
 		status = ath6kl_usb_submit_urb(ar_usb->ar, urb_context);
 
 		if (status) {
@@ -1465,6 +1482,10 @@ static void ath6kl_auto_pm_wakeup_resume(struct work_struct *work)
 	}
 
 	spin_unlock_bh(&ar_usb->pm_lock);
+
+	ar_usb->pm_stats.tx_processed += tx_processed;
+	if (tx_processed > ar_usb->pm_stats.max_queue_len)
+		ar_usb->pm_stats.max_queue_len = tx_processed;
 }
 #endif
 
@@ -1525,6 +1546,8 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 pipe_id,
 					get_queue_depth(&device->pm_q));
 
 			spin_unlock_bh(&device->pm_lock);
+			device->pm_stats.tx_queued++;
+
 			/* Make sure to schedule the work as resume may
 			 * have completed by now and worker thread may have
 			 * completed it's execution before even queuing
@@ -1918,6 +1941,52 @@ static int ath6kl_usb_resume(struct ath6kl *ar)
 	return 0;
 }
 
+/* FIXME: It would be good to have it in debug.c but all the HIF data structures
+ * are not exposed through header file to access in debug.c
+ */
+static int ath6kl_usb_get_stats(struct ath6kl *ar, u8 *buf, int buf_len)
+{
+	int len = 0;
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+	char *autopm_state[] = {"ON", "INPROGRESS", "SUSPENDED"};
+
+	len += snprintf(buf + len, buf_len - len,
+			"\n<--------------- AUTO PM STATS --------------->\n");
+
+	len += snprintf(buf +len, buf_len - len, " Auto PM state\t\t: %s\n",
+			autopm_state[atomic_read(&ar_usb->autopm_state)]);
+
+	len += snprintf(buf +len, buf_len - len, " PM Usage count\t\t: %d\n",
+			atomic_read(&ar_usb->interface->pm_usage_cnt));
+
+#define USB_PMSTAT(_ar_usb, _buf, _len, _name) \
+	snprintf(_buf, _len, " %s\t\t: %d\n", #_name, _ar_usb->pm_stats._name)
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, suspended);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, resumed);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, reset_resume);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, tx_queued);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, tx_processed);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, max_queue_len);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, bam_activity);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, bam_inactivity);
+#undef USB_PMSTAT
+#endif /* CONFIG_ATH6KL_AUTO_PM */
+
+	return len;
+}
+
+static int ath6kl_usb_clear_stats(struct ath6kl *ar)
+{
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+
+	memset(&ar_usb->pm_stats, 0, sizeof(ar_usb->pm_stats));
+#endif
+
+	return 0;
+}
+
 static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.diag_read32 = ath6kl_usb_diag_read32,
 	.diag_write32 = ath6kl_usb_diag_write32,
@@ -1934,6 +2003,8 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.pipe_set_rxq_threshold = ath6kl_usb_set_rxq_threshold,
 	.suspend = ath6kl_usb_suspend,
 	.resume = ath6kl_usb_resume,
+	.get_stats = ath6kl_usb_get_stats,
+	.clear_stats = ath6kl_usb_clear_stats,
 };
 
 /* ath6kl usb driver registered functions */
@@ -2113,7 +2184,9 @@ end:
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_SUSPENDED);
+	ar_usb->pm_stats.suspended++;
 #endif
+
 	return ret;
 }
 
@@ -2168,6 +2241,7 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_ON);
 	schedule_work(&ar_usb->pm_resume_work);
+	ar_usb->pm_stats.resumed++;
 #endif
 
 	return 0;
@@ -2180,6 +2254,10 @@ static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
 			"USB PM Reset Resume, Use normal resume path: %p!\n",
 			ar_usb);
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	ar_usb->pm_stats.reset_resume++;
+#endif
 
 	return ath6kl_usb_pm_resume(intf);
 }
