@@ -17,6 +17,7 @@
 
 #include <linux/module.h>
 #include <linux/usb.h>
+#include <linux/atomic.h>
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 #include <linux/usb/hbm.h>
@@ -24,6 +25,7 @@
 
 #include "debug.h"
 #include "core.h"
+#include "cfg80211.h"
 #include "platform.h"
 
 /* constants */
@@ -51,6 +53,14 @@ enum ATH6KL_USB_PIPE_ID {
 	ATH6KL_USB_PIPE_RX_INT,
 	ATH6KL_USB_PIPE_MAX
 };
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+enum ATH6KL_USB_AUTOPM_STATE {
+	ATH6KL_USB_AUTOPM_STATE_ON = 0, /* Port is ON */
+	ATH6KL_USB_AUTOPM_STATE_INPROGRESS, /* Suspend/resume is in progress */
+	ATH6KL_USB_AUTOPM_STATE_SUSPENDED, /* Port is Suspended */
+};
+#endif
 
 #define ATH6KL_USB_PIPE_INVALID ATH6KL_USB_PIPE_MAX
 
@@ -104,6 +114,12 @@ struct ath6kl_usb {
 	u8 *diag_resp_buffer;
 	struct ath6kl *ar;
 	u32 rxq_threshold;
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	atomic_t autopm_state;
+	struct list_head pm_q;
+	spinlock_t pm_lock;
+	struct work_struct pm_resume_work;
+#endif
 };
 
 /* usb urb object */
@@ -112,6 +128,9 @@ struct ath6kl_urb_context {
 	struct ath6kl_usb_pipe *pipe;
 	struct sk_buff *skb;
 	struct ath6kl *ar;
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	int autopm; /* If set, put_interface_async */
+#endif
 };
 
 /* USB endpoint definitions */
@@ -155,6 +174,12 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 
 /* function declarations */
 static void ath6kl_usb_recv_complete(struct urb *urb);
+#ifdef CONFIG_PM
+static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
+		pm_message_t message);
+static int ath6kl_usb_pm_resume(struct usb_interface *interface);
+static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf);
+#endif
 
 #define ATH6KL_USB_IS_BULK_EP(attr) (((attr) & 3) == 0x02)
 #define ATH6KL_USB_IS_INT_EP(attr)  (((attr) & 3) == 0x03)
@@ -322,6 +347,39 @@ static void ath6kl_ipa_data_callback(void *priv, enum ipa_dp_evt_type evt,
 		break;
 	}
 }
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+int ath6kl_usb_bam_activity_cb(void *priv)
+{
+	struct ath6kl_usb_pipe *pipe;
+
+	pipe = (struct ath6kl_usb_pipe *) priv;
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+			"BAM Activity indication callback, pipe_num: %d\n",
+			pipe->logical_pipe_num);
+
+	usb_autopm_get_interface_async(pipe->ar_usb->interface);
+
+	return 0;
+}
+
+int ath6kl_usb_bam_inactivity_cb(void *priv)
+{
+	struct ath6kl_usb_pipe *pipe;
+
+	pipe = (struct ath6kl_usb_pipe *) priv;
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+			"BAM Inactivity indication callback, pipe_num: %d\n",
+			pipe->logical_pipe_num);
+
+	usb_autopm_put_interface_async(pipe->ar_usb->interface);
+
+	return 0;
+}
+#endif /* CONFIG_ATH6KL_AUTO_PM */
+
 /* Create BAM pipes, this function will be called from usb.c file
  * whilte iterating each pipe */
 /* returns 0 - On Success, -1 on Error */
@@ -361,8 +419,14 @@ static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
 		/* Fill the Tx pipe ep confg from IPA Config module */
 		ath6kl_ipacm_get_ep_config_info(bam_pipe->ipa_params.client,
 				&(bam_pipe->ipa_params.ipa_ep_cfg));
-		bam_pipe->ipa_params.priv = NULL;
+		bam_pipe->ipa_params.priv = pipe;
 		bam_pipe->ipa_params.notify = ath6kl_ipa_data_callback;
+#ifdef CONFIG_ATH6KL_AUTO_PM
+		bam_pipe->ipa_params.activity_notify =
+			ath6kl_usb_bam_activity_cb;
+		bam_pipe->ipa_params.inactivity_notify =
+			ath6kl_usb_bam_inactivity_cb;
+#endif
 
 		if((status = usb_bam_connect_ipa(&bam_pipe->ipa_params))) {
 			ath6kl_err ("BAM-CM: Error while creating BAM "
@@ -405,6 +469,12 @@ static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
 				&(bam_pipe->ipa_params.ipa_ep_cfg));
 		bam_pipe->ipa_params.priv = (void *)pipe;
 		bam_pipe->ipa_params.notify = ath6kl_ipa_data_callback;
+#ifdef CONFIG_ATH6KL_AUTO_PM
+		bam_pipe->ipa_params.activity_notify =
+			ath6kl_usb_bam_activity_cb;
+		bam_pipe->ipa_params.inactivity_notify =
+			ath6kl_usb_bam_inactivity_cb;
+#endif
 
 		if((status = usb_bam_connect_ipa(&bam_pipe->ipa_params))) {
 			ath6kl_err ("BAM-CM: Error while creating "
@@ -580,7 +650,8 @@ static void ath6kl_usb_free_urb_to_pipe(struct ath6kl_usb_pipe *pipe,
 	spin_unlock_irqrestore(&pipe->ar_usb->cs_lock, flags);
 }
 
-static void ath6kl_usb_cleanup_recv_urb(struct ath6kl_urb_context *urb_context)
+static void ath6kl_usb_cleanup_urb_context(
+		struct ath6kl_urb_context *urb_context)
 {
 	if (urb_context->skb != NULL) {
 		dev_kfree_skb(urb_context->skb);
@@ -764,6 +835,16 @@ static int ath6kl_usb_setup_bampipe_resources(struct ath6kl_usb *ar_usb)
 		goto cleanup_bam_pipe;
 	}
 
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	/* Get operation done here for BAM pipes since an URB will be always
+	 * submitted so making sure Suspend doesn't happen. Put operation will
+	 * be done in inactivity handler when HSIC BAM driver calls the call
+	 * back after the inactivity timeout.
+	 */
+	usb_autopm_get_interface_async(ar_usb->interface);
+#endif
+
+
 	return 0;
 
 cleanup_bam_pipe:
@@ -938,7 +1019,7 @@ static void ath6kl_usb_post_recv_transfers(struct ath6kl_usb_pipe *recv_pipe,
 	return;
 
 err_cleanup_urb:
-	ath6kl_usb_cleanup_recv_urb(urb_context);
+	ath6kl_usb_cleanup_urb_context(urb_context);
 	return;
 }
 
@@ -948,16 +1029,24 @@ static void ath6kl_usb_flush_all(struct ath6kl_usb *ar_usb)
 	struct ath6kl_usb_pipe *pipe;
 
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
-		if (ar_usb->pipes[i].ar_usb) {
-			pipe = &ar_usb->pipes[i].ar_usb->pipes[i];
-			if (pipe) {
-				flush_work(&pipe->tx_io_complete_work);
-				flush_work(&pipe->rx_io_complete_work);
-			}
-			if (&ar_usb->pipes[i].urb_submitted)
-				usb_kill_anchored_urbs(&ar_usb->pipes[i].urb_submitted);
-		}
+		pipe = &ar_usb->pipes[i].ar_usb->pipes[i];
+		if (!pipe->ar_usb)
+			continue;
+		flush_work(&pipe->tx_io_complete_work);
+		flush_work(&pipe->rx_io_complete_work);
+		usb_kill_anchored_urbs(&pipe->urb_submitted);
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		if (!pipe->bam_pipe.connected)
+			continue;
+
+		usb_kill_urb(pipe->bam_pipe.urb);
+#endif
+
 	}
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	flush_work(&ar_usb->pm_resume_work);
+#endif
 }
 
 static void ath6kl_usb_start_recv_pipes(struct ath6kl_usb *ar_usb)
@@ -1039,7 +1128,7 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 	queue_work(pipe->ar_usb->ar->ath6kl_wq_rx, &pipe->rx_io_complete_work);
 
 cleanup_recv_urb:
-	ath6kl_usb_cleanup_recv_urb(urb_context);
+	ath6kl_usb_cleanup_urb_context(urb_context);
 
 	if (status == 0 || urb->status == -EPROTO) {
 		if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
@@ -1069,6 +1158,15 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 				__func__, pipe->logical_pipe_num, urb->status);
 	}
 
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "TX complete: autopm: %d\n",
+			urb_context->autopm);
+
+	/* Asynchronously put to avoid blocking in interrupt context */
+	if (urb_context->autopm)
+		usb_autopm_put_interface_async(pipe->ar_usb->interface);
+#endif
+
 	skb = urb_context->skb;
 	urb_context->skb = NULL;
 	ath6kl_usb_free_urb_to_pipe(urb_context->pipe, urb_context);
@@ -1084,6 +1182,15 @@ void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context)
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct sk_buff *skb;
 	struct ath6kl_usb *ar_usb = pipe->ar_usb;
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "BAM TX complete: autopm: %d\n",
+			urb_context->autopm);
+
+	/* Asynchronously put to avoid blocking in interrupt context */
+	if (urb_context->autopm)
+		usb_autopm_put_interface_async(pipe->ar_usb->interface);
+#endif
 
 	skb = urb_context->skb;
 	urb_context->skb = NULL;
@@ -1138,7 +1245,20 @@ static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
 
 static void ath6kl_usb_destroy(struct ath6kl_usb *ar_usb)
 {
+
 	ath6kl_usb_flush_all(ar_usb);
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	while (!list_empty(&ar_usb->pm_q)) {
+		struct ath6kl_urb_context *urb_context;
+
+		urb_context = list_first_entry(&ar_usb->pm_q,
+				struct ath6kl_urb_context, link);
+
+		list_del(&urb_context->link);
+		ath6kl_usb_cleanup_urb_context(urb_context);
+	}
+#endif
 
 	ath6kl_usb_cleanup_pipe_resources(ar_usb);
 
@@ -1248,33 +1368,17 @@ static void hif_start(struct ath6kl *ar)
 	}
 }
 
-static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
-		struct sk_buff *hdr_skb, struct sk_buff *skb)
+
+static int ath6kl_usb_submit_urb(struct ath6kl *ar,
+		struct ath6kl_urb_context *urb_context)
 {
-	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
-	struct ath6kl_usb_pipe *pipe = &device->pipes[PipeID];
-	struct ath6kl_urb_context *urb_context;
-	int usb_status, status = 0;
 	struct urb *urb;
-	u8 *data;
-	u32 len;
-
-	ath6kl_dbg(ATH6KL_DBG_USB_BULK, "+%s pipe : %d, buf:0x%p\n",
-			__func__, PipeID, skb);
-
-	urb_context = ath6kl_usb_alloc_urb_from_pipe(pipe);
-	if (urb_context == NULL) {
-		/*
-		 * TODO: it is possible to run out of urbs if
-		 * 2 endpoints map to the same pipe ID
-		 */
-		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-				"%s pipe:%d no urbs left. URB Cnt : %d\n",
-				__func__, PipeID, pipe->urb_cnt);
-		status = -ENOMEM;
-		goto fail_hif_send;
-	}
-	urb_context->skb = skb;
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
+	struct sk_buff *skb  = urb_context->skb;
+	u8 *data = skb->data;
+	u32 len = skb->len;
+	int usb_status, status = 0;
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	if (ath6kl_is_bam_pipe(pipe)) {
@@ -1282,33 +1386,27 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 		/* send to IPA bam driver */
 		status = ipa_tx_dp(pipe->bam_pipe.ipa_params.client, skb, NULL);
 
-		if (status < 0) {
+		if (status) {
 			ath6kl_err("ath6kl usb : usb bam transmit failed %d\n",
 					status);
-			ath6kl_usb_free_urb_to_pipe(pipe, urb_context);
-			status = -EINVAL;
 		}
 
 		return status;
 	}
 #endif
-	data = skb->data;
-	len = skb->len;
 
 	urb = usb_alloc_urb(0, GFP_ATOMIC);
 	if (urb == NULL) {
 		status = -ENOMEM;
-		ath6kl_usb_free_urb_to_pipe(urb_context->pipe,
-				urb_context);
-		goto fail_hif_send;
+		goto fail;
 	}
 
 	usb_fill_bulk_urb(urb,
-			device->udev,
-			pipe->usb_pipe_handle,
-			data,
-			len,
-			ath6kl_usb_usb_transmit_complete, urb_context);
+			  device->udev,
+			  urb_context->pipe->usb_pipe_handle,
+			  data,
+			  len,
+			  ath6kl_usb_usb_transmit_complete, urb_context);
 
 	if ((len % pipe->max_packet_size) == 0) {
 		/* hit a max packet boundary on this pipe */
@@ -1316,23 +1414,145 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-			"athusb bulk send submit:%d, 0x%X (ep:0x%2.2X), %d bytes\n",
-			pipe->logical_pipe_num, pipe->usb_pipe_handle,
-			pipe->ep_address, len);
+		   "athusb bulk send submit:%d, 0x%X (ep:0x%2.2X), %d bytes\n",
+		   pipe->logical_pipe_num, pipe->usb_pipe_handle,
+		   pipe->ep_address, len);
 
 	usb_anchor_urb(urb, &pipe->urb_submitted);
 	usb_status = usb_submit_urb(urb, GFP_ATOMIC);
 
 	if (usb_status) {
 		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-				"ath6kl usb : usb bulk transmit failed %d\n",
-				usb_status);
+			   "ath6kl usb : usb bulk transmit failed %d\n",
+			   usb_status);
 		usb_unanchor_urb(urb);
-		ath6kl_usb_free_urb_to_pipe(urb_context->pipe,
-				urb_context);
 		status = -EINVAL;
 	}
 	usb_free_urb(urb);
+
+fail:
+	return status;
+}
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+static void ath6kl_auto_pm_wakeup_resume(struct work_struct *work)
+{
+	struct ath6kl_usb *ar_usb = container_of(work,
+			struct ath6kl_usb, pm_resume_work);
+	struct ath6kl_urb_context *urb_context;
+	int status = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+			"Auto PM Resume, sumitting URBs, Queue len: %d\n",
+			get_queue_depth(&ar_usb->pm_q));
+
+	spin_lock_bh(&ar_usb->pm_lock);
+	while (!list_empty(&ar_usb->pm_q)) {
+
+		urb_context = list_first_entry(&ar_usb->pm_q,
+				struct ath6kl_urb_context, link);
+
+		list_del(&urb_context->link);
+		spin_unlock_bh(&ar_usb->pm_lock);
+
+		status = ath6kl_usb_submit_urb(ar_usb->ar, urb_context);
+
+		if (status) {
+			ath6kl_usb_free_urb_to_pipe(urb_context->pipe,
+					urb_context);
+		}
+		spin_lock_bh(&ar_usb->pm_lock);
+	}
+
+	spin_unlock_bh(&ar_usb->pm_lock);
+}
+#endif
+
+static int ath6kl_usb_send(struct ath6kl *ar, u8 pipe_id,
+			   struct sk_buff *hdr_skb, struct sk_buff *skb)
+{
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	struct ath6kl_usb_pipe *pipe = &device->pipes[pipe_id];
+	struct ath6kl_urb_context *urb_context;
+	int status = 0;
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	int autopm_state;
+#endif
+
+	ath6kl_dbg(ATH6KL_DBG_USB_BULK, "+%s pipe : %d, buf:0x%p\n",
+		   __func__, pipe_id, skb);
+
+	urb_context = ath6kl_usb_alloc_urb_from_pipe(pipe);
+
+	if (urb_context == NULL) {
+		/*
+		 * TODO: it is possible to run out of urbs if
+		 * 2 endpoints map to the same pipe ID
+		 */
+		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
+			   "%s pipe:%d no urbs left. URB Cnt : %d\n",
+			   __func__, pipe_id, pipe->urb_cnt);
+		status = -ENOMEM;
+		goto fail_hif_send;
+	}
+
+
+	urb_context->skb = skb;
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	urb_context->autopm = 0;
+	autopm_state = atomic_read(&device->autopm_state);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+			"USB send autopm_state: %d, pipe_id: %d\n",
+			autopm_state, pipe_id);
+	/* Dont do Get operation if Suspend/resume in progress and data is on
+	 * control pipe, This is done to avoid Suspend/resume going in a loop
+	 * because of Get operation when WMI commands are sent to firmware */
+	if (!(autopm_state == ATH6KL_USB_AUTOPM_STATE_INPROGRESS &&
+				pipe_id == ATH6KL_USB_PIPE_TX_CTRL)) {
+		usb_autopm_get_interface_async(device->interface);
+		urb_context->autopm = 1;
+
+		/* Queue the packets into pm_q if port is suspended or in
+		 * progress and there are already packets in pm_q */
+		spin_lock_bh(&device->pm_lock);
+		if (!list_empty(&device->pm_q) ||
+				autopm_state != ATH6KL_USB_AUTOPM_STATE_ON) {
+			list_add_tail(&urb_context->link, &device->pm_q);
+
+			ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+					"USB send: Queue to PM queue, len %d",
+					get_queue_depth(&device->pm_q));
+
+			spin_unlock_bh(&device->pm_lock);
+			/* Make sure to schedule the work as resume may
+			 * have completed by now and worker thread may have
+			 * completed it's execution before even queuing
+			 */
+			if (atomic_read(&device->autopm_state) ==
+					ATH6KL_USB_AUTOPM_STATE_ON) {
+				schedule_work(&device->pm_resume_work);
+			}
+
+			return 0;
+		}
+		spin_unlock_bh(&device->pm_lock);
+	}
+
+#endif
+
+
+	status = ath6kl_usb_submit_urb(ar, urb_context);
+
+	if (status) {
+#ifdef CONFIG_ATH6KL_AUTO_PM
+		if (urb_context->autopm)
+			usb_autopm_put_interface_async(device->interface);
+#endif
+
+		ath6kl_usb_free_urb_to_pipe(urb_context->pipe,
+					    urb_context);
+	}
 
 fail_hif_send:
 	return status;
@@ -1685,6 +1905,19 @@ static int ath6kl_usb_set_rxq_threshold(struct ath6kl *ar, u32 rxq_threshold)
 
 	return 0;
 }
+
+static int ath6kl_usb_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
+{
+	/* Nothing to be done for now */
+	return 0;
+}
+
+static int ath6kl_usb_resume(struct ath6kl *ar)
+{
+	/* Nothing to be done for now */
+	return 0;
+}
+
 static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.diag_read32 = ath6kl_usb_diag_read32,
 	.diag_write32 = ath6kl_usb_diag_write32,
@@ -1699,6 +1932,8 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.pipe_get_free_queue_number = ath6kl_usb_get_free_queue_number,
 	.cleanup_scatter = ath6kl_usb_cleanup_scatter,
 	.pipe_set_rxq_threshold = ath6kl_usb_set_rxq_threshold,
+	.suspend = ath6kl_usb_suspend,
+	.resume = ath6kl_usb_resume,
 };
 
 /* ath6kl usb driver registered functions */
@@ -1736,6 +1971,14 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		goto err_usb_put;
 	}
 
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	spin_lock_init(&ar_usb->pm_lock);
+	INIT_LIST_HEAD(&ar_usb->pm_q);
+	interface->needs_remote_wakeup = 1;
+	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_ON);
+	INIT_WORK(&ar_usb->pm_resume_work, ath6kl_auto_pm_wakeup_resume);
+#endif
+
 	ar = ath6kl_core_create(&ar_usb->udev->dev);
 	if (ar == NULL) {
 		ath6kl_err("Failed to alloc ath6kl core\n");
@@ -1766,6 +2009,18 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		ath6kl_disconnect_sysbam_pipes();
 		goto err_core_cleanup;
 	}
+
+#endif
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	/* Enable Autsuspend (Delay 2sec)
+	   Note, Autosuspend is enabled only after ath6kl_core_create is done
+	   so that all the initialization completes */
+	if (ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
+		device_init_wakeup(&interface->dev, 1);
+		pm_runtime_set_autosuspend_delay(&dev->dev, 2000);
+		usb_enable_autosuspend(dev);
+	}
 #endif
 
 	return ret;
@@ -1795,41 +2050,139 @@ static void ath6kl_usb_remove(struct usb_interface *interface)
 
 #ifdef CONFIG_PM
 
-static int ath6kl_usb_suspend(struct usb_interface *interface,
-		pm_message_t message)
+static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
+			      pm_message_t message)
 {
-	struct ath6kl_usb *device;
-	device = usb_get_intfdata(interface);
+	struct ath6kl_usb *ar_usb;
+	struct ath6kl *ar;
+	bool try_deepsleep = false;
+	int ret = 0;
 
-	ath6kl_usb_flush_all(device);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "USB PM Suspend\n");
+
+	ar_usb = usb_get_intfdata(interface);
+	if(ar_usb == NULL) {
+		return -ENODEV;
+	}
+
+	ar = ar_usb->ar;
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_INPROGRESS);
+#endif
+
+	if (ar->state == ATH6KL_STATE_SCHED_SCAN) {
+		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "sched scan is in progress\n");
+
+		ret =  ath6kl_cfg80211_suspend(ar,
+					       ATH6KL_CFG_SUSPEND_SCHED_SCAN,
+					       NULL);
+		goto end;
+
+	}
+
+	if (ar->suspend_mode == WLAN_POWER_STATE_WOW) {
+
+		ret = ath6kl_cfg80211_suspend(ar,
+				ATH6KL_CFG_SUSPEND_WOW,
+				NULL);
+
+		if (ret && ret != -ENOTCONN)
+			ath6kl_err("wow suspend failed: %d\n", ret);
+
+		if (ret && (!ar->wow_suspend_mode || ar->wow_suspend_mode ==
+					WLAN_POWER_STATE_DEEP_SLEEP))
+			try_deepsleep = true;
+		else if (ret && ar->wow_suspend_mode ==
+				WLAN_POWER_STATE_CUT_PWR)
+			goto end;
+	}
+
+	if (ar->suspend_mode == WLAN_POWER_STATE_DEEP_SLEEP ||
+			!ar->suspend_mode || try_deepsleep) {
+
+		ret = ath6kl_cfg80211_suspend(ar,
+				ATH6KL_CFG_SUSPEND_DEEPSLEEP,
+				NULL);
+		goto end;
+	}
+
+end:
+	if (ret == 0)
+		ath6kl_usb_flush_all(ar_usb);
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_SUSPENDED);
+#endif
+	return ret;
+}
+
+static int ath6kl_usb_pm_resume(struct usb_interface *interface)
+{
+	struct ath6kl_usb *ar_usb = usb_get_intfdata(interface);
+	struct ath6kl *ar = ar_usb->ar;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	struct ath6kl_usb_pipe *pipe;
+	int usb_status;
+	int i;
+#endif
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "USB PM Resume\n");
+
+	ath6kl_usb_post_recv_transfers(&ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA],
+				       ATH6KL_USB_RX_BUFFER_SIZE);
+	ath6kl_usb_post_recv_transfers(&ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2],
+				       ATH6KL_USB_RX_BUFFER_SIZE);
+
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	/* TODO: Find if a function is required */
+	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
+		pipe = &ar_usb->pipes[i];
+
+		/* Nothing allocated for this pipe */
+		if (pipe->ar_usb == NULL) {
+			continue;
+		}
+
+		/* Check if we need to setup BAM pipe */
+		if (!ath6kl_is_bam_pipe(pipe)) {
+			continue;
+		}
+
+		/* Submit the URB which is already initilized during probe */
+		usb_status = usb_submit_urb(pipe->bam_pipe.urb, GFP_KERNEL);
+
+		if (usb_status) {
+			ath6kl_err("Failed to submit URB for BAM pipe: %d\n",
+					pipe->logical_pipe_num);
+		}
+
+	}
+#endif
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_INPROGRESS);
+#endif
+	ath6kl_cfg80211_resume(ar);
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_ON);
+	schedule_work(&ar_usb->pm_resume_work);
+#endif
+
 	return 0;
 }
 
-static int ath6kl_usb_resume(struct usb_interface *interface)
+static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 {
-	struct ath6kl_usb *device;
-	device = usb_get_intfdata(interface);
+	struct ath6kl_usb *ar_usb = (struct ath6kl_usb *)usb_get_intfdata(intf);
 
-	ath6kl_usb_post_recv_transfers(&device->pipes[ATH6KL_USB_PIPE_RX_DATA],
-			ATH6KL_USB_RX_BUFFER_SIZE);
-	ath6kl_usb_post_recv_transfers(&device->pipes[ATH6KL_USB_PIPE_RX_DATA2],
-			ATH6KL_USB_RX_BUFFER_SIZE);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+			"USB PM Reset Resume, Use normal resume path: %p!\n",
+			ar_usb);
 
-	return 0;
+	return ath6kl_usb_pm_resume(intf);
 }
-
-static int ath6kl_usb_reset_resume(struct usb_interface *intf)
-{
-	if (usb_get_intfdata(intf))
-		ath6kl_usb_remove(intf);
-	return 0;
-}
-
-#else
-
-#define ath6kl_usb_suspend NULL
-#define ath6kl_usb_resume NULL
-#define ath6kl_usb_reset_resume NULL
 
 #endif
 
@@ -1844,9 +2197,11 @@ MODULE_DEVICE_TABLE(usb, ath6kl_usb_ids);
 static struct usb_driver ath6kl_usb_driver = {
 	.name = "ath6kl_usb",
 	.probe = ath6kl_usb_probe,
-	.suspend = ath6kl_usb_suspend,
-	.resume = ath6kl_usb_resume,
-	.reset_resume = ath6kl_usb_reset_resume,
+#ifdef CONFIG_PM
+	.suspend = ath6kl_usb_pm_suspend,
+	.resume = ath6kl_usb_pm_resume,
+	.reset_resume = ath6kl_usb_pm_reset_resume,
+#endif
 	.disconnect = ath6kl_usb_remove,
 	.id_table = ath6kl_usb_ids,
 	.supports_autosuspend = true,
