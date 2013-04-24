@@ -2159,39 +2159,22 @@ static int ath6kl_cfg80211_host_sleep(struct ath6kl *ar, struct ath6kl_vif *vif)
 	return ret;
 }
 
-static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
+static int ath6kl_wow_suspend_vif(struct ath6kl_vif *vif,
+				struct cfg80211_wowlan *wow, u32 *filter)
 {
+	struct ath6kl *ar = vif->ar;
 	struct in_device *in_dev;
 	struct in_ifaddr *ifa;
-	struct ath6kl_vif *vif;
 	int ret;
-	u32 filter = 0;
 	u16 i, bmiss_time;
-	u8 index = 0;
 	__be32 ips[MAX_IP_ADDRS];
-
-	/* The FW currently can't support multi-vif WoW properly. */
-	if (ar->num_vif > 1)
-		return -EIO;
-
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		return -EIO;
-
-	if (!ath6kl_cfg80211_ready(vif))
-		return -EIO;
-
-	if (!test_bit(CONNECTED, &vif->flags))
-		return -ENOTCONN;
-
-	if (wow && (wow->n_patterns > WOW_MAX_FILTERS_PER_LIST))
-		return -EINVAL;
+	u8 index = 0;
 
 	if (!test_bit(NETDEV_MCAST_ALL_ON, &vif->flags) &&
-	    test_bit(ATH6KL_FW_CAPABILITY_WOW_MULTICAST_FILTER,
-		     ar->fw_capabilities)) {
-		ret = ath6kl_wmi_mcast_filter_cmd(vif->ar->wmi,
-						vif->fw_vif_idx, false);
+		test_bit(ATH6KL_FW_CAPABILITY_WOW_MULTICAST_FILTER,
+			ar->fw_capabilities)) {
+		ret = ath6kl_wmi_mcast_filter_cmd(ar->wmi,
+				vif->fw_vif_idx, false);
 		if (ret)
 			return ret;
 	}
@@ -2199,15 +2182,15 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	/* Clear existing WOW patterns */
 	for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
 		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi, vif->fw_vif_idx,
-					       WOW_LIST_ID, i);
+						WOW_LIST_ID, i);
 
 	/*
-	 * Skip the default WOW pattern configuration
-	 * if the driver receives any WOW patterns from
-	 * the user.
-	 */
+	* Skip the default WOW pattern configuration
+	* if the driver receives any WOW patterns from
+	* the user.
+	*/
 	if (wow)
-		ret = ath6kl_wow_usr(ar, vif, wow, &filter);
+		ret = ath6kl_wow_usr(ar, vif, wow, filter);
 	else if (vif->nw_type == AP_NETWORK)
 		ret = ath6kl_wow_ap(ar, vif);
 	else
@@ -2220,8 +2203,8 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 	if (vif->nw_type != AP_NETWORK) {
 		ret = ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
-						    ATH6KL_MAX_WOW_LISTEN_INTL,
-						    0);
+					ATH6KL_MAX_WOW_LISTEN_INTL,
+					0);
 		if (ret)
 			return ret;
 
@@ -2231,7 +2214,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 			bmiss_time = ATH6KL_MAX_BMISS_TIME;
 
 		ret = ath6kl_wmi_bmisstime_cmd(ar->wmi, vif->fw_vif_idx,
-					       bmiss_time, 0);
+						bmiss_time, 0);
 		if (ret)
 			return ret;
 
@@ -2242,12 +2225,10 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 			return ret;
 	}
 
-	ar->state = ATH6KL_STATE_SUSPENDING;
-
 	/* Setup own IP addr for ARP agent. */
 	in_dev = __in_dev_get_rtnl(vif->ndev);
 	if (!in_dev)
-		goto skip_arp;
+		return 0;
 
 	ifa = in_dev->ifa_list;
 	memset(&ips, 0, sizeof(ips));
@@ -2270,17 +2251,89 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		return ret;
 	}
 
-skip_arp:
-	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
-					  ATH6KL_WOW_MODE_ENABLE,
-					  filter,
-					  WOW_HOST_REQ_DELAY);
+	return ret;
+}
+
+static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
+{
+	struct ath6kl_vif *vif, *first_vif;
+	int ret;
+	bool connected = false;
+	u32 filter = 0;
+
+	/* enter / leave wow suspend on first vif always */
+	first_vif = ath6kl_vif_first(ar);
+	if (!first_vif)
+		return -EIO;
+
+	if (!ath6kl_cfg80211_ready(first_vif))
+		return -EIO;
+
+	if (wow && (wow->n_patterns > WOW_MAX_FILTERS_PER_LIST))
+		return -EINVAL;
+
+	/* install filters for each connected vif */
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (!test_bit(CONNECTED, &vif->flags) ||
+			!ath6kl_cfg80211_ready(vif))
+			continue;
+
+		connected = true;
+
+		spin_unlock_bh(&ar->list_lock);
+		ret = ath6kl_wow_suspend_vif(vif, wow, &filter);
+		spin_lock_bh(&ar->list_lock);
+		if (ret)
+			break;
+	}
+	spin_unlock_bh(&ar->list_lock);
+
+	ar->state = ATH6KL_STATE_SUSPENDING;
+
+	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, first_vif->fw_vif_idx,
+					ATH6KL_WOW_MODE_ENABLE,
+					filter,
+					WOW_HOST_REQ_DELAY);
 	if (ret)
 		return ret;
 
-	ret = ath6kl_cfg80211_host_sleep(ar, vif);
+	ret = ath6kl_cfg80211_host_sleep(ar, first_vif);
 	if (ret)
 		return ret;
+
+	return 0;
+}
+
+static int ath6kl_wow_resume_vif(struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	int ret;
+
+	if (vif->nw_type != AP_NETWORK) {
+		ret = ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
+					0, 0, 0, 0, 0, 0, 3, 0, 0, 0);
+	if (ret)
+		return ret;
+
+		ret = ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
+						vif->listen_intvl_t, 0);
+		if (ret)
+			return ret;
+
+		ret = ath6kl_wmi_bmisstime_cmd(ar->wmi, vif->fw_vif_idx,
+						vif->bmiss_time_t, 0);
+		if (ret)
+			return ret;
+	}
+	if (!test_bit(NETDEV_MCAST_ALL_OFF, &vif->flags)) {
+		ret = ath6kl_wmi_mcast_filter_cmd(vif->ar->wmi,
+					vif->fw_vif_idx, true);
+		if (ret)
+			return ret;
+	}
+
+	netif_wake_queue(vif->ndev);
 
 	return 0;
 }
@@ -2299,42 +2352,31 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						 ATH6KL_HOST_MODE_AWAKE);
 	if (ret) {
-		ath6kl_warn("Failed to configure host sleep mode for wow resume: %d\n",
-			    ret);
-		ar->state = ATH6KL_STATE_WOW;
-		return ret;
+		ath6kl_warn("wow resume failed: %d\n", ret);
+		goto cleanup;
 	}
 
-	if (vif->nw_type != AP_NETWORK) {
-		ret = ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
-						0, 0, 0, 0, 0, 0, 3, 0, 0, 0);
+	spin_lock_bh(&ar->list_lock);
+	list_for_each_entry(vif, &ar->vif_list, list) {
+	if (!test_bit(CONNECTED, &vif->flags) ||
+		!ath6kl_cfg80211_ready(vif))
+		continue;
+		spin_unlock_bh(&ar->list_lock);
+		ret = ath6kl_wow_resume_vif(vif);
+		spin_lock_bh(&ar->list_lock);
 		if (ret)
-			return ret;
-
-		ret = ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
-						    vif->listen_intvl_t, 0);
-		if (ret)
-			return ret;
-
-		ret = ath6kl_wmi_bmisstime_cmd(ar->wmi, vif->fw_vif_idx,
-					       vif->bmiss_time_t, 0);
-		if (ret)
-			return ret;
+			break;
 	}
+	spin_unlock_bh(&ar->list_lock);
+
+	if (ret)
+		goto cleanup;
 
 	ar->state = ATH6KL_STATE_ON;
+	return 0;
 
-	if (!test_bit(NETDEV_MCAST_ALL_OFF, &vif->flags) &&
-	    test_bit(ATH6KL_FW_CAPABILITY_WOW_MULTICAST_FILTER,
-		     ar->fw_capabilities)) {
-		ret = ath6kl_wmi_mcast_filter_cmd(vif->ar->wmi,
-					vif->fw_vif_idx, true);
-		if (ret)
-			return ret;
-	}
-
-	netif_wake_queue(vif->ndev);
-
+cleanup:
+	ar->state = ATH6KL_STATE_WOW;
 	return 0;
 }
 
