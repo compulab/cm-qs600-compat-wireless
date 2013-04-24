@@ -4309,6 +4309,10 @@ static int ath6kl_wmi_proc_events(struct wmi *wmi, struct sk_buff *skb)
 		ret = ath6kl_wmi_flowctrl_ind_event_rx(datap,
 						len, vif);
 		break;
+        case WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI,
+			 "WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID\n");
+		break;
 	default:
 		/* may be the event is interface specific */
 		ret = ath6kl_wmi_proc_events_vif(wmi, if_idx, id, datap, len);
