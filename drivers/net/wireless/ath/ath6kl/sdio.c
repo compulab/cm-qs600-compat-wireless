@@ -1259,6 +1259,20 @@ static void ath6kl_sdio_stop(struct ath6kl *ar)
 	WARN_ON(get_queue_depth(&ar_sdio->scat_req) != 4);
 }
 
+static int ath6kl_sdio_get_stats(struct ath6kl *ar, u8 *buf, int buf_len)
+{
+	/* TBD */
+
+	return 0;
+}
+
+static int ath6kl_sdio_clear_stats(struct ath6kl *ar)
+{
+	/* TBD */
+
+	return 0;
+}
+
 static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.read_write_sync = ath6kl_sdio_read_write_sync,
 	.write_async = ath6kl_sdio_write_async,
@@ -1278,6 +1292,9 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.power_on = ath6kl_sdio_power_on,
 	.power_off = ath6kl_sdio_power_off,
 	.stop = ath6kl_sdio_stop,
+	.get_stats = ath6kl_sdio_get_stats,
+	.clear_stats = ath6kl_sdio_clear_stats,
+
 };
 
 #if defined(CONFIG_PM_SLEEP) && (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,34))
