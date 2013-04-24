@@ -2355,7 +2355,6 @@ static void aggr_slice_amsdu(struct aggr_info *p_aggr,
 	struct ethhdr *hdr;
 	u16 frame_8023_len, payload_8023_len, mac_hdr_len, amsdu_len;
 	u8 *framep;
-
 	mac_hdr_len = sizeof(struct ethhdr);
 	framep = skb->data + mac_hdr_len;
 	amsdu_len = skb->len - mac_hdr_len;
@@ -2454,10 +2453,14 @@ static void aggr_deque_frms_bam2bam(struct aggr_info_conn *agg_conn, u8 tid,
 			break;
 
 		if (node->skb) {
-			skb_queue_tail(&rxtid->q, node->skb);
+			if (node->is_amsdu)
+				aggr_slice_amsdu(agg_conn->aggr_info, rxtid,
+						node->skb);
+			else
+				skb_queue_tail(&rxtid->q, node->skb);
+			node->skb = NULL;
 			ath6kl_dbg(ATH6KL_DBG_OOO,
 				"ooo:Data removed = %d\n", rxtid->seq_next);
-			node->skb = NULL;
 		} else
 			stats->num_hole++;
 
@@ -2588,6 +2591,7 @@ static bool aggr_process_recv_frm_bam2bam(struct aggr_info_conn *agg_conn,
 	node->skb = frame;
 	is_queued = true;
 	stats->num_mpdu++;
+	node->is_amsdu = is_amsdu;
 
 	spin_unlock_bh(&rxtid->lock);
 
@@ -2618,6 +2622,19 @@ static bool aggr_process_recv_frm_bam2bam(struct aggr_info_conn *agg_conn,
 	spin_unlock_bh(&rxtid->lock);
 
 	return is_queued;
+}
+
+static void aggr_process_amsdu_bam2bam(struct aggr_info_conn *agg_conn,
+		u8 tid, struct sk_buff *frame)
+{
+	struct sk_buff *skb;
+	struct rxtid *rxtid;
+
+	rxtid = &agg_conn->rx_tid[tid];
+	aggr_slice_amsdu(agg_conn->aggr_info, rxtid, frame);
+	while ((skb = skb_dequeue(&rxtid->q)))
+		ath6kl_deliver_frames_to_nw_stack(agg_conn->dev,
+				skb);
 }
 #endif  /* CONFIG_ATH6KL_BAM2BAM */
 static void aggr_deque_frms(struct aggr_info_conn *agg_conn, u8 tid,
@@ -3220,6 +3237,12 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
 		{
+			if (!is_out_of_order && is_amsdu) {
+				aggr_process_amsdu_bam2bam(aggr_conn, tid,
+						 skb);
+				return;
+			}
+
 			if (is_out_of_order &&
 			aggr_process_recv_frm_bam2bam(aggr_conn, tid, seq_no,
 					is_amsdu, skb)) {
