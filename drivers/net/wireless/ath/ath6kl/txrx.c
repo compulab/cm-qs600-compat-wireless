@@ -682,7 +682,7 @@ int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg)
 			  correctly the length field within the header
 			  (valid only in case Hdr_Ofst_Pkt_Size_Valid=1)
 			  Valid for Output Pipes (IPA Producer) */
-			ep_cfg->hdr.hdr_additional_const_len = 
+			ep_cfg->hdr.hdr_additional_const_len =
 						ATH6KL_IPA_TX_PKT_LEN_POS;
 
 			ep_cfg->hdr.hdr_ofst_pkt_size_valid = 1;
@@ -1275,6 +1275,7 @@ static bool ath6kl_process_uapsdq(struct ath6kl_sta *conn,
 	u8 up = 0, traffic_class, *ip_hdr;
 	u16 ether_type;
 	struct ath6kl_llc_snap_hdr *llc_hdr;
+	struct sk_buff *skb_to_drop = NULL;
 
 	if (conn->sta_flags & STA_PS_APSD_TRIGGER) {
 		/*
@@ -1318,6 +1319,10 @@ static bool ath6kl_process_uapsdq(struct ath6kl_sta *conn,
 
 	/* Queue the frames if the STA is sleeping */
 	spin_lock_bh(&conn->psq_lock);
+	if (skb_queue_len(&conn->apsdq) >= ar->tx_psq_threshold) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_TX, "TX APSD queue is full\n");
+		skb_to_drop = skb_dequeue(&conn->apsdq);
+	}
 	is_apsdq_empty = skb_queue_empty(&conn->apsdq);
 	skb_queue_tail(&conn->apsdq, skb);
 	spin_unlock_bh(&conn->psq_lock);
@@ -1333,6 +1338,11 @@ static bool ath6kl_process_uapsdq(struct ath6kl_sta *conn,
 	}
 	*flags |= WMI_DATA_HDR_FLAGS_UAPSD;
 
+	if (skb_to_drop != NULL) {
+		dev_kfree_skb(skb_to_drop);
+		vif->net_stats.tx_dropped++;
+		vif->net_stats.tx_aborted_errors++;
+	}
 	return true;
 }
 
@@ -1343,6 +1353,7 @@ static bool ath6kl_process_psq(struct ath6kl_sta *conn,
 {
 	bool is_psq_empty = false;
 	struct ath6kl *ar = vif->ar;
+	struct sk_buff *skb_to_drop = NULL;
 
 	if (conn->sta_flags & STA_PS_POLLED) {
 		spin_lock_bh(&conn->psq_lock);
@@ -1354,6 +1365,11 @@ static bool ath6kl_process_psq(struct ath6kl_sta *conn,
 
 	/* Queue the frames if the STA is sleeping */
 	spin_lock_bh(&conn->psq_lock);
+	if (skb_queue_len(&conn->psq) >= ar->tx_psq_threshold) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_TX, "TX PS queue is full\n");
+		skb_to_drop = skb_dequeue(&conn->psq);
+	}
+
 	is_psq_empty = skb_queue_empty(&conn->psq);
 	skb_queue_tail(&conn->psq, skb);
 	spin_unlock_bh(&conn->psq_lock);
@@ -1367,6 +1383,12 @@ static bool ath6kl_process_psq(struct ath6kl_sta *conn,
 		ath6kl_wmi_set_pvb_cmd(ar->wmi,
 				vif->fw_vif_idx,
 				conn->aid, 1);
+
+	if (skb_to_drop != NULL) {
+		dev_kfree_skb(skb_to_drop);
+		vif->net_stats.tx_dropped++;
+		vif->net_stats.tx_aborted_errors++;
+	}
 	return true;
 }
 
@@ -1377,6 +1399,7 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 	struct ath6kl_sta *conn = NULL;
 	bool ps_queued = false;
 	struct ath6kl *ar = vif->ar;
+	struct sk_buff *skb_to_drop = NULL;
 
 	if (is_multicast_ether_addr(datap->h_dest)) {
 		u8 ctr = 0;
@@ -1398,6 +1421,13 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 				bool is_mcastq_empty = false;
 
 				spin_lock_bh(&ar->mcastpsq_lock);
+				if (skb_queue_len(&ar->mcastpsq) >=
+							ar->tx_psq_threshold) {
+					ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
+						"TX Mcast PS queue is full\n");
+					skb_to_drop =
+						skb_dequeue(&ar->mcastpsq);
+				}
 				is_mcastq_empty =
 					skb_queue_empty(&ar->mcastpsq);
 				skb_queue_tail(&ar->mcastpsq, skb);
@@ -1414,6 +1444,11 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 							MCAST_AID, 1);
 
 				ps_queued = true;
+				if (skb_to_drop != NULL) {
+					dev_kfree_skb(skb_to_drop);
+					vif->net_stats.tx_dropped++;
+					vif->net_stats.tx_aborted_errors++;
+				}
 			} else {
 				/*
 				 * This transmit is because of Dtim expiry.
@@ -3207,7 +3242,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 			}
 		}
 #else
-		/* Non BAM2BAM path */		
+		/* Non BAM2BAM path */
 		if (aggr_process_recv_frm(aggr_conn, tid, seq_no,
 					is_amsdu, skb)) {
 			/* aggregation code will handle the skb */

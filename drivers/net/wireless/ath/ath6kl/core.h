@@ -89,6 +89,8 @@
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
 
+#define ATH6KL_CONN_TX_PSQ_MAX_LEN 128
+
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
 	ATH6KL_FW_IE_TIMESTAMP = 1,
@@ -946,6 +948,7 @@ struct ath6kl {
 	struct ath6kl_mcc_flowctrl *mcc_flowctrl_ctx;
 	struct ath6kl_lte_coex_priv *lte_coex;
 
+	u32 tx_psq_threshold;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
