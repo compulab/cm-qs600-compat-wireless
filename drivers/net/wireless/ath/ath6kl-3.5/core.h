@@ -55,7 +55,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.307)
+#define __BUILD_VERSION_ (3.5.0.322)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -181,6 +181,7 @@
  */
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SUPPORT_NL80211_QCA
+#define ATH6KL_BUS_VOTE 1
 
 #if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
 	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)
@@ -1345,6 +1346,7 @@ enum ath6kl_state {
 	ATH6KL_STATE_CUTPOWER,
 	ATH6KL_STATE_WOW,
 	ATH6KL_STATE_PRE_SUSPEND,
+	ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP,
 };
 
 #define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
@@ -1363,6 +1365,7 @@ enum ath6kl_vap_mode {
 
 	ATH6KL_VAPMODE_LAST = 0xf,
 };
+
 
 #ifdef USB_AUTO_SUSPEND
 
@@ -1534,6 +1537,9 @@ struct ath6kl {
 	/* Not to report P2P Frame to user if not in RoC period */
 	bool p2p_frame_not_report;
 
+	/* Allow P2P operate in PASSIVE/IBSS channels */
+	bool p2p_in_pasv_chan;
+
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
@@ -1628,12 +1634,10 @@ struct ath6kl {
 #endif /* CONFIG_HAS_WAKELOCK */
 #endif
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl_ctx;
+	struct ath6kl_p2p_rc_info *p2p_rc_info_ctx;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif /* CONFIG_HAS_EARLYSUSPEND */
-#ifdef ATH6KL_SUPPORT_WLAN_HB
-	int wlan_hb_enable;
-#endif
 
 #define INIT_DEFER_WAIT_TIMEOUT		(5 * HZ)
 	struct work_struct init_defer_wk;
@@ -1654,6 +1658,7 @@ struct ath6kl {
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
+	unsigned long  usb_autopm_scan;
 	struct work_struct auto_pm_wakeup_resume_wk;
 	int auto_pm_cnt;
 
