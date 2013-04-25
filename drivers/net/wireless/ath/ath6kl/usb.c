@@ -29,14 +29,7 @@
 #include "platform.h"
 
 /* constants */
-#ifdef CONFIG_ATH6KL_BAM2BAM
-#define TX_URB_COUNT		64	/* Need more buffer since the Tx path is
-					   slow due to park_mode in HBM is
-					   disabled */
-#else
 #define TX_URB_COUNT 		32
-#endif
-
 #define RX_URB_COUNT            32
 #define ATH6KL_USB_RX_BUFFER_SIZE  1700
 
