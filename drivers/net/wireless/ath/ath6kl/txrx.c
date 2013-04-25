@@ -1992,10 +1992,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		if (vif->nw_type == ADHOC_NETWORK ||
 				action != HTC_SEND_FULL_DROP) {
 			spin_unlock_bh(&ar->list_lock);
-
 			set_bit(NETQ_STOPPED, &vif->flags);
 			netif_stop_queue(vif->ndev);
-
 			return action;
 		}
 	}
@@ -2057,6 +2055,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif;
+	bool wake_up;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -2150,8 +2149,10 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 		ath6kl_free_cookie(ar, ath6kl_cookie);
 
+#ifdef ATH6KL_IF_NEEDED_LATER
 		if (test_bit(NETQ_STOPPED, &vif->flags))
 			clear_bit(NETQ_STOPPED, &vif->flags);
+#endif
 	}
 
 	spin_unlock_bh(&ar->lock);
@@ -2160,15 +2161,22 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 	/* FIXME: Locking */
 	spin_lock_bh(&ar->list_lock);
+	wake_up = 0;
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if ((test_bit(CONNECTED, &vif->flags) ||
 					test_bit(TESTMODE_EPPING, &ar->flag)) &&
 				!flushing[vif->fw_vif_idx]) {
 			spin_unlock_bh(&ar->list_lock);
-			netif_wake_queue(vif->ndev);
+			if((ar->cookie_count > (NW_WKUP_THOLD)) || (wake_up == 1)) {
+				if (test_bit(NETQ_STOPPED, &vif->flags))
+					clear_bit(NETQ_STOPPED, &vif->flags);
+				netif_wake_queue(vif->ndev);
+				wake_up = 1;
+			}
 			spin_lock_bh(&ar->list_lock);
 		}
 	}
+	wake_up = 0;
 	spin_unlock_bh(&ar->list_lock);
 
 	if (wake_event)
@@ -4187,6 +4195,9 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	struct net_device *dev = vif->ndev;
 	int ret;
 	struct wmi_data_hdr *data_hdr;
+
+	if(ar->cookie_count < (MAX_DEF_COOKIE_NUM/3))
+		goto dfail_tx;
 
 	if (WARN_ON_ONCE(ar->state != ATH6KL_STATE_ON))
 		goto dfail_tx;
