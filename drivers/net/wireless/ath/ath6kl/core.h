@@ -1117,7 +1117,7 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel,
 			  u16 beacon_int, enum network_type net_type,
 			  u8 beacon_ie_len, u8 assoc_req_len,
 			  u8 assoc_resp_len, u8 *assoc_info);
-void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel);
+void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel, u8 sec_ch, u8 phymode);
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,
 				u8 keymgmt, u8 ucipher, u8 auth,
 				u8 assoc_req_len, u8 *assoc_info, u8 apsd_info);

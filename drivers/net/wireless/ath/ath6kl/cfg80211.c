@@ -1141,15 +1141,27 @@ out:
 }
 
 void ath6kl_cfg80211_ch_switch_notify(struct ath6kl_vif *vif, int freq,
-				      enum wmi_phy_mode mode)
+				      u8 sec_ch, u8 phymode)
 {
-	enum nl80211_channel_type type;
+	enum nl80211_channel_type type = NL80211_CHAN_NO_HT;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-		   "channel switch notify nw_type %d freq %d mode %d\n",
-		   vif->nw_type, freq, mode);
+		   "ch switch notify nw_type %d freq %d sec ch %d phy %d \n",
+		   vif->nw_type, freq, sec_ch, phymode);
 
-	type = (mode == WMI_11G_HT20) ? NL80211_CHAN_HT20 : NL80211_CHAN_NO_HT;
+	switch (phymode){
+		case ATH6KL_MODE_11NA_HT20:
+		case ATH6KL_MODE_11NG_HT20:
+			type = NL80211_CHAN_HT20;
+			break;
+		case ATH6KL_MODE_11NA_HT40:
+		case ATH6KL_MODE_11NG_HT40:
+			if (sec_ch == ATH6KL_HTINFO_EXTOFFSET_ABOVE)
+				type = NL80211_CHAN_HT40PLUS;
+			else if (sec_ch == ATH6KL_HTINFO_EXTOFFSET_BELOW)
+				type = NL80211_CHAN_HT40MINUS;
+			break;
+	}
 
 	cfg80211_ch_switch_notify(vif->ndev, freq, type);
 }

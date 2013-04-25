@@ -457,7 +457,8 @@ static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 	}
 }
 
-void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
+void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
+				u16 channel, u8 sec_ch, u8 phymode)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_req_key *ik;
@@ -505,9 +506,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif, u16 channel)
 
 	if (ar->want_ch_switch & (1 << vif->fw_vif_idx)) {
 		ar->want_ch_switch &= ~(1 << vif->fw_vif_idx);
-		/* we actually don't know the phymode, default to HT20 */
 		ath6kl_cfg80211_ch_switch_notify(vif, channel,
-						 WMI_11G_HT20);
+						 sec_ch, phymode);
 	}
 
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
