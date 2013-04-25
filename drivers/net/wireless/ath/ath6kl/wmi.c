@@ -868,9 +868,18 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			phymode = (ATH6KL_MASK_PHYMODE & ev->u.ap_bss.ht_info) >> 0x2;
 			ath6kl_connect_ap_mode_bss(
 				vif, le16_to_cpu(ev->u.ap_bss.ch), sec_ch, phymode);
+
+                        if (ath6kl_is_mcc_enabled(vif->ar)) {
+				vif->ar->is_mcc_enabled = true;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+				ath6kl_ipa_enable_host_route_config (vif, true);
+#endif
+				ath6kl_dbg(ATH6KL_DBG_WMI, "connect_event-ap_network: (MCC_ENABLED)\n");
+			}
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WMI,
-				   "%s: aid %u mac_addr %pM auth=%u keymgmt=%u cipher=%u apsd_info=%u (STA connected)\n",
+				   "%s: aid %u mac_addr %pM auth=%u keymgmt=%u"
+					"cipher=%u apsd_info=%u (STA connected)\n",
 				   __func__, ev->u.ap_sta.aid,
 				   ev->u.ap_sta.mac_addr,
 				   ev->u.ap_sta.auth,
@@ -937,6 +946,14 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			     le32_to_cpu(ev->u.sta.nw_type),
 			     ev->beacon_ie_len, ev->assoc_req_len,
 			     ev->assoc_resp_len, ev->assoc_info);
+
+	if (ath6kl_is_mcc_enabled(vif->ar)) {
+		vif->ar->is_mcc_enabled = true;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		ath6kl_ipa_enable_host_route_config (vif, true);
+#endif
+		ath6kl_dbg(ATH6KL_DBG_WMI, "connect_event-sta: (MCC_ENABLED)\n");
+        }
 
 	return 0;
 }
@@ -1037,6 +1054,14 @@ static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len,
 	ath6kl_disconnect_event(vif, ev->disconn_reason,
 				ev->bssid, ev->assoc_resp_len, ev->assoc_info,
 				le16_to_cpu(ev->proto_reason_status));
+
+	if (vif->ar->is_mcc_enabled == true) {
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		ath6kl_ipa_enable_host_route_config (vif, false);
+#endif
+		vif->ar->is_mcc_enabled = false;
+		ath6kl_dbg(ATH6KL_DBG_WMI, "disconnect_event: (MCC_DISABLED)\n");
+        }
 
 	return 0;
 }

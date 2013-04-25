@@ -457,6 +457,35 @@ static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 	}
 }
 
+int ath6kl_is_mcc_enabled (struct ath6kl *ar)
+{
+        struct ath6kl_vif *prev_vif = NULL;
+        struct ath6kl_vif *vif = NULL;
+        int mcc_enabled = 0;
+
+	if (ar->num_vif < 2)
+		return mcc_enabled;
+
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		if (test_bit(CONNECTED, &vif->flags)) {
+			if ((vif == NULL) || (prev_vif == NULL)){
+				prev_vif = vif;
+				continue;
+			}
+			if ((vif->bss_ch == 0) || (prev_vif->bss_ch == 0))
+				continue;
+
+			if ((vif->bss_ch != prev_vif->bss_ch)){
+				mcc_enabled = 1;
+				break;
+			}
+
+		}
+	}
+
+	return mcc_enabled;
+}
+
 void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 				u16 channel, u8 sec_ch, u8 phymode)
 {
