@@ -60,6 +60,37 @@ static struct sysbam_inf {
 	{0, IPA_CLIENT_A5_WLAN_AMPDU_PROD}
 };
 
+/* Enable / Disable SW_ROUTING based on MCC flag */
+int ath6kl_ipa_enable_host_route_config (struct ath6kl_vif *vif, bool enable)
+{
+        /*
+	 * Invoke appropriate IPA-API to enable or disable sw routing between
+	 * IPA System BAM to Host
+	 */
+	int status = 0;
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *vif1;
+
+	list_for_each_entry(vif1, &ar->vif_list, list) {
+		if (enable == true) {
+			/* Enable software routing in IPA */
+			ath6kl_dbg(ATH6KL_DBG_IPA_MSG, "MCC: IPA_EN SW ROUTING\n");
+			status = ath6kl_send_msg_ipa(vif1, SW_ROUTING_ENABLE,
+					vif1->ndev->dev_addr);
+			if (status < 0)
+				ath6kl_err("Failed to send MCC enable msg to IPA\n");
+		} else {
+			/* Disable software routing in IPA */
+			ath6kl_dbg(ATH6KL_DBG_IPA_MSG, "MCC: IPA_DIS SW ROUTING\n");
+			status = ath6kl_send_msg_ipa(vif1, SW_ROUTING_DISABLE,
+					vif1->ndev->dev_addr);
+			if (status < 0)
+				ath6kl_err("Failed to send MCC disable msg to IPA\n");
+		}
+	}
+
+	return status;
+}
 /* Add the filter rule, after creating the BAM pipe, it is called by the
    bamcm file , whilte creating the bam pipe*/
 int ath6kl_ipa_add_flt_rule(struct ath6kl *ar, enum ipa_client_type client)
@@ -1136,10 +1167,16 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 		ath6kl_clean_ipa_headers(vif->ar, vif->ndev->name);
 		break;
 
-	case WLAN_CLIENT_CONNECT:
-	case WLAN_CLIENT_DISCONNECT:
 	case WLAN_CLIENT_POWER_SAVE_MODE:
 	case WLAN_CLIENT_NORMAL_MODE:
+		/* If MCC is enabled, then dont send PS events */
+		if(vif->ar->is_mcc_enabled == true)
+			return 0;
+
+	case SW_ROUTING_ENABLE:
+	case SW_ROUTING_DISABLE:
+	case WLAN_CLIENT_CONNECT:
+	case WLAN_CLIENT_DISCONNECT:
 	default:
 		/* Nothing to be done for these events */
 		break;
