@@ -43,6 +43,7 @@ enum ath6kl_tm_cmd {
 enum ATH6KL_TM_CMD_CFGS {
 	ATH6KL_TM_CMD_DRV_CFG_ACS,
 	ATH6KL_TM_CMD_DRV_CFG_LTE,
+	ATH6kl_TM_CMD_DRV_CFG_INTER_BSS,
 	ATH6KL_TM_CMD_DRV_CFG_LAST
 };
 
@@ -170,6 +171,9 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, struct net_device *dev, void *data,
 
 		} else if (*cfg_cmd == ATH6KL_TM_CMD_DRV_CFG_LTE) {
 			ath6kl_lte_coex_update_wwan_data(ar, buf);
+			return 0;
+		} else if (*cfg_cmd == ATH6kl_TM_CMD_DRV_CFG_INTER_BSS) {
+			ath6kl_change_inter_bss(ar, buf);
 			return 0;
 		}
 		break;
