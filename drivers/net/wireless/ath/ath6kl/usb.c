@@ -120,6 +120,9 @@ struct ath6kl_usb {
 	u8 *diag_resp_buffer;
 	struct ath6kl *ar;
 	u32 rxq_threshold;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	u32 bam_pipe_mask;
+#endif
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	atomic_t autopm_state;
 	struct list_head pm_q;
@@ -234,34 +237,28 @@ static inline void *ath6kl_get_context(struct sk_buff *skb)
 	return (void *)(*((unsigned long  *)(skb->cb+32)));
 }
 
-static inline bool ath6kl_is_bam_pipe(struct ath6kl_usb_pipe *pipe)
+#ifdef CONFIG_ATH6KL_BAM2BAM
+static void ath6kl_usb_bam_set_pipe_mask(struct ath6kl_usb *ar_usb)
 {
-	if (!ath6kl_debug_quirks(pipe->ar_usb->ar, ATH6KL_MODULE_BAM2BAM))
-		return 0;
+	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM))
+		return;
 
-	switch(pipe->logical_pipe_num)
-	{
-	case ATH6KL_USB_PIPE_TX_CTRL: return 0; /* WMI-Command */
-	case ATH6KL_USB_PIPE_TX_DATA_LP: return 1; /* Tx-BAM */
-	case ATH6KL_USB_PIPE_TX_DATA_MP: return 1; /* Tx-BAM */
-	case ATH6KL_USB_PIPE_TX_DATA_HP: return 1; /* Tx-BAM */
-	case ATH6KL_USB_PIPE_TX_DATA_VHP: return 1; /* Tx-BAM */
-	case ATH6KL_USB_PIPE_RX_CTRL: return 0; /* Not used */
-	case ATH6KL_USB_PIPE_RX_DATA: return 0; /* WMI-Event */
-	case ATH6KL_USB_PIPE_RX_DATA2: /* Rx-BAM */
-		if (ath6kl_debug_quirks(pipe->ar_usb->ar,
-					ATH6KL_MODULE_BAM_RX_SW_PATH))
-			return 0; /* Rx-Non BAM path */
-		else
-			return 1; /* Rx-BAM2BAM path */
-	case ATH6KL_USB_PIPE_RX_INT: return 0; /* WMI-Event */
+	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_RX_DATA2);
 
-	default:
-		ath6kl_err("Wrong logical pipe number : %d\n",
-				pipe->logical_pipe_num);
-		return 0;
+	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM_TX_SW_PATH)) {
+		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_LP);
+		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_MP);
+		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_HP);
+		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_VHP);
 	}
 }
+
+static inline bool ath6kl_is_bam_pipe(struct ath6kl_usb_pipe *pipe)
+{
+	return pipe->ar_usb->bam_pipe_mask & BIT(pipe->logical_pipe_num);
+}
+#endif
 
 static void ath6kl_usb_bam_free_urb(struct urb *urb)
 {
@@ -1072,13 +1069,6 @@ static void ath6kl_usb_start_recv_pipes(struct ath6kl_usb *ar_usb)
 	ath6kl_usb_post_recv_transfers(&ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA],
 			ATH6KL_USB_RX_BUFFER_SIZE);
 
-	/* BAM2BAM mode */
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	if ((ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM)) &&
-		(!ath6kl_debug_quirks(ar_usb->ar,
-					ATH6KL_MODULE_BAM_RX_SW_PATH)))
-		return;
-#endif
 	/* This path for non BAM2BAM path during compile time */
 	ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2].urb_cnt_thresh =
 		ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2].urb_alloc / 2;
@@ -2057,6 +2047,9 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	ar->bmi.max_data_size = 252;
 
 	ar_usb->ar = ar;
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_usb_bam_set_pipe_mask(ar_usb);
+#endif
 
 	ret = ath6kl_core_init(ar, ATH6KL_HTC_TYPE_PIPE);
 	if (ret) {

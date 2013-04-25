@@ -36,6 +36,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	ATH6KL_MODULE_MCC_FLOWCTRL		= BIT(15),
 	/* Enable USB auto power management feature */
 	ATH6KL_MODULE_ENABLE_USB_AUTO_PM	= BIT(16),
+	/* Use TX SW path instead of BAM */
+	ATH6KL_MODULE_BAM_TX_SW_PATH		= BIT(17),
 };
 
 #define ATH6KL_DEF_DEBUG_QUIRKS (ATH6KL_MODULE_BAM2BAM |		\
