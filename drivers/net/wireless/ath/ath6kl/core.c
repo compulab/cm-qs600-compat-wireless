@@ -277,7 +277,7 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar->dev = dev;
 
 	ar->vif_max = 1;
-
+	ar->inter_bss = true;
 	ar->max_norm_iface = 1;
 
 	spin_lock_init(&ar->lock);

@@ -56,7 +56,8 @@ int _string_to_mac(char *string, int len, u8 *macaddr)
 	return 0;
 }
 
-struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
+struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr,
+		bool inter_bss)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_sta *conn = NULL;
@@ -66,7 +67,7 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 
 	for (i = 0; i < max_conn; i++) {
 		if (memcmp(node_addr, ar->sta_list[i].mac, ETH_ALEN) == 0) {
-			if (ar->sta_list[i].vif == vif)
+			if (ar->sta_list[i].vif == vif || inter_bss)
 				conn = &ar->sta_list[i];
 			break;
 		}
@@ -88,6 +89,7 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 			break;
 		}
 	}
+
 	return conn;
 }
 
