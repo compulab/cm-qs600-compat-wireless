@@ -25,6 +25,9 @@
 #include <ctype.h>
 #include "wmiconfig.h"
 
+#define ATH6KL_MASK_SEC_CH 0x3
+#define ATH6KL_MASK_PHYMODE 0x1C
+
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
 static const s32 wmi_rate_tbl[][2] = {
@@ -842,6 +845,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 {
 	struct wmi_connect_event *ev;
 	u8 *pie, *peie;
+	u8 sec_ch;
+	u8 phymode;
 
 	if (len < sizeof(struct wmi_connect_event))
 		return -EINVAL;
@@ -859,8 +864,10 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			ath6kl_mcc_flowctrl_set_conn_id(vif,
 							ev->u.ap_bss.bssid,
 							ev->u.ap_bss.aid);
+			sec_ch = ATH6KL_MASK_SEC_CH & ev->u.ap_bss.ht_info;
+			phymode = (ATH6KL_MASK_PHYMODE & ev->u.ap_bss.ht_info) >> 0x2;
 			ath6kl_connect_ap_mode_bss(
-				vif, le16_to_cpu(ev->u.ap_bss.ch));
+				vif, le16_to_cpu(ev->u.ap_bss.ch), sec_ch, phymode);
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WMI,
 				   "%s: aid %u mac_addr %pM auth=%u keymgmt=%u cipher=%u apsd_info=%u (STA connected)\n",

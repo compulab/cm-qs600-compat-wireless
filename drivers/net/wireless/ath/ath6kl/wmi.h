@@ -1955,7 +1955,8 @@ struct wmi_connect_event {
 			u8 bssid[ETH_ALEN];
 			u8 tx_scheduler_enabled;
 			u8 aid;
-			u8 unused[6];
+			u8 ht_info;
+			u8 unused[5];
 		} ap_bss;
 	} u;
 	u8 beacon_ie_len;
