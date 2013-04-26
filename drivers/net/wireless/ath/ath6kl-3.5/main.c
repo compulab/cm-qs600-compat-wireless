@@ -550,7 +550,7 @@ enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 	return ar->ac2ep_map[ac];
 }
 
-static void ath6kl_cookie_pool_init(struct ath6kl *ar,
+static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	struct ath6kl_cookie_pool *cookie_pool,
 	enum cookie_type cookie_type,
 	u32 cookie_num)
@@ -571,7 +571,7 @@ static void ath6kl_cookie_pool_init(struct ath6kl *ar,
 		ath6kl_err("unable to allocate cookie, type %d num %d\n",
 				cookie_type,
 				cookie_num);
-		BUG_ON(1);
+		return -ENOMEM;
 	}
 
 	for (i = 0; i < cookie_num; i++) {
@@ -589,7 +589,7 @@ static void ath6kl_cookie_pool_init(struct ath6kl *ar,
 	ath6kl_info("Create HTC cookie, type %d num %d\n",
 			cookie_type,
 			cookie_num);
-	return;
+	return 0;
 }
 
 static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
@@ -648,21 +648,28 @@ struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 	return cookie;
 }
 
-void ath6kl_cookie_init(struct ath6kl *ar)
+int ath6kl_cookie_init(struct ath6kl *ar)
 {
 	/* Create HTC cookies pool for DATA frame */
-	ath6kl_cookie_pool_init(ar,
-				&ar->cookie_data,
-				COOKIE_TYPE_DATA,
-				MAX_COOKIE_DATA_NUM);
+	if (ath6kl_cookie_pool_init(ar,
+				    &ar->cookie_data,
+				    COOKIE_TYPE_DATA,
+				    MAX_COOKIE_DATA_NUM))
+		goto fail;
 
 	/* Create HTC cookies pool for CTRL command */
-	ath6kl_cookie_pool_init(ar,
-				&ar->cookie_ctrl,
-				COOKIE_TYPE_CTRL,
-				MAX_COOKIE_CTRL_NUM);
+	if (ath6kl_cookie_pool_init(ar,
+				    &ar->cookie_ctrl,
+				    COOKIE_TYPE_CTRL,
+				    MAX_COOKIE_CTRL_NUM))
+		goto fail;
 
-	return;
+	return 0;
+
+fail:
+	ath6kl_cookie_cleanup(ar);
+
+	return -ENOMEM;
 }
 
 void ath6kl_cookie_cleanup(struct ath6kl *ar)
@@ -1197,6 +1204,9 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	/* FIXME : bad, may use call-back instead. */
 	ath6kl_acs_scan_complete_event(vif, aborted);
 #endif
+
+	ath6kl_p2p_rc_scan_complete_event(vif, aborted);
+
 	if (ath6kl_htcoex_scan_complete_event(vif, aborted) ==
 		HTCOEX_PASS_SCAN_DONE)
 		ath6kl_cfg80211_scan_complete_event(vif, aborted);
@@ -1949,6 +1959,48 @@ static int ath6kl_ioctl_p2p_dev_addr(struct ath6kl_vif *vif,
 	return ret;
 }
 
+static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
+				char *user_cmd,
+				u8 *buf)
+{
+	char result[20];
+	u16 rc_2g, rc_5g, rc_all;
+	int ret = 0;
+
+	/* GET::P2P_BEST_CHANNEL */
+
+	rc_2g = rc_5g = rc_all = 0;
+
+	/*
+	 * Current wpa_supplicant only uses best channel for P2P purpose.
+	 * Hence, here just get P2P channels.
+	 */
+	ret = ath6kl_p2p_rc_get(vif->ar,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				&rc_2g,
+				&rc_5g,
+				&rc_all);
+
+	if (ret == 0) {
+		memset(result, 0, 20);
+		snprintf(result, 20,
+			"%d %d %d",
+			rc_2g,
+			rc_5g,
+			rc_all);
+		result[strlen(result)] = '\0';
+		if (copy_to_user(buf, result, strlen(result)))
+			ret = -EFAULT;
+		else
+			ret = 0;
+	}
+
+	return ret;
+}
+
 static int ath6kl_ioctl_ap_acl(struct ath6kl_vif *vif,
 				char *user_cmd,
 				u8 *buf,	/* reserved for GET op */
@@ -2042,6 +2094,10 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 						(android_cmd.used_len - 7));
 				else if (strstr(user_cmd, "P2P_DEV_ADDR"))
 					ret = ath6kl_ioctl_p2p_dev_addr(vif,
+							user_cmd,
+							android_cmd.buf);
+				else if (strstr(user_cmd, "P2P_BEST_CHANNEL"))
+					ret = ath6kl_ioctl_p2p_best_chan(vif,
 							user_cmd,
 							android_cmd.buf);
 				else if (strstr(user_cmd, "ACL "))
