@@ -517,6 +517,10 @@ export CONFIG_ATH9K_HTC=m
 
 export CONFIG_ATH6KL_USB=m
 
+ifdef CONFIG_USB_SUSPEND
+export CONFIG_ATH6KL_AUTO_PM=y
+endif #CONFIG_USB_SUSPEND
+
 export CONFIG_BRCMFMAC_USB=y
 
 # RT2500USB does not require firmware
