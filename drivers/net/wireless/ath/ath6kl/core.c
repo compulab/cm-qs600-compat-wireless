@@ -29,7 +29,7 @@
 #include "wmiconfig.h"
 
 unsigned int debug_mask;
-static unsigned int suspend_mode;
+static unsigned int suspend_mode = 3;
 static unsigned int wow_mode;
 static unsigned int uart_debug;
 static unsigned int ath6kl_p2p;
