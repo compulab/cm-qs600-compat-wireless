@@ -4059,32 +4059,53 @@ static const struct file_operations fops_tgt_ap_stats = {
 	.llseek = default_llseek,
 };
 
-static void __chan_flag_to_string(u32 flags, u8 *string)
+static void __chan_flag_to_string(u32 flags, u8 *string, int str_len)
 {
+	u8 *p = string;
+	int len = 0;
+
 	string[0] = '\0';
+
 	if (flags & IEEE80211_CHAN_DISABLED)
-		strlcpy(string + strlen(string), "[DISABLE]", 9);
+		len += scnprintf(p + len, str_len - len,
+						"%s",
+						"[DISABLE]");
 
 	if (flags & IEEE80211_CHAN_PASSIVE_SCAN)
-		strlcpy(string + strlen(string), "[PASSIVE_SCAN]", 14);
+		len += scnprintf(p + len, str_len - len,
+						"%s",
+						"[PASSIVE_SCAN]");
 
 	if (flags & IEEE80211_CHAN_NO_IBSS)
-		strlcpy(string + strlen(string), "[NO_IBSS]", 9);
+		len += scnprintf(p + len, str_len - len,
+						"%s",
+						"[NO_IBSS]");
 
 	if (flags & IEEE80211_CHAN_RADAR)
-		strlcpy(string + strlen(string), "[RADER]", 7);
+		len += scnprintf(p + len, str_len - len,
+						"%s",
+						"[RADAR]");
 
-	strlcpy(string + strlen(string), "[HT20]", 6);
+	len += scnprintf(p + len, str_len - len,
+					"%s",
+					"[HT20]");
+
 	if ((flags & IEEE80211_CHAN_NO_HT40PLUS) &&
 	    (flags & IEEE80211_CHAN_NO_HT40MINUS)) {
 		;
 	} else {
 		if (flags & IEEE80211_CHAN_NO_HT40PLUS)
-			strlcpy(string + strlen(string), "[HT40-]", 7);
+			len += scnprintf(p + len, str_len - len,
+							"%s",
+							"[HT40-]");
 		else if (flags & IEEE80211_CHAN_NO_HT40MINUS)
-			strlcpy(string + strlen(string), "[HT40+]", 7);
+			len += scnprintf(p + len, str_len - len,
+							"%s",
+							"[HT40+]");
 		else
-			strlcpy(string + strlen(string), "[HT40+][HT40-]", 14);
+			len += scnprintf(p + len, str_len - len,
+							"%s",
+							"[HT40+][HT40-]");
 	}
 
 	return;
@@ -4097,9 +4118,7 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 #define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	struct wiphy *wiphy = ar->wiphy;
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	struct reg_info *reg = ar->reg_ctx;
-#endif
 	u8 *buf, *p;
 	u8 flag_string[96];
 	unsigned int len = 0;
@@ -4107,10 +4126,8 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 	enum ieee80211_band band;
 	ssize_t ret_cnt;
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	if (!reg)
 		return 0;
-#endif
 
 	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
 	if (!buf)
@@ -4119,7 +4136,6 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 	p = buf;
 	buf_len = _BUF_SIZE;
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	if (reg->current_regd) {
 		len += scnprintf(p + len, buf_len - len,
 				"\nCurrent Regulatory - %08x %c%c %d rules\n",
@@ -4139,7 +4155,6 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 				regRule->freq_range.max_bandwidth_khz / 1000);
 		}
 	}
-#endif
 
 	for (band = 0; band < IEEE80211_NUM_BANDS; band++) {
 		if (!wiphy->bands[band])
@@ -4157,7 +4172,7 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 			if (chan->flags & IEEE80211_CHAN_DISABLED)
 				continue;
 
-			__chan_flag_to_string(chan->flags, flag_string);
+			__chan_flag_to_string(chan->flags, flag_string, 96);
 			len += scnprintf(p + len, buf_len - len,
 					" CH%4d - %4d %s\n",
 					chan->hw_value,
@@ -4477,6 +4492,8 @@ static const struct file_operations fops_arp_offload_ip_addrs = {
 	.llseek = default_llseek,
 };
 
+#define TBTT_MCC_STA_LOWER_BOUND      20
+#define TBTT_MCC_STA_UPPER_BOUND      80
 /* File operation for mcc profile */
 static ssize_t ath6kl_mcc_profile(struct file *file,
 				const char __user *user_buf,
@@ -4486,7 +4503,7 @@ static ssize_t ath6kl_mcc_profile(struct file *file,
 	char buf[10];
 	ssize_t len;
 	u32 mcc_profile;
-
+	u32 sta_time;
 	len = min(count, sizeof(buf) - 1);
 	if (copy_from_user(buf, user_buf, len))
 		return -EFAULT;
@@ -4494,10 +4511,13 @@ static ssize_t ath6kl_mcc_profile(struct file *file,
 	buf[len] = '\0';
 	if (kstrtou32(buf, 0, &mcc_profile))
 		return -EINVAL;
-
+	sta_time = (mcc_profile & 0x0F) * 10;
+	if (sta_time > TBTT_MCC_STA_UPPER_BOUND ||
+		sta_time < TBTT_MCC_STA_LOWER_BOUND) {
+		return -EINVAL;
+	}
 	if (ath6kl_wmi_set_mcc_profile_cmd(ar->wmi, mcc_profile))
 		return -EIO;
-
 	return count;
 }
 
@@ -4939,6 +4959,39 @@ static const struct file_operations fops_ap_admc = {
 	.llseek = default_llseek,
 };
 
+/* File operation for P2P RecommendChannel */
+static ssize_t ath6kl_p2p_rc_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(1500)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len = 0;
+	ssize_t ret_cnt;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath6kl_p2p_rc_dump(ar, buf, _BUF_SIZE);
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+/* debug fs for P2P RecommendChannel. */
+static const struct file_operations fops_p2p_rc = {
+	.read = ath6kl_p2p_rc_read,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -5147,6 +5200,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("antdivstat", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_antdiv_state_read);
+
+	debugfs_create_file("p2p_rc", S_IRUSR,
+				ar->debugfs_phy, ar, &fops_p2p_rc);
 
 	return 0;
 }

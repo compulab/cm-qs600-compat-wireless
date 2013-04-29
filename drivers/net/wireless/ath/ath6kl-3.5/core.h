@@ -43,11 +43,7 @@
 #include "htcoex.h"
 #include "p2p.h"
 #include "ap.h"
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 #include "reg.h"
-#else
-#include "../regd.h"
-#endif
 #include <linux/wireless.h>
 #include <linux/interrupt.h>
 
@@ -55,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.307)
+#define __BUILD_VERSION_ (3.5.0.332)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -181,6 +177,7 @@
  */
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SUPPORT_NL80211_QCA
+#define ATH6KL_BUS_VOTE 1
 
 #if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
 	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)
@@ -1248,6 +1245,7 @@ struct ath6kl_vif {
 	u8 intra_bss;
 	u8 ap_apsd;
 	struct wmi_ap_mode_stat ap_stats;
+	int last_dump_ap_stats_idx;	/* for dump_station call-back */
 	u8 ap_country_code[3];
 	int sta_no_ht_num;
 	struct ath6kl_sta sta_list[AP_MAX_NUM_STA];
@@ -1345,6 +1343,7 @@ enum ath6kl_state {
 	ATH6KL_STATE_CUTPOWER,
 	ATH6KL_STATE_WOW,
 	ATH6KL_STATE_PRE_SUSPEND,
+	ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP,
 };
 
 #define ATH6KL_VAPMODE_MASK	(0xf)	/* each VAP use 4 bits */
@@ -1363,6 +1362,7 @@ enum ath6kl_vap_mode {
 
 	ATH6KL_VAPMODE_LAST = 0xf,
 };
+
 
 #ifdef USB_AUTO_SUSPEND
 
@@ -1534,6 +1534,9 @@ struct ath6kl {
 	/* Not to report P2P Frame to user if not in RoC period */
 	bool p2p_frame_not_report;
 
+	/* Allow P2P operate in PASSIVE/IBSS channels */
+	bool p2p_in_pasv_chan;
+
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
@@ -1628,12 +1631,10 @@ struct ath6kl {
 #endif /* CONFIG_HAS_WAKELOCK */
 #endif
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl_ctx;
+	struct ath6kl_p2p_rc_info *p2p_rc_info_ctx;
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
 #endif /* CONFIG_HAS_EARLYSUSPEND */
-#ifdef ATH6KL_SUPPORT_WLAN_HB
-	int wlan_hb_enable;
-#endif
 
 #define INIT_DEFER_WAIT_TIMEOUT		(5 * HZ)
 	struct work_struct init_defer_wk;
@@ -1641,11 +1642,7 @@ struct ath6kl {
 
 	u32 tx_on_vif;
 
-#ifdef CONFIG_ATH6KL_INTERNAL_REGDB
 	struct reg_info *reg_ctx;
-#else
-	struct country_code_to_enum_rd *current_reg_domain;
-#endif
 
 	void (*fw_crash_notify)(struct ath6kl *ar);
 
@@ -1654,6 +1651,7 @@ struct ath6kl {
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
+	unsigned long  usb_autopm_scan;
 	struct work_struct auto_pm_wakeup_resume_wk;
 	int auto_pm_cnt;
 
@@ -1717,7 +1715,7 @@ int ath6kl_configure_target(struct ath6kl *ar);
 void ath6kl_detect_error(unsigned long ptr);
 void disconnect_timer_handler(unsigned long ptr);
 void init_netdev(struct net_device *dev);
-void ath6kl_cookie_init(struct ath6kl *ar);
+int ath6kl_cookie_init(struct ath6kl *ar);
 void ath6kl_cookie_cleanup(struct ath6kl *ar);
 void ath6kl_rx(struct htc_target *target, struct htc_packet *packet);
 void ath6kl_tx_complete(struct htc_target *context,
