@@ -1719,6 +1719,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: status%s\n", __func__,
 		   aborted ? " aborted" : "");
+	del_timer(&vif->vifscan_timer);
 
 	if (!vif->scan_req)
 		return;
@@ -1739,7 +1740,6 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 						  0, NULL);
 
 out:
-	del_timer(&vif->vifscan_timer);
 	cfg80211_scan_done(vif->scan_req, aborted);
 	vif->scan_req = NULL;
 	clear_bit(SCANNING, &vif->flags);

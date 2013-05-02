@@ -2719,6 +2719,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
 			__func__, ndev->name, ndev, ar);
 
+	for (i = 0; i < WMM_NUM_AC; i++)
+		ar->ac_stream_active[i] = false;
+
 	/* setup access class priority mappings */
 	ar->ac_stream_pri_map[WMM_AC_BK] = 0; /* lowest  */
 	ar->ac_stream_pri_map[WMM_AC_BE] = 1;
