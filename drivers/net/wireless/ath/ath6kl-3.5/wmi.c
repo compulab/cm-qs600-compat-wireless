@@ -1808,7 +1808,9 @@ static int ath6kl_wmi_cac_event_rx(struct wmi *wmi, u8 *datap, int len,
 		if (!active_tsids) {
 			ath6kl_indicate_tx_activity(wmi->parent_dev, reply->ac,
 						    false);
+			spin_lock_bh(&wmi->lock);
 			wmi->fat_pipe_exist &= ~(1 << reply->ac);
+			spin_unlock_bh(&wmi->lock);
 		}
 	}
 
@@ -2554,7 +2556,9 @@ static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx)
 	 * In the SYNC cmd sent on the control Ep, send a bitmap
 	 * of the data eps on which the Data Sync will be sent
 	 */
+	spin_lock_bh(&wmi->lock);
 	cmd->data_sync_map = wmi->fat_pipe_exist;
+	spin_unlock_bh(&wmi->lock);
 
 	for (index = 0; index < num_pri_streams; index++) {
 		data_sync_bufs[index].skb = ath6kl_buf_alloc(0);
@@ -2623,7 +2627,8 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 {
 	struct sk_buff *skb;
 	struct wmi_create_pstream_cmd *cmd;
-	u8 fatpipe_exist_for_ac = 0;
+	struct ath6kl *ar = wmi->parent_dev;
+	bool fatpipe_exist_for_ac = false;
 	s32 min_phy = 0;
 	s32 nominal_phy = 0;
 	int ret;
@@ -2679,15 +2684,15 @@ int ath6kl_wmi_create_pstream_cmd(struct wmi *wmi, u8 if_idx,
 	/* This is an implicitly created Fat pipe */
 	if ((u32) params->tsid == (u32) WMI_IMPLICIT_PSTREAM) {
 		spin_lock_bh(&wmi->lock);
-		fatpipe_exist_for_ac = (wmi->fat_pipe_exist &
-					(1 << params->traffic_class));
+		fatpipe_exist_for_ac =
+			ar->ac_stream_active[params->traffic_class];
 		wmi->fat_pipe_exist |= (1 << params->traffic_class);
 		spin_unlock_bh(&wmi->lock);
 	} else {
 		/* explicitly created thin stream within a fat pipe */
 		spin_lock_bh(&wmi->lock);
-		fatpipe_exist_for_ac = (wmi->fat_pipe_exist &
-					(1 << params->traffic_class));
+		fatpipe_exist_for_ac =
+			ar->ac_stream_active[params->traffic_class];
 		wmi->stream_exist_for_ac[params->traffic_class] |=
 		    (1 << params->tsid);
 		/*
@@ -2764,7 +2769,9 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 	if (!active_tsids) {
 		ath6kl_indicate_tx_activity(wmi->parent_dev,
 					    traffic_class, false);
+		spin_lock_bh(&wmi->lock);
 		wmi->fat_pipe_exist &= ~(1 << traffic_class);
+		spin_unlock_bh(&wmi->lock);
 	}
 
 	return ret;
