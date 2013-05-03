@@ -3503,7 +3503,8 @@ int ath6kl_wmi_send_dummy_data_event_rx(struct wmi *wmi, u8 *datap, int len,
 			ath6kl_dbg(ATH6KL_DBG_OOO,
 					"IPA-CM:OOO:Successfully sent dummy packets\n");
 		} else {
-			ath6kl_err("IPA-CM:OOO:Failed to send dummy packets\n");
+			ath6kl_dbg(ATH6KL_DBG_OOO,
+				"IPA-CM:OOO:Failed to send dummy packets\n");
 		}
 	}
 	return 0;

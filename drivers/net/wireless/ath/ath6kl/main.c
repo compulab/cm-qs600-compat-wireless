@@ -201,6 +201,7 @@ enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 }
 
 struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
+					struct ath6kl_vif *vif,
 					enum htc_endpoint_id eid)
 {
 	struct ath6kl_cookie *cookie;
@@ -214,6 +215,8 @@ struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 	if (cookie != NULL) {
 		ar->cookie_list = cookie->arc_list_next;
 		ar->cookie_count--;
+		if(vif != NULL)
+			vif->cookie_used++;
 	}
 
 	return cookie;
@@ -222,6 +225,7 @@ struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 void ath6kl_cookie_init(struct ath6kl *ar)
 {
 	u32 i;
+	struct ath6kl_vif *vif;
 
 	ar->cookie_list = NULL;
 	ar->cookie_count = 0;
@@ -229,7 +233,13 @@ void ath6kl_cookie_init(struct ath6kl *ar)
 	memset(ar->cookie_mem, 0, sizeof(ar->cookie_mem));
 
 	for (i = 0; i < MAX_COOKIE_NUM; i++)
-		ath6kl_free_cookie(ar, &ar->cookie_mem[i]);
+		ath6kl_free_cookie(ar, NULL, &ar->cookie_mem[i]);
+
+	list_for_each_entry(vif, &ar->vif_list, list) {
+		vif->cookie_used = 0;
+		vif->intra_bss_data_cnt = 0;
+	}
+
 }
 
 void ath6kl_cookie_cleanup(struct ath6kl *ar)
@@ -238,7 +248,7 @@ void ath6kl_cookie_cleanup(struct ath6kl *ar)
 	ar->cookie_count = 0;
 }
 
-void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
+void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_vif *vif, struct ath6kl_cookie *cookie)
 {
 	/* Insert first */
 
@@ -248,6 +258,8 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
 	cookie->arc_list_next = ar->cookie_list;
 	ar->cookie_list = cookie;
 	ar->cookie_count++;
+	if(vif != NULL)
+		vif->cookie_used--;
 }
 
 /*

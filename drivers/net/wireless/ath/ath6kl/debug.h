@@ -20,6 +20,8 @@
 
 #include "hif.h"
 
+#define ATH6KL_DBGPRNT_FREQ 1000
+
 enum ATH6KL_MODULE_QUIRKS {
 	/* hole */
 	/* Enable BAM2BAM feature */
