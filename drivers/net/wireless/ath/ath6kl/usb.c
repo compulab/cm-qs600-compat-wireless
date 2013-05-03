@@ -98,6 +98,7 @@ struct ath6kl_usb_pipe {
 #ifdef CONFIG_ATH6KL_AUTO_PM
 struct ath6kl_usb_pm_stats {
 	u32 suspended;
+	u32 suspend_err;
 	u32 resumed;
 	u32 reset_resume;
 	u32 tx_processed;
@@ -1120,6 +1121,8 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 	urb_context->skb = NULL;
 	skb_put(skb, urb->actual_length);
 
+	usb_mark_last_busy(pipe->ar_usb->udev);
+
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->rx_io_comp_queue, skb);
 	queue_work(pipe->ar_usb->ar->ath6kl_wq_rx, &pipe->rx_io_complete_work);
@@ -1946,6 +1949,7 @@ static int ath6kl_usb_get_stats(struct ath6kl *ar, u8 *buf, int buf_len)
 #define USB_PMSTAT(_ar_usb, _buf, _len, _name) \
 	snprintf(_buf, _len, " %s\t\t: %d\n", #_name, _ar_usb->pm_stats._name)
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, suspended);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, suspend_err);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, resumed);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, reset_resume);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, tx_queued);
@@ -2144,15 +2148,15 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 				ATH6KL_CFG_SUSPEND_WOW,
 				NULL);
 
-		if (ret && ret != -ENOTCONN)
+		/* If the error is not ENOTCONN then return error to HCD */
+		if (ret && ret != -ENOTCONN) {
 			ath6kl_err("wow suspend failed: %d\n", ret);
+			goto end;
+		}
 
 		if (ret && (!ar->wow_suspend_mode || ar->wow_suspend_mode ==
 					WLAN_POWER_STATE_DEEP_SLEEP))
 			try_deepsleep = true;
-		else if (ret && ar->wow_suspend_mode ==
-				WLAN_POWER_STATE_CUT_PWR)
-			goto end;
 	}
 
 	if (ar->suspend_mode == WLAN_POWER_STATE_DEEP_SLEEP ||
@@ -2165,15 +2169,23 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 	}
 
 end:
-	if (ret == 0)
-		ath6kl_usb_flush_all(ar_usb);
-
+	if(ret) {
 #ifdef CONFIG_ATH6KL_AUTO_PM
-	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_SUSPENDED);
+		atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_ON);
+		ar_usb->pm_stats.suspend_err++;
+#endif
+		ath6kl_err("Failed to suspend, returning error: %d\n", ret);
+		return ret;
+	}
+
+	ath6kl_usb_flush_all(ar_usb);
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	atomic_set(&ar_usb->autopm_state,
+			ATH6KL_USB_AUTOPM_STATE_SUSPENDED);
 	ar_usb->pm_stats.suspended++;
 #endif
 
-	return ret;
+	return 0;
 }
 
 static int ath6kl_usb_pm_resume(struct usb_interface *interface)
