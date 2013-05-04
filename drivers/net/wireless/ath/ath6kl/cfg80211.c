@@ -3883,6 +3883,7 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	vif->htcap[IEEE80211_BAND_2GHZ].ht_enable = true;
 	vif->htcap[IEEE80211_BAND_5GHZ].ht_enable = true;
 	vif->intra_bss = 1;
+	vif->cookie_used =0;
 
 	memcpy(ndev->dev_addr, ar->mac_addr, ETH_ALEN);
 	if (fw_vif_idx != 0) {

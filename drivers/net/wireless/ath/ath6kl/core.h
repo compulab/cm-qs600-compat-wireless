@@ -76,9 +76,10 @@
 #define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM + CTRL_EP_RSVD_COOKIE_NUM)
 
-#define NW_WKUP_THOLD			(MAX_DEF_COOKIE_NUM - (MAX_DEF_COOKIE_NUM/5))
+#define NETIF_STOP_THOLD		(MAX_DEF_COOKIE_NUM/5)
+#define NETIF_WAKE_THOLD		(NETIF_STOP_THOLD - ((8 * NETIF_STOP_THOLD)/10))
 
-#define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
+#define MAX_DEFAULT_SEND_QUEUE_DEPTH      ((MAX_DEF_COOKIE_NUM / WMM_NUM_AC) - NETIF_WAKE_THOLD)
 
 #define MAX_OFFCH_HOLD_COOKIE_NUM         (MAX_DEF_COOKIE_NUM/3)
 
@@ -706,6 +707,8 @@ struct ath6kl_vif {
 	u8 ap_hold_conn;
 	struct timer_list ap_restart_timer;
 	struct wmi_ap_acl_list ap_acl_list;
+	u32 cookie_used;
+	u32 intra_bss_data_cnt;
 };
 
 #define WOW_LIST_ID		0
@@ -1091,8 +1094,10 @@ int ath6kl_read_fwlogs(struct ath6kl *ar);
 void ath6kl_init_profile_info(struct ath6kl_vif *vif);
 void ath6kl_tx_data_cleanup(struct ath6kl *ar);
 
-struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar, enum htc_endpoint_id eid);
-void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie);
+struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar, struct ath6kl_vif *vif,
+							enum htc_endpoint_id eid);
+void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_vif *vif,
+						struct ath6kl_cookie *cookie);
 int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev);
 int ath6kl_conn_list_init(struct ath6kl *ar);
 void ath6kl_tx_scheduler(struct ath6kl_vif *vif);
