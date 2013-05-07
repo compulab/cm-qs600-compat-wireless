@@ -177,14 +177,25 @@ static u8 ath6kl_remove_sta(struct ath6kl_vif *vif, u8 *mac, u16 reason)
 				ath6kl_sta_cleanup(vif, i);
 				removed = 1;
 			}
+
+			if (ar->mcc_flowctrl_ctx->fw_conn_list[i].vif == vif) {
+				ath6kl_mcc_flowctrl_set_conn_id(vif, NULL,
+						ar->mcc_flowctrl_ctx->fw_conn_list[i].conn_id);
+			}
 		}
 	} else {
 		for (i = 0; i < NUM_CONN; i++) {
 			if (memcmp(ar->sta_list[i].mac, mac, ETH_ALEN) == 0) {
-				ath6kl_dbg(ATH6KL_DBG_TRC,
-				   "deleting station %pM aid=%d reason=%d\n",
-				   mac, ar->sta_list[i].aid, reason);
+				ath6kl_dbg(ATH6KL_DBG_TRC, "deleting station "
+						"%pM aid=%d reason=%d\n", mac,
+						ar->sta_list[i].aid, reason);
 				ath6kl_sta_cleanup(vif, i);
+			}
+
+			if (memcmp(ar->mcc_flowctrl_ctx->fw_conn_list[i].mac_addr,
+						mac, ETH_ALEN) == 0) {
+				ath6kl_mcc_flowctrl_set_conn_id(vif, NULL,
+						ar->mcc_flowctrl_ctx->fw_conn_list[i].conn_id);
 				removed = 1;
 				break;
 			}
@@ -1171,6 +1182,15 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			clear_bit(CONNECTED, &vif->flags);
 		}
 		return;
+	} else if (vif->nw_type == INFRA_NETWORK) {
+		int i;
+		for (i = 0; i < NUM_CONN; i++) {
+			if (memcmp(&ar->mcc_flowctrl_ctx->fw_conn_list[i].mac_addr,
+					vif->ndev->dev_addr, ETH_ALEN) == 0) {
+				ath6kl_mcc_flowctrl_set_conn_id(vif, NULL,
+					ar->mcc_flowctrl_ctx->fw_conn_list[i].conn_id);
+			}
+		}
 	}
 
 #ifdef CONFIG_ATH6KL_BAM2BAM

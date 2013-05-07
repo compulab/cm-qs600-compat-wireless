@@ -1830,15 +1830,20 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 	if ((ar->is_mcc_enabled == true) &&
 		(ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL))) {
 		enum htc_send_queue_result queue_result;
+		u8 conn_id = ath6kl_mcc_flowctrl_get_conn_id(vif, skb);
 
-		cookie->htc_pkt.connid = ath6kl_mcc_flowctrl_get_conn_id(vif, skb);
+		cookie->htc_pkt.connid = conn_id;
 		cookie->htc_pkt.recycle_count = 0;
 
 		queue_result = ath6kl_mcc_flowctrl_tx_schedule_pkt(ar, (void *)cookie);
-		if (queue_result == HTC_SEND_QUEUE_OK)	/* Queue it */
+		if (queue_result == HTC_SEND_QUEUE_OK) { /* Queue it */
+			ar->mcc_flowctrl_ctx->fw_conn_list[conn_id].mcc_stats.sche_tx_queued += 1;
 			return 0;
-		else if (queue_result == HTC_SEND_QUEUE_DROP)	/* Error, drop it. */
+		} else if (queue_result == HTC_SEND_QUEUE_DROP) {
+			/* Error, drop it. */
+			ar->mcc_flowctrl_ctx->fw_conn_list[conn_id].mcc_stats.tx_sched_dropped += 1;
 			goto fail_skbexp;
+		}
 	}
 
 	/*
@@ -3977,8 +3982,8 @@ void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar)
 
 	INIT_LIST_HEAD(&container);
 
-	re_tx = drop_tx = 0;
 	for (i = 0; i < NUM_CONN; i++) {
+		re_tx = drop_tx = 0;
 		fw_conn = &mcc_flowctrl->fw_conn_list[i];
 
 		if (!ath6kl_check_can_send(mcc_flowctrl, i) &&
@@ -4018,11 +4023,13 @@ void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar)
 		}
 
 		fw_conn->previous_can_send = ath6kl_check_can_send(mcc_flowctrl, i);
-	}
+		fw_conn->mcc_stats.sche_re_tx += re_tx;
+		fw_conn->mcc_stats.recycle_drop_count += drop_tx;
+		ath6kl_dbg(ATH6KL_DBG_FLOWCTRL, "mcc_flowctrl state_change"
+				" (conn %pM) re_tx %d drop_tx %d \n",
+				fw_conn->mac_addr, re_tx, drop_tx);
 
-	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		"mcc_flowctrl state_change (ar %p) re_tx %d drop_tx %d \n",
-		ar, re_tx, drop_tx);
+	}
 
 	ath6kl_tx_complete(ar->htc_target, &container);
 
@@ -4093,6 +4100,7 @@ void ath6kl_mcc_flowctrl_set_conn_id(struct ath6kl_vif *vif,
 	} else {
 		fw_conn->conn_id = ATH6KL_MCC_FLOWCTRL_NULL_CONNID;
 		memset(fw_conn->mac_addr, 0, ETH_ALEN);
+		memset(&fw_conn->mcc_stats, 0, sizeof(struct ath6kl_mcc_stats));
 		fw_conn->vif = NULL;
 	}
 

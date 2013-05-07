@@ -1962,6 +1962,101 @@ static const struct file_operations fops_hif_stats = {
 	.llseek = default_llseek,
 };
 
+ssize_t ath6kl_mcc_flowctrl_stat(struct ath6kl_fw_conn_list *conn, u8 *buf,
+		int buf_len)
+{
+	int len = 0;
+
+	len += snprintf(buf + len, buf_len - len,
+			"\n\nconn mac addr :: %pM\n\n", conn->mac_addr);
+	len += snprintf(buf + len, buf_len - len, "connq_depth\t:: %d\n",
+			get_queue_depth(&conn->conn_queue));
+	len += snprintf(buf + len, buf_len - len, "req_depth\t:: %d\n",
+			get_queue_depth(&conn->re_queue));
+
+#define MCC_STATS(_mcc, _buf, _len, _name) \
+	snprintf(_buf, _len, "%s\t:: %d\n", #_name, _mcc._name)
+
+	len += MCC_STATS(conn->mcc_stats, buf + len, buf_len - len,
+			sche_re_tx);
+
+	len += MCC_STATS(conn->mcc_stats, buf + len, buf_len - len,
+			sche_tx_queued);
+
+	len += MCC_STATS(conn->mcc_stats, buf + len, buf_len - len,
+			tx_sched_dropped);
+
+	len += MCC_STATS(conn->mcc_stats, buf + len, buf_len - len,
+			recycle_drop_count);
+#undef MCC_STATS
+	return len;
+}
+
+static ssize_t ath6kl_mcc_stats_read(struct file *file, char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE 2048
+	struct ath6kl *ar = file->private_data;
+	u8 *buf = NULL;
+	u32 len = 0;
+	ssize_t ret_cnt;
+	int i;
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	len += snprintf(buf + len, count - len,
+			"\n\t\t---------------- MCC STATS ---------------\n\n");
+
+	for (i = 0; i < NUM_CONN; i++) {
+		if (ar->mcc_flowctrl_ctx->fw_conn_list[i].conn_id !=
+				ATH6KL_MCC_FLOWCTRL_NULL_CONNID) {
+			len += ath6kl_mcc_flowctrl_stat(&ar->mcc_flowctrl_ctx->fw_conn_list[i],
+					buf + len, _BUF_SIZE - len);
+		}
+	}
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
+static ssize_t ath6kl_mcc_stats_write(struct file *file,
+		const char __user *user_buf,
+		size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int ret, i;
+	u32 val;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &val);
+	if (ret)
+		return ret;
+
+	if (val == 0) {
+		for (i = 0; i < NUM_CONN; i++) {
+			if (ar->mcc_flowctrl_ctx->fw_conn_list[i].conn_id !=
+					ATH6KL_MCC_FLOWCTRL_NULL_CONNID) {
+				memset(&ar->mcc_flowctrl_ctx->fw_conn_list[i].mcc_stats,
+					0, sizeof(struct ath6kl_mcc_stats));
+			}
+		}
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_mcc_stats = {
+	.open = simple_open,
+	.read = ath6kl_mcc_stats_read,
+	.write = ath6kl_mcc_stats_write,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 /*
  * Initialisation needs to happen in two stages as fwlog events can come
  * before cfg80211 is initialised, and debugfs depends on cfg80211
@@ -2048,6 +2143,9 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 
 	debugfs_create_file("hif_stats", S_IRUSR | S_IWUSR,
 			ar->debugfs_phy, ar, &fops_hif_stats);
+
+	debugfs_create_file("mcc_stats", S_IRUSR | S_IWUSR,
+			ar->debugfs_phy, ar, &fops_mcc_stats);
 
 	return 0;
 }
