@@ -621,6 +621,45 @@ int ath6kl_usb_setup_bam_pipe(struct ath6kl_usb_pipe *pipe)
 	return retval;
 }
 
+static int ath6kl_usb_bam_resubmit_urbs(struct ath6kl_usb *ar_usb)
+{
+	struct ath6kl_usb_pipe *pipe;
+	int usb_status = 0;
+	int i;
+
+	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM))
+		return 0;
+
+	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
+		pipe = &ar_usb->pipes[i];
+
+		/* Nothing allocated for this pipe */
+		if (pipe->ar_usb == NULL) {
+			continue;
+		}
+
+		/* Check if it is BAM pipe */
+		if (!ath6kl_is_bam_pipe(pipe)) {
+			continue;
+		}
+
+		/* Submit the URB which is already initilized during probe */
+		usb_status = usb_submit_urb(pipe->bam_pipe.urb, GFP_KERNEL);
+
+		if (usb_status) {
+			ath6kl_err("Failed to submit URB for BAM pipe: %d\n",
+					pipe->logical_pipe_num);
+		}
+
+	}
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	usb_autopm_get_interface_async(ar_usb->interface);
+#endif
+
+	return 0;
+}
+
 #endif
 
 /* pipe/urb operations */
@@ -722,8 +761,7 @@ static void ath6kl_usb_free_pipe_resources(struct ath6kl_usb_pipe *pipe)
 			pipe->urb_alloc, pipe->urb_cnt);
 
 	if (pipe->urb_alloc != pipe->urb_cnt) {
-		ath6kl_dbg(ATH6KL_DBG_USB,
-				"ath6kl usb: urb leak! lpipe:%d"
+		ath6kl_err("ath6kl usb: urb leak! lpipe:%d "
 				"hpipe:0x%X urbs:%d avail:%d\n",
 				pipe->logical_pipe_num, pipe->usb_pipe_handle,
 				pipe->urb_alloc, pipe->urb_cnt);
@@ -1159,8 +1197,8 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 	}
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
-	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "TX complete: autopm: %d\n",
-			urb_context->autopm);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "TX complete: autopm: %d, pipe_id: %d\n",
+			urb_context->autopm, pipe->logical_pipe_num);
 
 	/* Asynchronously put to avoid blocking in interrupt context */
 	if (urb_context->autopm)
@@ -1184,8 +1222,9 @@ void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context)
 	struct ath6kl_usb *ar_usb = pipe->ar_usb;
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
-	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "BAM TX complete: autopm: %d\n",
-			urb_context->autopm);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
+			"BAM TX complete: autopm: %d, pipe_id: %d\n",
+			urb_context->autopm, pipe->logical_pipe_num);
 
 	/* Asynchronously put to avoid blocking in interrupt context */
 	if (urb_context->autopm)
@@ -2192,11 +2231,6 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 {
 	struct ath6kl_usb *ar_usb = usb_get_intfdata(interface);
 	struct ath6kl *ar = ar_usb->ar;
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	struct ath6kl_usb_pipe *pipe;
-	int usb_status;
-	int i;
-#endif
 
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "USB PM Resume\n");
 
@@ -2205,31 +2239,8 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 	ath6kl_usb_post_recv_transfers(&ar_usb->pipes[ATH6KL_USB_PIPE_RX_DATA2],
 				       ATH6KL_USB_RX_BUFFER_SIZE);
 
-
 #ifdef CONFIG_ATH6KL_BAM2BAM
-	/* TODO: Find if a function is required */
-	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
-		pipe = &ar_usb->pipes[i];
-
-		/* Nothing allocated for this pipe */
-		if (pipe->ar_usb == NULL) {
-			continue;
-		}
-
-		/* Check if we need to setup BAM pipe */
-		if (!ath6kl_is_bam_pipe(pipe)) {
-			continue;
-		}
-
-		/* Submit the URB which is already initilized during probe */
-		usb_status = usb_submit_urb(pipe->bam_pipe.urb, GFP_KERNEL);
-
-		if (usb_status) {
-			ath6kl_err("Failed to submit URB for BAM pipe: %d\n",
-					pipe->logical_pipe_num);
-		}
-
-	}
+	ath6kl_usb_bam_resubmit_urbs(ar_usb);
 #endif
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
