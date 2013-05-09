@@ -22,7 +22,7 @@
 #include "testmode.h"
 #include "../regd.h"
 #include "../regd_common.h"
-#include <ctype.h>
+#include <linux/ctype.h>
 #include "wmiconfig.h"
 
 #define ATH6KL_MASK_SEC_CH 0x3
