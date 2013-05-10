@@ -4346,6 +4346,8 @@ void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid)
 
 	if (vif->nw_type == AP_NETWORK) {
 		conn = ath6kl_find_sta_by_aid(vif, aid);
+		if(!conn)
+			return;
 	} else {
 		return;
 	}
