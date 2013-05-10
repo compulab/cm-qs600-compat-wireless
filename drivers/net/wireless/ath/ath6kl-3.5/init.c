@@ -14,7 +14,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
 #ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -38,6 +37,7 @@ unsigned int debug_mask;
 unsigned int htc_bundle_recv;
 unsigned int htc_bundle_send;
 unsigned int htc_bundle_send_timer;
+unsigned int htc_bundle_send_th = 6000;
 unsigned int testmode;
 unsigned int ath6kl_wow_ext = 1;
 unsigned int ath6kl_wow_gpio = 9;
@@ -663,7 +663,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	memset(&vif->sc_params, 0, sizeof(vif->sc_params));
 	vif->sc_params.short_scan_ratio = 3;
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB ||
+	if (ar->roam_mode == ATH6KL_MODULEROAM_DISABLE ||
 		(vif->wdev.iftype != NL80211_IFTYPE_STATION)) {
 		vif->sc_params.scan_ctrl_flags = (CONNECT_SCAN_CTRL_FLAGS |
 						  SCAN_CONNECTED_CTRL_FLAGS |
@@ -951,7 +951,9 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
 		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
 		param = 0;
-	else
+	else if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
+		param = 2;
+	else /* sdio */
 		param = 3;
 
 	if (ath6kl_bmi_write(ar,
@@ -1191,10 +1193,11 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	initKernelEnv();
 	if (filename[0] == '/') {
 		/* assign directory */
-		sprintf(full_patch, "%s", filename);
+		snprintf(full_patch, sizeof(full_patch), "%s", filename);
 		ath6kl_info("%s\n\r", full_patch);
 	} else {
-		sprintf(full_patch, "/lib/firmware/%s", filename);
+		snprintf(full_patch, sizeof(full_patch),
+		"/lib/firmware/%s", filename);
 		ath6kl_info("%s\n\r", full_patch);
 	}
 	fp = openFile(full_patch, O_RDONLY, 0);
@@ -1573,7 +1576,8 @@ static int ath6kl_fetch_fw_file(struct ath6kl *ar)
 
 #ifdef CE_SUPPORT
 	if (fwdatapath != NULL)
-		strcpy(filename, fwdatapath);
+		snprintf(filename, sizeof(filename), "%s",
+			 fwdatapath);
 	else
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.fw);
@@ -2961,6 +2965,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	}
 
+	/* Always use internal-regdb by default. */
+	set_bit(INTERNAL_REGDB, &ar->flag);
+
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)
 		goto err_node_cleanup;
@@ -3060,8 +3067,8 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-	/* Disable P2P-in-passive-chan channels by default. */
-	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DRIVER_REGDB)) {
+	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+		/* Disable P2P-in-passive-chan channels by default. */
 		ar->reg_ctx = ath6kl_reg_init(ar, true, ar->p2p_in_pasv_chan);
 
 		/* P2P recommend channel works only internal regdb turns on. */

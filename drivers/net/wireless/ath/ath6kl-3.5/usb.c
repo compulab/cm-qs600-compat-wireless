@@ -25,12 +25,6 @@
 #include <asm/unaligned.h>
 #endif
 
-#ifdef ATH6KL_BUS_VOTE
-#include <linux/platform_device.h>
-#include <linux/wlan_plat.h>
-#include <mach/msm_bus.h>
-#endif
-
 /* constants */
 #define TX_URB_COUNT            10
 #define RX_URB_COUNT            32
@@ -224,6 +218,10 @@ static atomic_t ath6kl_usb_unload_state;
 static void ath6kl_usb_recv_complete(struct urb *urb);
 static void ath6kl_usb_recv_bundle_complete(struct urb *urb);
 
+#ifdef USB_AUTO_SUSPEND
+static void usb_auto_pm_turnoff(struct ath6kl *ar);
+#endif
+
 #define ATH6KL_USB_IS_BULK_EP(attr) (((attr) & 3) == 0x02)
 #define ATH6KL_USB_IS_INT_EP(attr)  (((attr) & 3) == 0x03)
 #define ATH6KL_USB_IS_ISOC_EP(attr)  (((attr) & 3) == 0x01)
@@ -366,7 +364,21 @@ static void ath6kl_usb_free_pipe_resources(struct ath6kl_usb_pipe *pipe)
 			while ((buf = skb_dequeue(&urb_context->comp_queue))
 				!= NULL)
 				dev_kfree_skb(buf);
+			if (pipe->logical_pipe_num >=
+				ATH6KL_USB_PIPE_TX_DATA_LP &&
+			    pipe->logical_pipe_num <=
+				ATH6KL_USB_PIPE_TX_DATA_VHP)
+				if (urb_context->buf != NULL) {
+					dev_kfree_skb(urb_context->buf);
+					urb_context->buf = NULL;
+				}
 		}
+		if (htc_bundle_recv)
+			if (pipe->logical_pipe_num == ATH6KL_USB_PIPE_RX_DATA)
+				if (urb_context->buf != NULL) {
+					dev_kfree_skb(urb_context->buf);
+					urb_context->buf = NULL;
+				}
 
 		kfree(urb_context);
 	}
@@ -1006,7 +1018,7 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 	struct ath6kl_usb *device;
 	struct ath6kl_usb_pipe_stat *pipe_st = &pipe->usb_pipe_stat;
 	u32 tx = 0, rx = 0;
-#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+#if defined(CE_OLD_KERNEL_SUPPORT_2_6_23) || defined(USB_AUTO_SUSPEND)
 	struct ath6kl *ar = pipe->ar_usb->ar;
 #endif
 
@@ -1026,7 +1038,11 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 				   "ath6kl usb xmit callback buf:0x%p\n", buf);
 			device->htc_callbacks.
 				tx_completion(device->ar->htc_target, buf);
-
+#ifdef USB_AUTO_SUSPEND
+			spin_lock_bh(&ar->usb_pm_lock);
+			ath6kl_auto_pm_wakeup_resume(ar);
+			spin_unlock_bh(&ar->usb_pm_lock);
+#endif
 			if (tx++ > device->max_sche_tx) {
 				clear_bit(WORKER_LOCK_BIT, &pipe->worker_lock);
 				pipe_st->num_tx_resche++;
@@ -1215,6 +1231,7 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 		list_del(&entry->list);
 		kfree(entry);
 	}
+	usb_auto_pm_turnoff(ar);
 #endif
 
 #ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -1436,7 +1453,7 @@ void usb_auto_pm_turnon(struct ath6kl *ar)
 }
 
 
-void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
+void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk)
 {
 	struct sk_buff *buf;
 	int status = 0;
@@ -1452,7 +1469,7 @@ void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 	struct ath6kl *pm_ar;
 	int pm_PipeID;
 
-	pm_ar = container_of(wk, struct ath6kl, auto_pm_wakeup_resume_wk);
+	pm_ar = wk;
 	p_usb_pm_skb_queue =  &pm_ar->usb_pm_skb_queue;
 
 
@@ -1461,7 +1478,6 @@ void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 		get_queue_depth(&(p_usb_pm_skb_queue->list)),
 		list_empty(&p_usb_pm_skb_queue->list));
 
-	spin_lock_bh(&pm_ar->usb_pm_lock);
 	while (get_queue_depth(&(p_usb_pm_skb_queue->list)) > 0) {
 		ath6kl_dbg(ATH6KL_DBG_USB, "%s  resume_wk qeue %d\n", __func__,
 		get_queue_depth(&(p_usb_pm_skb_queue->list)));
@@ -1471,11 +1487,12 @@ void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 		pm_PipeID = entry->pipeID;
 		pm_ar = entry->ar;
 		buf = entry->skb;
-		usb_auto_pm_disable(pm_ar);
 
 		device = ath6kl_usb_priv(pm_ar);
 		pipe = &device->pipes[pm_PipeID];
 		pipe_st = &pipe->usb_pipe_stat;
+
+		usb_mark_last_busy(device->udev);
 
 		urb_context = ath6kl_usb_alloc_urb_from_pipe(pipe);
 
@@ -1543,12 +1560,9 @@ void ath6kl_auto_pm_wakeup_resume(struct work_struct *wk)
 		pipe_st->num_tx++;
 
 		kfree(entry);
-		usb_auto_pm_enable(pm_ar);
-
 	}	/* end of while (Dequeu ...) */
 
 fail_hif_send_usb:
-	spin_unlock_bh(&pm_ar->usb_pm_lock);
 	ath6kl_dbg(ATH6KL_DBG_USB, "wakeup_resume done\n");
 }
 
@@ -1593,7 +1607,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	}
 
 	usb_pm_increament = 0;
-	if (ar->state != ATH6KL_STATE_PRE_SUSPEND){
+	if (ar->state != ATH6KL_STATE_PRE_SUSPEND) {
 		usb_pm_increament++;
 		usb_auto_pm_disable(ar);
 	}
@@ -2356,7 +2370,6 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 #ifdef USB_AUTO_SUSPEND
 	spin_lock_init(&ar->usb_pm_lock);
 	INIT_LIST_HEAD(&ar->usb_pm_skb_queue.list);
-	INIT_WORK(&ar->auto_pm_wakeup_resume_wk, ath6kl_auto_pm_wakeup_resume);
 	pm_runtime_set_autosuspend_delay(&dev->dev, 2000);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
 		usb_enable_autosuspend(dev);
@@ -2470,9 +2483,11 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 		hif_usb_post_recv_bundle_transfers(
 				&device->pipes[ATH6KL_USB_PIPE_RX_DATA],
 				0 /* not allocating urb-buffer again */);
-		hif_usb_post_recv_bundle_transfers(
+		if (0)/* no need for bundle mode resume */
+			hif_usb_post_recv_bundle_transfers(
 				&device->pipes[ATH6KL_USB_PIPE_RX_DATA2],
 				0 /* not allocating urb-buffer again */);
+
 	}
 
 	ath6kl_cfg80211_resume(ar);
@@ -2555,58 +2570,6 @@ static struct notifier_block ath6kl_usb_dev_nb = {
 	.notifier_call = ath6kl_usb_dev_notify,
 };
 
-
-#ifdef ATH6KL_BUS_VOTE
-static u32 bus_perf_client;
-static struct msm_bus_scale_pdata *ath6kl_bus_scale_pdata;
-
-static int ath6kl_hsic_probe(struct platform_device *pdev)
-{
-	ath6kl_bus_scale_pdata = msm_bus_cl_get_pdata(pdev);
-	bus_perf_client = msm_bus_scale_register_client(ath6kl_bus_scale_pdata);
-	msm_bus_scale_client_update_request(bus_perf_client, 4);
-	return 0;
-}
-
-static int ath6kl_hsic_remove(struct platform_device *pdev)
-{
-	msm_bus_scale_client_update_request(bus_perf_client, 1);
-	if (bus_perf_client)
-		msm_bus_scale_unregister_client(bus_perf_client);
-	return 0;
-}
-
-static const struct of_device_id ath6kl_hsic_dt_match[] = {
-	{ .compatible = "qca,ar6004-hsic",},
-	{}
-};
-
-MODULE_DEVICE_TABLE(of, ath6kl_hsic_dt_match);
-
-static struct platform_driver ath6kl_hsic_device = {
-	.probe  = ath6kl_hsic_probe,
-	.remove = ath6kl_hsic_remove,
-	.driver = {
-		.name   = "ath6kl_hsic",
-		.of_match_table = ath6kl_hsic_dt_match,
-	}
-};
-
-int ath6kl_hsic_init_msm(void)
-{
-	int ret;
-
-	ret = platform_driver_register(&ath6kl_hsic_device);
-
-	return ret;
-}
-
-void ath6kl_hsic_exit_msm(void)
-{
-	platform_driver_unregister(&ath6kl_hsic_device);
-}
-#endif
-
 static int ath6kl_usb_init(void)
 {
 	init_waitqueue_head(&ath6kl_usb_unload_event_wq);
@@ -2616,9 +2579,8 @@ static int ath6kl_usb_init(void)
 	usb_register(&ath6kl_usb_driver);
 
 #ifdef ATH6KL_BUS_VOTE
-	if (ath6kl_hsic_init_msm() != 0) {
+	if (ath6kl_hsic_init_msm() != 0)
 		ath6kl_err("%s ath6kl_hsic_init_msm failed\n", __func__);
-	}
 #endif
 
 	return 0;
