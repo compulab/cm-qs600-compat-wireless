@@ -51,7 +51,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.332)
+#define __BUILD_VERSION_ (3.5.0.339)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -78,11 +78,13 @@
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
 	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
-	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN)
+	 ATH6KL_MODULEP2P_CONCURRENT_MULTICHAN |	\
+	 ATH6KL_MODULEP2P_P2P_WISE_SCAN)
 #else
 #define ATH6KL_MODULEP2P_DEF_MODE			\
 	(ATH6KL_MODULEP2P_P2P_ENABLE |			\
-	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE)
+	 ATH6KL_MODULEP2P_CONCURRENT_ENABLE_DEDICATE |	\
+	 ATH6KL_MODULEP2P_P2P_WISE_SCAN)
 #endif
 
 #ifdef CONFIG_ANDROID
@@ -92,7 +94,6 @@
 	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	/* ATH6KL_MODULE_DRIVER_REGDB | */		\
 	 0)
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
@@ -100,7 +101,6 @@
 	ATH6KL_MODULE_WAR_BAD_P2P_GO |			\
 	/* ATH6KL_MODULE_ENABLE_P2P_CHANMODE | */	\
 	/* ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY | */	\
-	/* ATH6KL_MODULE_DRIVER_REGDB | */		\
 	 0)
 #endif
 
@@ -113,7 +113,7 @@
 #endif
 
 #ifndef ATH6KL_MODULE_DEF_DEBUG_QUIRKS
-#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(ATH6KL_MODULE_ENABLE_KEEPALIVE)
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(0)
 #endif
 
 #ifndef ATH6KL_DEVNAME_DEF_P2P
@@ -139,6 +139,12 @@
  * PLEASE CHANGE THESE FLAGS TO MEET YOUR BSP IF THE BSP USE
  * SPECIFIC CFG80211 CODE.
  */
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_9		/* Kernel 3.9 series */
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_8
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_8
+#endif
+#endif
+
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_8		/* Kernel 3.8 series */
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_7
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_7
@@ -177,7 +183,6 @@
  */
 #ifdef CONFIG_ANDROID
 #define ATH6KL_SUPPORT_NL80211_QCA
-#define ATH6KL_BUS_VOTE 1
 
 #if defined(ATH6KL_SUPPORT_NL80211_KERNEL3_4) ||	\
 	defined(ATH6KL_SUPPORT_NL80211_KERNEL3_6)
@@ -250,17 +255,22 @@
  * CFG80211_NEW_CHAN_DEFINITION: summary origional channel definition and
  *                               channel type into new channel definitaion.
  * CFG80211_SAFE_BSS_INFO_ACCESS: to fix BSS IE race access problem.
- * NL80211_CMD_TDLS_OPER_REQ: new cfg80211_tdls_oper_request() API for driver's
- *                            automatic TDLS link.
- * NL80211_ATTR_P2P_CTWINDOW_OPPPS: P2P-GO support CTWindow/OppPS setting.
  */
 #define NL80211_WIPHY_FEATURE_SCAN_FLUSH
 #define CFG80211_TX_POWER_PER_WDEV
 #define CFG80211_REMOVE_ROC_CHAN_TYPE
 #define CFG80211_NEW_CHAN_DEFINITION
 #define CFG80211_SAFE_BSS_INFO_ACCESS
-#define NL80211_CMD_TDLS_OPER_REQ	/* TODO */
-#define NL80211_ATTR_P2P_CTWINDOW_OPPPS	/* TODO */
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_9
+/*
+ * CFG80211_VOID_REG_NOTIFIER: The void function as *reg_notifier callback.
+ * CFG80211_NEW_REF_BSS_OPER: Preparation for using spinlock.
+ * NL80211_CMD_SET_AP_MAC_ACL: Support AP ACL.
+ */
+#define CFG80211_VOID_REG_NOTIFIER
+#define CFG80211_NEW_REF_BSS_OPER
+#define NL80211_CMD_SET_AP_MAC_ACL
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -351,14 +361,17 @@
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 /* default roam mode for different situation */
-#ifdef CONFIG_ANDROID
+#if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
 #define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
+	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
+#define ATH6KL_USB_DEFAULT_ROAM_MODE \
 	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
 #else
 #define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
 	ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN
+#define ATH6KL_USB_DEFAULT_ROAM_MODE \
+		ATH6KL_MODULEROAM_DISABLE
 #endif
-#define ATH6KL_USB_DEFAULT_ROAM_MODE ATH6KL_MODULEROAM_DISABLE
 
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
@@ -689,6 +702,7 @@ enum scanband_type {
 	SCANBAND_TYPE_2G,		/* Scan 2GHz channel only */
 	SCANBAND_TYPE_5G,		/* Scan 5GHz channel only */
 	SCANBAND_TYPE_CHAN_ONLY,	/* Scan single channel only */
+	SCANBAND_TYPE_P2PCHAN,		/* Scan P2P channel only */
 };
 
 #define ATH6KL_RSN_CAP_NULLCONF		(0xffff)
@@ -1233,7 +1247,11 @@ struct ath6kl_vif {
 	enum ath6kl_phy_mode phymode;	/* Working PhyMode for AP&STA modes */
 	enum ath6kl_chan_type chan_type;/* Working ChanType for AP mode */
 	struct ath6kl_wep_key wep_key_list[WMI_MAX_KEY_INDEX + 1];
+#ifdef PMF_SUPPORT
+	struct ath6kl_key keys[WMI_MAX_IGTK_INDEX + 1];
+#else
 	struct ath6kl_key keys[WMI_MAX_KEY_INDEX + 1];
+#endif
 	struct aggr_info *aggr_cntxt;
 	struct timer_list disconnect_timer;
 	u32 connect_ctrl_flags;
@@ -1334,6 +1352,7 @@ enum ath6kl_dev_state {
 	MCC_ENABLED,
 	SKIP_FLOWCTRL_EVENT,
 	DISABLE_SCAN,
+	INTERNAL_REGDB,
 };
 
 enum ath6kl_state {
@@ -1537,11 +1556,17 @@ struct ath6kl {
 	/* Allow P2P operate in PASSIVE/IBSS channels */
 	bool p2p_in_pasv_chan;
 
+	/* Only scan P2P channels for all P2P interfaces */
+	bool p2p_wise_scan;
+
 	/* WAR EV119712 */
 	bool p2p_war_bad_intel_go;
 
 	/* WAR CR468120 */
 	bool p2p_war_bad_broadcom_go;
+
+	/* WAR CR479897 */
+	bool p2p_war_p2p_client_awake;
 
 	/* IOT : Not to append P2P IE in concurrent STA interface */
 #define P2P_IE_IN_PROBE_REQ	(1 << 0)
@@ -1652,7 +1677,6 @@ struct ath6kl {
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
 	unsigned long  usb_autopm_scan;
-	struct work_struct auto_pm_wakeup_resume_wk;
 	int auto_pm_cnt;
 
 #endif
@@ -1709,6 +1733,30 @@ static inline bool ath6kl_is_wfd_ie(const u8 *pos)
 	return pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
 		pos[2] == 0x50 && pos[3] == 0x6f &&
 		pos[4] == 0x9a && pos[5] == 0x0a;
+}
+
+static inline struct cfg80211_bss *ath6kl_bss_get(struct ath6kl *ar,
+					    struct ieee80211_channel *channel,
+					    const u8 *bssid,
+					    const u8 *ssid, size_t ssid_len,
+					    u16 capa_mask, u16 capa_val)
+{
+	return cfg80211_get_bss(ar->wiphy,
+				channel,
+				bssid,
+				ssid,
+				ssid_len,
+				capa_mask,
+				capa_val);
+}
+
+static inline void ath6kl_bss_put(struct ath6kl *ar, struct cfg80211_bss *pub)
+{
+#ifdef CFG80211_NEW_REF_BSS_OPER
+	cfg80211_put_bss(ar->wiphy, pub);
+#else
+	cfg80211_put_bss(pub);
+#endif
 }
 
 int ath6kl_configure_target(struct ath6kl *ar);
@@ -1841,6 +1889,11 @@ void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif
 
+#ifdef ATH6KL_BUS_VOTE
+int ath6kl_hsic_init_msm(void);
+void ath6kl_hsic_exit_msm(void);
+#endif
+
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
 void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
@@ -1860,6 +1913,7 @@ int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar);
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
 extern unsigned int htc_bundle_send_timer;
+extern unsigned int htc_bundle_send_th;
 #ifdef CE_SUPPORT
 extern unsigned int ath6kl_ce_flags;
 #endif

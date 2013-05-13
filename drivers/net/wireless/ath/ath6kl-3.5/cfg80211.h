@@ -45,6 +45,8 @@ struct ath6kl_beacon_parameters {
 	enum nl80211_channel_type channel_type;	/* After kernel 3.6 */
 	u8 p2p_ctwindow;			/* After kernel 3.8 */
 	bool p2p_opp_ps;			/* After kernel 3.8 */
+	const struct cfg80211_acl_data *acl;	/* After kernel 3.9 */
+	bool radar_required;			/* After kernel 3.9 */
 
 	/* IEs */
 	const u8 *head, *tail;
@@ -125,6 +127,6 @@ void ath6kl_switch_parameter_based_on_connection(
 			bool call_on_disconnect);
 
 #if defined(USB_AUTO_SUSPEND)
-void ath6kl_auto_pm_wakeup_resume(struct work_struct *);
+void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk);
 #endif
 #endif /* ATH6KL_CFG80211_H */

@@ -787,12 +787,21 @@ enum auth_mode {
 	WPA2_PSK_AUTH = 0x10,
 	WPA_AUTH_CCKM = 0x20,
 	WPA2_AUTH_CCKM = 0x40,
+#ifdef PMF_SUPPORT
+	WPA2_PSK_SHA256_AUTH = 0x80,
+#endif
 };
 
 #define WMI_MIN_KEY_INDEX   0
 #define WMI_MAX_KEY_INDEX   3
 
 #define WMI_MAX_KEY_LEN     32
+
+#ifdef PMF_SUPPORT
+#define WMI_MIN_IGTK_INDEX  4
+#define WMI_MAX_IGTK_INDEX  5
+#define WMI_IGTK_KEY_LEN    16
+#endif
 
 /*
  * NB: these values are ordered carefully; there are lots of
@@ -919,6 +928,15 @@ struct wmi_add_krk_cmd {
 	u8 krk[WMI_KRK_LEN];
 } __packed;
 
+#ifdef PMF_SUPPORT
+struct wmi_add_igtk_cmd {
+	u8 key_index;
+	u8 key_len;
+	u8 key_rsc[6];
+	u8 key[WMI_IGTK_KEY_LEN];
+} __packed;
+#endif
+
 /* WMI_SETPMKID_CMDID */
 
 #define WMI_PMKID_LEN 16
@@ -994,7 +1012,10 @@ enum wmi_scan_ctrl_flags_bits {
 	 * Scan complete event with canceled status will be generated when
 	 * a scan is prempted before it gets completed.
 	 */
-	ENABLE_SCAN_ABORT_EVENT = 0x40
+	ENABLE_SCAN_ABORT_EVENT = 0x40,
+
+	/* set if skip scanning dfs channel */
+	ENABLE_DFS_SKIP_CTRL_FLAGS = 0x80,
 };
 
 struct wmi_scan_params_cmd {
@@ -3152,11 +3173,12 @@ struct wmi_set_arp_ns_offload_cmd {
  *
  */
 enum WMI_MCC_PROFILE {
-	WMI_MCC_PROFILE_STA50 = BIT(0),
-	WMI_MCC_PROFILE_STA20 = BIT(1),
-	WMI_MCC_PROFILE_STA80 = BIT(2),
-	WMI_MCC_CTS_ENABLE    = BIT(4),
-	WMI_MCC_PSPOLL_ENABLE = BIT(5),
+	WMI_MCC_PROFILE_STA50  = BIT(0),
+	WMI_MCC_PROFILE_STA20  = BIT(1),
+	WMI_MCC_PROFILE_STA80  = BIT(2),
+	WMI_MCC_CTS_ENABLE     = BIT(4),
+	WMI_MCC_PSPOLL_ENABLE  = BIT(5),
+	WMI_MCC_DUAL_TIME_MASK = BIT(8),
 };
 
 struct wmi_set_mcc_profile_cmd {
@@ -3166,6 +3188,17 @@ struct wmi_set_mcc_profile_cmd {
 #define DISALBE_AP_INACTIVE_TIMEMER 0
 struct wmi_ap_conn_inact_cmd {
 	u32	period;
+} __packed;
+
+
+#define MIN_BMISS_TIME		1000
+#define MAX_BMISS_TIME		5000
+#define MIN_BMISS_BEACONS	1
+#define MAX_BMISS_BEACONS	50
+
+struct wmi_bmiss_time_cmd {
+	u16 bmissTime;
+	u16 numBeacons;
 } __packed;
 
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
@@ -3250,6 +3283,11 @@ int ath6kl_wmi_addkey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
 			  u8 *key_material,
 			  u8 key_op_ctrl, u8 *mac_addr,
 			  enum wmi_sync_flag sync_flag);
+#ifdef PMF_SUPPORT
+int ath6kl_wmi_addkey_igtk_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
+				u8 key_len, u8 *key_rsc, u8 *key_material,
+				enum wmi_sync_flag sync_flag);
+#endif
 int ath6kl_wmi_add_krk_cmd(struct wmi *wmi, u8 if_idx, u8 *krk);
 int ath6kl_wmi_deletekey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index);
 int ath6kl_wmi_setpmkid_cmd(struct wmi *wmi, u8 if_idx, const u8 *bssid,
@@ -3458,5 +3496,7 @@ int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len);
 int ath6kl_wmi_antdivstate_debug_event_rx(struct ath6kl_vif *vif,
 	u8 *datap, int len);
 int ath6kl_antdiv_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
+
+int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 
 #endif /* WMI_H */

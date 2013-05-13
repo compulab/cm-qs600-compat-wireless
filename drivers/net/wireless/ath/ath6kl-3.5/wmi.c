@@ -1654,7 +1654,7 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	bss->coming_from_dev = vif->ndev;
 #endif
 
-	cfg80211_put_bss(bss);
+	ath6kl_bss_put(vif->ar, bss);
 
 	return 0;
 #undef _DEFAULT_SNR
@@ -2735,6 +2735,41 @@ int ath6kl_wmi_addkey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
 
 	return ret;
 }
+
+#ifdef PMF_SUPPORT
+int ath6kl_wmi_addkey_igtk_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
+				u8 key_len, u8 *key_rsc, u8 *key_material,
+				enum wmi_sync_flag sync_flag)
+{
+	struct sk_buff *skb;
+	struct wmi_add_igtk_cmd *cmd;
+	int ret;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "addkey_igtk cmd: key_index=%u "
+				"key_len=%d\n", key_index, key_len);
+
+	if ((key_index > WMI_MAX_IGTK_INDEX) ||
+	    (key_index < WMI_MIN_IGTK_INDEX) ||
+	    (key_len > WMI_IGTK_KEY_LEN) ||
+	    (key_material == NULL) || (NULL == key_rsc))
+		return -EINVAL;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_add_igtk_cmd *)skb->data;
+	cmd->key_index = key_index;
+	cmd->key_len = key_len;
+	memcpy(cmd->key, key_material, key_len);
+	memcpy(cmd->key_rsc, key_rsc, 6);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_IGTK_CMDID,
+				  sync_flag);
+
+	return ret;
+}
+#endif
 
 int ath6kl_wmi_add_krk_cmd(struct wmi *wmi, u8 if_idx, u8 *krk)
 {
@@ -5817,3 +5852,25 @@ int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len)
 	return 0;
 }
 
+int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon)
+{
+	struct sk_buff *skb;
+	struct wmi_bmiss_time_cmd *cmd;
+
+	if ((numBeacon < MIN_BMISS_BEACONS) ||
+		(numBeacon > MAX_BMISS_BEACONS))
+		return -EINVAL;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+			"bmiss_time:  %d\n", if_idx);
+
+	cmd = (struct wmi_bmiss_time_cmd *)skb->data;
+	cmd->numBeacons = numBeacon;
+
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_BMISS_TIME_CMDID,
+				NO_SYNC_WMIFLAG);
+}
