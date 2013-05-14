@@ -652,6 +652,8 @@ void ath6kl_wmicfg_send_stats(struct ath6kl_vif *vif,
 			      struct target_stats *stats)
 {
 	u32 *buff = kzalloc(sizeof(*stats) + 4, GFP_KERNEL);
+	if (buff == NULL)
+		return;
 
 	buff[0] = WMI_REPORT_STATISTICS_EVENTID;
 	memcpy(buff+1, stats, sizeof(struct target_stats));

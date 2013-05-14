@@ -438,7 +438,10 @@ static bool ath6kl_is_valid_iftype(struct ath6kl *ar, enum nl80211_iftype type,
 
 static bool ath6kl_is_tx_pending(struct ath6kl *ar)
 {
-	return ar->tx_pending[ath6kl_wmi_get_control_ep(ar->wmi)] == 0;
+	enum htc_endpoint_id eid = ath6kl_wmi_get_control_ep(ar->wmi);
+	if (eid >= ENDPOINT_MAX || eid == ENDPOINT_UNUSED)
+		return false;
+	return ar->tx_pending[eid] == 0;
 }
 
 

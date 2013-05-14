@@ -337,6 +337,10 @@ static int ath6kl_connectservice(struct ath6kl *ar,
 		return status;
 	}
 
+	if (response.endpoint >= ENDPOINT_MAX &&
+			response.endpoint <= ENDPOINT_UNUSED)
+		return -EINVAL;
+
 	switch (con_req->svc_id) {
 	case WMI_CONTROL_SVC:
 		if (test_bit(WMI_ENABLED, &ar->flag))
@@ -780,6 +784,9 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	if (ret)
 		return ret;
 
+	if (fw_entry == NULL)
+		return -EINVAL;
+
 	*fw_len = fw_entry->size;
 	*fw = kmemdup(fw_entry->data, fw_entry->size, GFP_KERNEL);
 
@@ -842,12 +849,12 @@ static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 	u32 param;
 	u8 macaddr[ETH_ALEN] = {0,};
 
+	if (ar->fw_board == NULL || str_mac == NULL)
+		return -1;
+
 	/* set checksum filed in the board data to zero */
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
-
-	if (ar->fw_board == NULL || str_mac == NULL)
-		return -1;
 
 	/*generate locally adminstered mac*/
 	if (strcmp(str_mac, "00:11:22:33:44:55") == 0)
@@ -1133,6 +1140,9 @@ static int ath6kl_fetch_fw_apin(struct ath6kl *ar, const char *name)
 	ret = request_firmware(&fw, filename, ar->dev);
 	if (ret)
 		return ret;
+
+	if (fw == NULL)
+		return -EINVAL;
 
 	data = fw->data;
 	len = fw->size;
