@@ -1039,7 +1039,7 @@ static ssize_t ath6kl_regwrite_write(struct file *file,
 	sptr = buf;
 
 	token = strsep(&sptr, "=");
-	if (!token)
+	if (!token || !sptr)
 		return -EINVAL;
 
 	if (kstrtou32(token, 0, &reg_addr))
