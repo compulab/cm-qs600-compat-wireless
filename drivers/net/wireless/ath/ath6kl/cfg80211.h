@@ -25,26 +25,6 @@ enum ath6kl_cfg_suspend_mode {
 	ATH6KL_CFG_SUSPEND_SCHED_SCAN,
 };
 
-typedef enum {
-	ATH6KL_MODE_11A        = 0,   /* 11a Mode */
-	ATH6KL_MODE_11G        = 1,   /* 11b/g Mode */
-	ATH6KL_MODE_11B        = 2,   /* 11b Mode */
-	ATH6KL_MODE_11GONLY    = 3,   /* 11g only Mode */
-	ATH6KL_MODE_11NA_HT20   = 4,  /* 11a HT20 mode */
-	ATH6KL_MODE_11NG_HT20   = 5,  /* 11g HT20 mode */
-	ATH6KL_MODE_11NA_HT40   = 6,  /* 11a HT40 mode */
-	ATH6KL_MODE_11NG_HT40   = 7,  /* 11g HT40 mode */
-	ATH6KL_MODE_UNKNOWN    = 8,
-	ATH6KL_MODE_MAX        = 8
-} WLAN_ATH6KL_PHY_MODE;
-
-enum {
-	ATH6KL_HTINFO_EXTOFFSET_NA    = 0,   /* 0  no extension channel is present */
-	ATH6KL_HTINFO_EXTOFFSET_ABOVE = 1,   /* +1 extension channel above control channel */
-	ATH6KL_HTINFO_EXTOFFSET_UNDEF = 2,   /* -2 undefined */
-	ATH6KL_HTINFO_EXTOFFSET_BELOW = 3    /* -1 extension channel below control channel*/
-};
-
 
 struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 					enum nl80211_iftype type,
