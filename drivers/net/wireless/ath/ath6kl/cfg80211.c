@@ -3192,6 +3192,8 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 	clear_bit(CONNECTED, &vif->flags);
 
+	vif->prwise_crypto = NONE_CRYPT;
+
 	/* Restore ht setting in firmware */
 	return ath6kl_restore_htcap(vif);
 }
