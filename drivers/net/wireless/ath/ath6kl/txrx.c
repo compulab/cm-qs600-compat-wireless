@@ -2488,11 +2488,15 @@ static void aggr_deque_frms_bam2bam(struct aggr_info_conn *agg_conn, u8 tid,
 	struct sk_buff *skb;
 	struct rxtid *rxtid;
 	struct skb_hold_q *node;
-	u16 idx, idx_end, seq_end, i, j;
+	u16 idx, idx_end, seq_end, i, j, ext_end;
 	struct rxtid_stats *stats;
+	bool is_update = false;
 
 	rxtid = &agg_conn->rx_tid[tid];
 	stats = &agg_conn->stat[tid];
+	if (!rxtid->aggr) {
+		return;
+	}
 
 	spin_lock_bh(&rxtid->lock);
 	if (order == 1) {
@@ -2526,8 +2530,11 @@ static void aggr_deque_frms_bam2bam(struct aggr_info_conn *agg_conn, u8 tid,
 	idx_end = AGGR_WIN_IDX(seq_end, rxtid->hold_q_sz);
 
 	do {
+		ext_end = (rxtid->seq_next + rxtid->hold_q_sz - 1) &
+				ATH6KL_MAX_SEQ_NO;
 		node = &rxtid->hold_q[idx];
-		if ((order == 1) && (!node->skb))
+		if (((order == 1) && (!node->skb))
+			|| ((order == 2) && ((ext_end >= seq_no) && (!node->skb))))
 			break;
 
 		if (node->skb) {
@@ -2557,7 +2564,7 @@ static void aggr_deque_frms_bam2bam(struct aggr_info_conn *agg_conn, u8 tid,
 	spin_lock_bh(&rxtid->lock);
 	if (!order) {
 		rxtid->seq_next = 0;
-	} else {
+	} else if (order == 1){
 		idx_end = idx;
 		do {
 			node = &rxtid->hold_q[idx];
@@ -2565,11 +2572,14 @@ static void aggr_deque_frms_bam2bam(struct aggr_info_conn *agg_conn, u8 tid,
 				ath6kl_dbg(ATH6KL_DBG_OOO,
 					"ooo:Now seq_next = %d\n",
 						rxtid->seq_next);
+				is_update = true;
 				break;
 			}
 			rxtid->seq_next = ATH6KL_NEXT_SEQ_NO(rxtid->seq_next);
 			idx = AGGR_WIN_IDX(rxtid->seq_next, rxtid->hold_q_sz);
 		} while (idx != idx_end);
+		if (!is_update)
+			rxtid->seq_next = 0;
 	}
 	spin_unlock_bh(&rxtid->lock);
 
@@ -2636,12 +2646,18 @@ static bool aggr_process_recv_frm_bam2bam(struct aggr_info_conn *agg_conn,
 		}
 		return is_queued;
 	}
-
-	/* Check the incoming sequence no, if it's in the window */
-	if ((rxtid->timer_mon != true) || (!rxtid->seq_next)) {
+	/* Set the seq next to current incoming seq no if
+	   1. There are no frames in hold q for this tid/aid pair
+	   2. The incoming seq no is before the current seq next
+	      sequence number
+	 */
+	if ((rxtid->timer_mon) || (rxtid->seq_next)) {
+		if ((((rxtid->seq_next > seq_no) && ((seq_no + rxtid->hold_q_sz -1)
+			> rxtid->seq_next )) || (((rxtid->seq_next < seq_no) &&
+				(rxtid->seq_next + rxtid->hold_q_sz -1) < seq_no))))
 		rxtid->seq_next = seq_no;
 	} else {
-		// end = (st + rxtid->hold_q_sz-1) & ATH6KL_MAX_SEQ_NO;
+		rxtid->seq_next = seq_no;
 	}
 
 	idx = AGGR_WIN_IDX(seq_no, rxtid->hold_q_sz);
@@ -2663,13 +2679,16 @@ static bool aggr_process_recv_frm_bam2bam(struct aggr_info_conn *agg_conn,
 	 *  2b. is the frame_seq_no beyond window(st, TID_WINDOW_SZ);
 	 *      -> Taken care of it above, by moving window forward.
 	 */
-	dev_kfree_skb(node->skb);
-	stats->num_dups++;
+	if (node->skb) {
+		dev_kfree_skb(node->skb);
+		stats->num_dups++;
+	}
 
 	node->skb = frame;
 	is_queued = true;
 	stats->num_mpdu++;
 	node->is_amsdu = is_amsdu;
+	node->seq_no = seq_no;
 
 	spin_unlock_bh(&rxtid->lock);
 
@@ -2992,7 +3011,8 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	u16 seq_no, offset;
 	u8 tid, if_idx;
 #ifdef CONFIG_ATH6KL_BAM2BAM
-	bool is_flush=0, is_out_of_order=0;
+	bool is_flush = 0, is_out_of_order = 0;
+	bool is_partial_flush = 0, is_flush_all = 0;
 #endif
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_RX,
@@ -3221,6 +3241,8 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	{
 		is_out_of_order = wmi_data_hdr_is_out_of_order(dhdr);
 		is_flush = wmi_data_hdr_is_ampdu_flush(dhdr);
+		is_partial_flush = wmi_data_hdr_is_ampdu_partial_flush(dhdr);
+		is_flush_all = wmi_data_hdr_is_ampdu_flush_all(dhdr);
 	}
 #endif
 
@@ -3333,6 +3355,12 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 						 skb);
 				return;
 			}
+
+			if (is_flush_all)
+				aggr_deque_frms_bam2bam(aggr_conn, tid, 0, 0);
+
+			if (is_partial_flush)
+				aggr_deque_frms_bam2bam(aggr_conn, tid, seq_no , 2);
 
 			if (is_out_of_order &&
 			aggr_process_recv_frm_bam2bam(aggr_conn, tid, seq_no,
@@ -3451,9 +3479,9 @@ static void aggr_delete_tid_state(struct aggr_info_conn *aggr_conn, u8 tid)
 	{
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		if (ath6kl_debug_quirks(aggr_conn->vif->ar,
-					ATH6KL_MODULE_BAM2BAM))
+					ATH6KL_MODULE_BAM2BAM)) {
 			aggr_deque_frms_bam2bam(aggr_conn, tid, 0, 0);
-		else
+		} else
 		{
 			/* This path for non BAM2BAM path during run time */
 			aggr_deque_frms(aggr_conn, tid, 0, 0);
@@ -4194,34 +4222,15 @@ void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
 		return;
 	ath6kl_dbg(ATH6KL_DBG_OOO,
 		"ooo: Control Packet from Rx-non bam2bam Event pipe...\n");
-	if (seq_no >= ATH6KL_MAX_SEQ_NO) {
-#ifdef CONFIG_ATH6KL_BAM2BAM
 		aggr_conn->vif = vif;
-		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+	if (seq_no > ATH6KL_MAX_SEQ_NO) {
+		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM)) {
 			aggr_deque_frms_bam2bam(aggr_conn, tid, 0, 0);
-		else
-		{
-			/* This path for non BAM2BAM path during run time */
-			aggr_deque_frms(aggr_conn, tid, 0, 0);
 		}
-#else
-		/* This path for non BAM2BAM path during compile time */
-		aggr_deque_frms(aggr_conn, tid, 0, 0);
-#endif
 	} else {
-#ifdef CONFIG_ATH6KL_BAM2BAM
-		aggr_conn->vif = vif;
-		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM)) {
 			aggr_deque_frms_bam2bam(aggr_conn, tid, seq_no, 2);
-		else
-		{
-			/* This path for non BAM2BAM path during run time */
-			aggr_deque_frms(aggr_conn, tid, seq_no, 2);
 		}
-#else
-		/* This path for non BAM2BAM path during compile time */
-		aggr_deque_frms(aggr_conn, tid, seq_no, 2);
-#endif
 	}
 }
 
