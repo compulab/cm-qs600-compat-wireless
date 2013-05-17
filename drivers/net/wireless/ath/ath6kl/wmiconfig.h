@@ -43,5 +43,4 @@ void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf);
 int ath6kl_lte_coex_init(struct ath6kl *ar);
 void ath6kl_lte_coex_deinit(struct ath6kl *ar);
 bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint8_t *ap_acs_ch);
-void ath6kl_change_inter_bss(struct ath6kl *ar, void *buf);
 #endif
