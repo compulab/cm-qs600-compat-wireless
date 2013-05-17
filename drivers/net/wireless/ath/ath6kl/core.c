@@ -29,19 +29,13 @@
 #include "wmiconfig.h"
 
 unsigned int debug_mask;
-static unsigned int suspend_mode = 3;
 static unsigned int wow_mode;
-static unsigned int uart_debug;
 static unsigned int ath6kl_p2p;
-static unsigned int testmode;
 static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
 
 module_param(debug_mask, uint, 0644);
-module_param(suspend_mode, uint, 0644);
 module_param(wow_mode, uint, 0644);
-module_param(uart_debug, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
-module_param(testmode, uint, 0644);
 module_param(debug_quirks, uint, 0644);
 
 void ath6kl_core_tx_complete(struct ath6kl *ar, struct sk_buff *skb)
@@ -120,8 +114,6 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 		goto err_power_off;
 	}
 
-	ar->testmode = testmode;
-
 	ret = ath6kl_init_fetch_firmwares(ar);
 	if (ret)
 		goto err_htc_cleanup;
@@ -159,21 +151,23 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 
 	ar->mcc_flowctrl_ctx = ath6kl_mcc_flowctrl_conn_list_init(ar);
 
-	if (suspend_mode &&
-	    suspend_mode >= WLAN_POWER_STATE_CUT_PWR &&
-	    suspend_mode <= WLAN_POWER_STATE_WOW)
-		ar->suspend_mode = suspend_mode;
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_CUTPOWER))
+		ar->suspend_mode = WLAN_POWER_STATE_CUT_PWR;
+	else if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_DEEPSLEEP))
+		ar->suspend_mode = WLAN_POWER_STATE_DEEP_SLEEP;
+	else if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_WOW))
+		ar->suspend_mode = WLAN_POWER_STATE_WOW;
 	else
 		ar->suspend_mode = 0;
 
-	if (suspend_mode == WLAN_POWER_STATE_WOW &&
+	if (ar->suspend_mode == WLAN_POWER_STATE_WOW &&
 	    (wow_mode == WLAN_POWER_STATE_CUT_PWR ||
 	     wow_mode == WLAN_POWER_STATE_DEEP_SLEEP))
 		ar->wow_suspend_mode = wow_mode;
 	else
 		ar->wow_suspend_mode = 0;
 
-	if (uart_debug)
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_UART_DEBUG))
 		ar->conf_flags |= ATH6KL_CONF_UART_DEBUG;
 
 	set_bit(FIRST_BOOT, &ar->flag);
@@ -354,7 +348,9 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	kfree(ar->fw_board);
 	kfree(ar->fw_otp);
-	if (ar->testmode == 0)
+	if (ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_TESTMODE_TCMD |
+				ATH6KL_MODULE_TESTMODE_UTF |
+				ATH6KL_MODULE_ENABLE_EPPING))
 		vfree(ar->fw);
 	else
 		kfree(ar->fw);

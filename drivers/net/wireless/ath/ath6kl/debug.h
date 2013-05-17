@@ -23,21 +23,50 @@
 #define ATH6KL_DBGPRNT_FREQ 1000
 
 enum ATH6KL_MODULE_QUIRKS {
+	/* Enable Cut power mode */
+	ATH6KL_MODULE_SUSPEND_CUTPOWER		= BIT(0),
+
+	/* Enable Deepsleep power mode */
+	ATH6KL_MODULE_SUSPEND_DEEPSLEEP		= BIT(1),
+
+	/* Enable Wake on Wireless power mode */
+	ATH6KL_MODULE_SUSPEND_WOW		= BIT(2),
+
+	/* Enable TCMD based test mode */
+	ATH6KL_MODULE_TESTMODE_TCMD		= BIT(3),
+
+	/* Enable UTF based test mode */
+	ATH6KL_MODULE_TESTMODE_UTF		= BIT(4),
+
+	/* Enable UART debug */
+	ATH6KL_MODULE_UART_DEBUG		= BIT(5),
+
+	/* Enable end point ping loop back test mode */
+	ATH6KL_MODULE_ENABLE_EPPING		= BIT(6),
+
 	/* hole */
+
 	/* Enable BAM2BAM feature */
 	ATH6KL_MODULE_BAM2BAM			= BIT(10),
+
 	/* Enable IPV6 support */
 	ATH6KL_MODULE_IPA_WITH_IPV6		= BIT(11),
+
 	/* Enable IPACM support */
 	ATH6KL_MODULE_IPA_WITH_IPACM		= BIT(12),
+
 	/* Send AMPDU packets to netif */
 	ATH6KL_MODULE_BAM_AMPDU_TO_NETIF	= BIT(13),
+
 	/* Use Rx SW path instead of BAM */
 	ATH6KL_MODULE_BAM_RX_SW_PATH		= BIT(14),
+
 	/* Enable SCC or by default MCC */
 	ATH6KL_MODULE_MCC_FLOWCTRL		= BIT(15),
+
 	/* Enable USB auto power management feature */
 	ATH6KL_MODULE_ENABLE_USB_AUTO_PM	= BIT(16),
+
 	/* Use TX SW path instead of BAM */
 	ATH6KL_MODULE_BAM_TX_SW_PATH		= BIT(17),
 };
@@ -47,7 +76,8 @@ enum ATH6KL_MODULE_QUIRKS {
 				ATH6KL_MODULE_IPA_WITH_IPACM |		\
 				ATH6KL_MODULE_BAM_AMPDU_TO_NETIF |	\
 				ATH6KL_MODULE_MCC_FLOWCTRL |		\
-				ATH6KL_MODULE_ENABLE_USB_AUTO_PM)
+				ATH6KL_MODULE_ENABLE_USB_AUTO_PM |	\
+				ATH6KL_MODULE_SUSPEND_WOW)
 
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
@@ -98,11 +128,22 @@ enum ath6kl_war {
 	ATH6KL_WAR_INVALID_RATE,
 };
 
-static inline int ath6kl_debug_quirks(struct ath6kl *ar,
-		enum ATH6KL_MODULE_QUIRKS mask)
+/* Return true if any bit set in mask */
+static inline bool ath6kl_debug_quirks_any(struct ath6kl *ar, enum
+		ATH6KL_MODULE_QUIRKS mask)
 {
-	return ar->debug_quirks & mask;
+	return !!(ar->debug_quirks & mask);
 }
+
+/* Return true only if all the bits are set in mask */
+static inline bool ath6kl_debug_quirks_all(struct ath6kl *ar, enum
+		ATH6KL_MODULE_QUIRKS mask)
+{
+	return (ar->debug_quirks & mask) == mask;
+}
+
+#define ath6kl_debug_quirks(_ar, _mask) ath6kl_debug_quirks_any(_ar, _mask)
+
 #ifdef CONFIG_ATH6KL_DEBUG
 
 void ath6kl_dbg(enum ATH6K_DEBUG_MASK mask, const char *fmt, ...);
