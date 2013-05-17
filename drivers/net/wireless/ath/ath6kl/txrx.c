@@ -89,7 +89,9 @@ int ath6kl_ipa_enable_host_route_config (struct ath6kl_vif *vif, bool enable)
 			if (status < 0)
 				ath6kl_err("Failed to send MCC disable msg to IPA\n");
 		}
+		spin_lock_bh(&ar->list_lock);
 	}
+	spin_unlock_bh(&ar->list_lock);
 
 	return status;
 }
