@@ -89,6 +89,8 @@
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL		50 /* in ms */
 
+#define MCC_STOP_EVENT_TIMER_INTVL        1000 /* in msec */
+
 /* includes also the null byte */
 #define ATH6KL_FIRMWARE_MAGIC               "QCA-ATH6KL"
 
@@ -781,6 +783,9 @@ struct ath6kl_mcc_flowctrl {
 	spinlock_t mcc_flowctrl_lock;
 	struct ath6kl_fw_conn_list fw_conn_list[NUM_CONN];
 	u32 mcc_flowctrl_event_cnt;
+	struct timer_list mcc_event_ctrl_timer;
+	bool mcc_events_resumed;
+
 };
 
 struct ath6kl {
