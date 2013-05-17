@@ -173,7 +173,9 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, struct net_device *dev, void *data,
 			ath6kl_lte_coex_update_wwan_data(ar, buf);
 			return 0;
 		} else if (*cfg_cmd == ATH6kl_TM_CMD_DRV_CFG_INTER_BSS) {
-			ath6kl_change_inter_bss(ar, buf);
+			struct wmi_setinterbss_cmd *cmd =
+				(struct wmi_setinterbss_cmd *)(buf + 4);
+			ar->inter_bss = cmd->enable;
 			return 0;
 		}
 		break;
