@@ -661,10 +661,3 @@ void ath6kl_wmicfg_send_stats(struct ath6kl_vif *vif,
 			       sizeof(struct target_stats)+4);
 	kfree(buff);
 }
-
-void ath6kl_change_inter_bss(struct ath6kl *ar, void *buf)
-{
-	struct wmi_setinterbss_cmd *cmd = (struct wmi_setinterbss_cmd *)(buf +
-			4);
-	ar->inter_bss = cmd->enable;
-}
