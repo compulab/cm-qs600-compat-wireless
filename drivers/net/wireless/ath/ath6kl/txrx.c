@@ -2240,9 +2240,47 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 		struct net_device *dev, struct sk_buff *skb)
 {
 	int status;
-
+	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct ethhdr *datap = NULL;
+	struct sk_buff *skb1 = NULL;
+	struct ath6kl_sta *conn = NULL;
 	if (!skb)
 		return;
+	datap = (struct ethhdr *) skb->data;
+	if (vif->nw_type == AP_NETWORK) {
+		if (ar && vif && datap)
+			conn = ath6kl_find_sta(vif, datap->h_dest,
+					ar->inter_bss);
+		/*
+		* Search for a connected STA with dstMac
+		* as the Mac address. If found send the
+		* frame to it on the air else send the
+		* frame up the stack.
+		*/
+		if (conn) {
+			if (vif->intra_bss) {
+				skb1 = skb;
+				skb = NULL;
+			} else {
+				if(vif == conn->vif) {
+					dev_kfree_skb(skb);
+					skb = NULL;
+				} else {
+					skb1 = skb;
+					skb = NULL;
+				}
+			}
+		}
+
+		if (skb1 && conn) {
+			vif->intra_bss_data_cnt++;
+			ath6kl_data_tx(skb1, conn->vif->ndev);
+		}
+
+		if (skb == NULL)
+			/* nothing to deliver up the stack */
+			return;
+	}
 
 	skb->dev = dev;
 
@@ -2267,8 +2305,48 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		struct sk_buff *skb)
 {
+	struct ath6kl *ar = ath6kl_priv(dev);
+	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct ethhdr *datap = NULL;
+	struct sk_buff *skb1 = NULL;
+	struct ath6kl_sta *conn = NULL;
 	if (!skb)
 		return;
+	datap = (struct ethhdr *) skb->data;
+	if (vif->nw_type == AP_NETWORK) {
+		if (ar && vif && datap)
+			conn = ath6kl_find_sta(vif, datap->h_dest,
+					ar->inter_bss);
+		/*
+		* Search for a connected STA with dstMac
+		* as the Mac address. If found send the
+		* frame to it on the air else send the
+		* frame up the stack.
+		*/
+		if (conn) {
+			if (vif->intra_bss) {
+				skb1 = skb;
+				skb = NULL;
+			} else {
+				if(vif == conn->vif) {
+					dev_kfree_skb(skb);
+					skb = NULL;
+				} else {
+					skb1 = skb;
+					skb = NULL;
+				}
+			}
+		}
+
+		if (skb1 && conn) {
+			vif->intra_bss_data_cnt++;
+			ath6kl_data_tx(skb1, conn->vif->ndev);
+		}
+
+		if (skb == NULL)
+			/* nothing to deliver up the stack */
+			return;
+	}
 
 	skb->dev = dev;
 
@@ -3295,45 +3373,14 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 	if (vif->nw_type == AP_NETWORK) {
 		datap = (struct ethhdr *) skb->data;
-		if (is_multicast_ether_addr(datap->h_dest))
+		if (is_multicast_ether_addr(datap->h_dest)) {
 			/*
 			 * Bcast/Mcast frames should be sent to the
 			 * OS stack as well as on the air.
 			 */
 			skb1 = skb_copy(skb, GFP_ATOMIC);
-		else {
-			/*
-			 * Search for a connected STA with dstMac
-			 * as the Mac address. If found send the
-			 * frame to it on the air else send the
-			 * frame up the stack.
-			 */
-			conn = ath6kl_find_sta(vif, datap->h_dest,
-					ar->inter_bss);
-
-			if (conn) {
-				if (vif->intra_bss) {
-					skb1 = skb;
-					skb = NULL;
-				} else {
-					if(vif == conn->vif) {
-						dev_kfree_skb(skb);
-						skb = NULL;
-					} else {
-						skb1 = skb;
-						skb = NULL;
-					}
-				}
-			}
-		}
-		if (skb1 && conn) {
 			vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skb1, conn->vif->ndev);
-		}
-
-		if (skb == NULL) {
-			/* nothing to deliver up the stack */
-			return;
 		}
 	}
 
