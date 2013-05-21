@@ -491,9 +491,10 @@ int ath6kl_is_mcc_enabled (struct ath6kl *ar)
         struct ath6kl_vif *vif = NULL;
         int mcc_enabled = 0;
 
-	if (ar->num_vif < 2)
+	if (ar->num_vif < 1)
 		return mcc_enabled;
 
+	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
 			if (prev_vif == NULL) {
@@ -509,6 +510,7 @@ int ath6kl_is_mcc_enabled (struct ath6kl *ar)
 			}
 		}
 	}
+	spin_unlock_bh(&ar->list_lock);
 	return mcc_enabled;
 }
 
