@@ -3922,7 +3922,9 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	list_add_tail(&vif->list, &ar->vif_list);
 	spin_unlock_bh(&ar->list_lock);
 
-	if (ar->testmode == 0) {
+	/* Set HTCAP if not in testmode */
+	if (!(test_bit(TESTMODE_EPPING, &ar->flag) ||
+			test_bit(TESTMODE_TCMD, &ar->flag))) {
 		vif->htcap[IEEE80211_BAND_2GHZ].cap_info = ath6kl_a_htcap;
 		ath6kl_set_htcap(vif, IEEE80211_BAND_2GHZ, true);
 	}
