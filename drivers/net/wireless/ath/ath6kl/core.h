@@ -571,6 +571,13 @@ struct target_stats {
 	u32 arp_replied;
 };
 
+struct ath6kl_mcc_stats {
+	u32 sche_tx_queued;
+	u32 tx_sched_dropped;
+	u32 sche_re_tx;
+	u32 recycle_drop_count;
+};
+
 struct ath6kl_mbox_info {
 	u32 htc_addr;
 	u32 htc_ext_addr;
@@ -766,10 +773,7 @@ struct ath6kl_fw_conn_list
 	bool previous_can_send;
 
 	/* stats  */
-	int sche_tx_queued;
-	u32 sche_tx;
-	u32 sche_re_tx;
-	u32 sche_re_tx_aging;
+	struct ath6kl_mcc_stats mcc_stats;
 };
 
 struct ath6kl_mcc_flowctrl {
@@ -1209,10 +1213,12 @@ void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg);
 enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar, void *pkt);
 void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar);
 void ath6kl_mcc_flowctrl_state_update(struct ath6kl *ar,u8 numConn,
-                                     u8 ac_map[], u8 ac_queue_depth[]);
-void ath6kl_mcc_flowctrl_set_conn_id(struct ath6kl_vif *vif, u8 mac_addr[],u8 connId);
+		u8 ac_map[], u8 ac_queue_depth[]);
+void ath6kl_mcc_flowctrl_set_conn_id(struct ath6kl_vif *vif, u8 mac_addr[],
+		u8 connId);
 u8 ath6kl_mcc_flowctrl_get_conn_id(struct ath6kl_vif *vif, struct sk_buff *skb);
-int ath6kl_mcc_flowctrl_stat(struct ath6kl *ar, u8 *buf, int buf_len);
+int ath6kl_mcc_flowctrl_stat(struct ath6kl_fw_conn_list *conn, u8 *buf,
+		int buf_len);
 int ath6kl_is_mcc_enabled (struct ath6kl *ar);
 
 #endif /* CORE_H */
