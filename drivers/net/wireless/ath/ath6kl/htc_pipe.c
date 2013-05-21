@@ -1473,12 +1473,7 @@ static int ath6kl_htc_pipe_conn_service(struct htc_target *target,
 	/* the rest are parameter checks so set the error status */
 	status = -EINVAL;
 
-	if (assigned_epid >= ENDPOINT_MAX) {
-		WARN_ON_ONCE(1);
-		goto free_packet;
-	}
-
-	if (max_msg_size == 0) {
+	if (assigned_epid >= ENDPOINT_MAX || assigned_epid < 0 || !max_msg_size) {
 		WARN_ON_ONCE(1);
 		goto free_packet;
 	}

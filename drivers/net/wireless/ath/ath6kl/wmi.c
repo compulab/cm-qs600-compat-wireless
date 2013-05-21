@@ -1017,6 +1017,8 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 	else if (!(((u16) reg_code & WORLD_SKU_MASK) == WORLD_SKU_PREFIX)) {
 
 		regpair = ath6kl_get_regpair((u16) reg_code);
+		if (!regpair)
+			return;
 		country = ath6kl_regd_find_country_by_rd((u16) reg_code);
 		ath6kl_dbg(ATH6KL_DBG_WMI, "Regpair used: 0x%0x\n",
 			   regpair->regDmnEnum);
@@ -1260,6 +1262,9 @@ static int ath6kl_wmi_bitrate_reply_rx(struct wmi *wmi, u8 *datap, int len)
 		rate = RATE_AUTO;
 	} else {
 		index = reply->rate_index & 0x7f;
+		if (index > ARRAY_SIZE(wmi_rate_tbl))
+			return -EINVAL;
+
 		sgi = (reply->rate_index & 0x80) ? 1 : 0;
 		rate = wmi_rate_tbl[index][sgi];
 	}
@@ -1824,6 +1829,9 @@ int ath6kl_wmi_cmd_send(struct wmi *wmi, u8 if_idx, struct sk_buff *skb,
 		}
 		ep_id = ath6kl_ac2_endpoint_id(wmi->parent_dev, WMM_AC_BE);
 	}
+
+	if (ep_id <= ENDPOINT_UNUSED || ep_id >= ENDPOINT_MAX)
+		return -EINVAL;
 
 	ath6kl_control_tx(wmi->parent_dev, skb, ep_id);
 

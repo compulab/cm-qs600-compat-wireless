@@ -452,6 +452,9 @@ static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
 	u8 index;
 	u8 keyusage;
 
+	if (vif == NULL)
+		return;
+
 	for (index = 0; index <= WMI_MAX_KEY_INDEX; index++) {
 		if (vif->wep_key_list[index].key_len) {
 			keyusage = GROUP_USAGE;
@@ -482,7 +485,7 @@ int ath6kl_is_mcc_enabled (struct ath6kl *ar)
 
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
-			if ((vif == NULL) || (prev_vif == NULL)){
+			if (prev_vif == NULL) {
 				prev_vif = vif;
 				continue;
 			}
@@ -493,10 +496,8 @@ int ath6kl_is_mcc_enabled (struct ath6kl *ar)
 				mcc_enabled = 1;
 				break;
 			}
-
 		}
 	}
-
 	return mcc_enabled;
 }
 
@@ -1054,10 +1055,12 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 	} else {
 		skb = skb_dequeue(&conn->psq);
 		spin_unlock_bh(&conn->psq_lock);
-
-		conn->sta_flags |= STA_PS_POLLED;
-		ath6kl_data_tx(skb, vif->ndev);
-		conn->sta_flags &= ~STA_PS_POLLED;
+		WARN_ON(!skb);
+		if (skb != NULL) {
+			conn->sta_flags |= STA_PS_POLLED;
+			ath6kl_data_tx(skb, vif->ndev);
+			conn->sta_flags &= ~STA_PS_POLLED;
+		}
 	}
 
 	spin_lock_bh(&conn->psq_lock);
