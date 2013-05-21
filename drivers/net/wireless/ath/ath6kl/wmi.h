@@ -1234,6 +1234,22 @@ struct wmi_set_lte_coex_state_cmd {
 					* WWAN_STATE_IDLE else '0' */
 } __packed;
 
+typedef enum {
+	ATH6KL_MODE_11A        = 0,   /* 11a Mode */
+	ATH6KL_MODE_11G        = 1,   /* 11b/g Mode */
+	ATH6KL_MODE_11B        = 2,   /* 11b Mode */
+	ATH6KL_MODE_11GONLY    = 3,   /* 11g only Mode */
+	ATH6KL_MODE_11NA_HT20  = 4,  /* 11a HT20 mode */
+	ATH6KL_MODE_11NG_HT20  = 5,  /* 11g HT20 mode */
+	ATH6KL_MODE_11NA_HT40  = 6,  /* 11a HT40 mode */
+	ATH6KL_MODE_11NG_HT40  = 7,  /* 11g HT40 mode */
+	ATH6KL_MODE_UNKNOWN    = 8,
+	ATH6KL_MODE_MAX        = 8
+} WLAN_ATH6KL_PHY_MODE;
+
+#define ATH6KL_MASK_SEC_CH 0x3
+#define ATH6KL_MASK_PHYMODE 0x1C
+
 enum wmi_lte_coex_wlan_event_notify {
 	LTE_COEX_WLAN_SCAN_OPERATION       = 0x0,
 	LTE_COEX_WLAN_CONNECTION_OPERATION = 0x1,

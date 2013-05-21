@@ -25,8 +25,6 @@
 #include <ctype.h>
 #include "wmiconfig.h"
 
-#define ATH6KL_MASK_SEC_CH 0x3
-#define ATH6KL_MASK_PHYMODE 0x1C
 
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
@@ -865,21 +863,24 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 							ev->u.ap_bss.bssid,
 							ev->u.ap_bss.aid);
 			sec_ch = ATH6KL_MASK_SEC_CH & ev->u.ap_bss.ht_info;
-			phymode = (ATH6KL_MASK_PHYMODE & ev->u.ap_bss.ht_info) >> 0x2;
+			phymode = (ATH6KL_MASK_PHYMODE & 
+					ev->u.ap_bss.ht_info) >> 0x2;
 			ath6kl_connect_ap_mode_bss(
-				vif, le16_to_cpu(ev->u.ap_bss.ch), sec_ch, phymode);
+				vif, le16_to_cpu(ev->u.ap_bss.ch),
+			       		sec_ch, phymode);
 
                         if (ath6kl_is_mcc_enabled(vif->ar)) {
 				vif->ar->is_mcc_enabled = true;
 #ifdef CONFIG_ATH6KL_BAM2BAM
 				ath6kl_ipa_enable_host_route_config (vif, true);
 #endif
-				ath6kl_dbg(ATH6KL_DBG_WMI, "connect_event-ap_network: (MCC_ENABLED)\n");
+				ath6kl_dbg(ATH6KL_DBG_WMI, 
+					"connect_event-ap_nw: (MCC_ENABLED)\n");
 			}
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WMI,
 				   "%s: aid %u mac_addr %pM auth=%u keymgmt=%u"
-					"cipher=%u apsd_info=%u (STA connected)\n",
+				     "cipher=%u apsd_info=%u (STA connected)\n",
 				   __func__, ev->u.ap_sta.aid,
 				   ev->u.ap_sta.mac_addr,
 				   ev->u.ap_sta.auth,

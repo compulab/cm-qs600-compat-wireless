@@ -1159,9 +1159,9 @@ void ath6kl_cfg80211_ch_switch_notify(struct ath6kl_vif *vif, int freq,
 			break;
 		case ATH6KL_MODE_11NA_HT40:
 		case ATH6KL_MODE_11NG_HT40:
-			if (sec_ch == ATH6KL_HTINFO_EXTOFFSET_ABOVE)
+			if (sec_ch == IEEE80211_HT_PARAM_CHA_SEC_ABOVE)
 				type = NL80211_CHAN_HT40PLUS;
-			else if (sec_ch == ATH6KL_HTINFO_EXTOFFSET_BELOW)
+			else if (sec_ch == IEEE80211_HT_PARAM_CHA_SEC_BELOW)
 				type = NL80211_CHAN_HT40MINUS;
 			break;
 	}
