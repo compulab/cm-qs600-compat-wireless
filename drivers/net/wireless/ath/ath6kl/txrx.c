@@ -1136,6 +1136,9 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 		return -EINVAL;
 	}
 
+	if (is_zero_ether_addr(mac_addr))
+		return 0;
+
 	iface_name[0] = '\0';
 	strcpy(iface_name, vif->ndev->name);
 
