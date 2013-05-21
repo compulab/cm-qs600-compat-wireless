@@ -46,7 +46,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.1.15)
+#define __BUILD_VERSION_ (3.5.1.16)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -179,6 +179,9 @@
 #define ATH6KL_SCAN_TIMEOUT_LONG (8 * HZ)  /* in sec. */
 #define ATH6KL_SCAN_TIMEOUT_SHORT (5 * HZ) /* in sec. */
 #define ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM (20 * HZ)  /* in sec. */
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+#define ATH6KL_SCAN_RETRY_MAX	(2)
+#endif
 
 /* 4 way-handshake protect */
 #define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
@@ -984,6 +987,9 @@ struct ath6kl_vif {
 	u8 usr_bss_filter;
 	struct cfg80211_scan_request *scan_req;
 	struct timer_list vifscan_timer;
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+	u8 vifscan_timer_hit;
+#endif
 	struct timer_list shprotect_timer;
 	enum sme_state sme_state;
 	u8 intra_bss;

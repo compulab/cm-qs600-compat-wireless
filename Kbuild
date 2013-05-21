@@ -22,6 +22,7 @@ wlan-y += drivers/net/wireless/ath/ath6kl-3.5/p2p.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/ap.o
 
 ccflags-y += -DCONFIG_ATH6KL_UB134
+ccflags-y += -DCONFIG_ATH6KL_SCAN_RETRY
 ifneq ($(filter user userdebug, $(TARGET_BUILD_VARIANT)),)
 ccflags-y += -DCONFIG_ATH6KL_RECOVERY_MODE_USER=2
 else
