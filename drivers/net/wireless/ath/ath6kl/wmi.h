@@ -481,6 +481,8 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_SET_FRAMERATES_CMDID,
     WMI_SET_AP_PS_CMDID,
     WMI_SET_QOS_SUPP_CMDID,                  /* 0x49 */
+    WMI_SET_LARGE_APPIE_CMDID,
+    WMI_SET_RECOVERY_TEST_PARAMETER_CMDID,
     /* WMI_THIN_RESERVED_... mark the start and end
      * values for WMI_THIN_RESERVED command IDs. These
      * command IDs can be found in wmi_thin.h */
@@ -767,11 +769,8 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
 
     WMI_SET_SEAMLESS_MCC_SCC_SWITCH_FREQ_CMDID,
     WMI_SET_CHAIN_MASK_CMDID,
-    WMI_SET_MCASTRATE_CMDID,
-    WMI_SET_RECOVERY_TEST_PARAMETER_CMDID,
-    WMI_VOICE_DETECTION_ENABLE_CMDID,
-    WMI_SET_KEEPALIVE_CMDID_EXT,
-    WMI_SET_TXE_NOTIFY_CMDID,
+    WMI_SET_SCAN_CHAN_PLAN_CMDID,
+    WMI_SET_MCC_EVENT_MODE_CMDID,
 };
 
 /* WMI_SETPMKID_CMDID */
@@ -2598,6 +2597,16 @@ struct wmi_ap_idle_close_time_cmd {
 	u32 time_val_sec;
 };
 
+enum mcc_event_mode {
+	MCC_STOP_EVENT = 0,
+	MCC_START_EVENT
+};
+
+struct wmi_set_mcc_event_mode_cmd {
+	u8 send_event;
+} __packed;
+
+
 #ifdef __KERNEL__
 /* WMI_SET_AKMP_PARAMS_CMD */
 
@@ -3263,6 +3272,8 @@ struct ath6kl_vif *ath6kl_get_vif_by_index(struct ath6kl *ar, u8 if_idx);
 void *ath6kl_wmi_init(struct ath6kl *devt);
 void ath6kl_wmi_shutdown(struct wmi *wmi);
 void ath6kl_wmi_reset(struct wmi *wmi);
+void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 if_idx, u8
+		send_event);
 
 #endif
 #endif /* WMI_H */
