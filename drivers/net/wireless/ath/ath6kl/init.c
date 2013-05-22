@@ -948,7 +948,7 @@ static int ath6kl_fetch_otp_file(struct ath6kl *ar)
 	int ret;
 
 	if ((ar->target_type == TARGET_TYPE_AR6004) &&
-			((ar->testmode == 0) || ar->testmode == 4))
+			!test_bit(TESTMODE_TCMD, &ar->flag))
 		return 0;
 
 	if (ar->fw_otp != NULL)
@@ -979,21 +979,16 @@ static int ath6kl_fetch_testmode_file(struct ath6kl *ar)
 	char filename[100];
 	int ret;
 
-	if (ar->testmode == 0)
-		return 0;
-
-	ath6kl_dbg(ATH6KL_DBG_BOOT, "testmode %d\n", ar->testmode);
-
-	if (ar->testmode == 2) {
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_UTF)) {
 		if (ar->hw.fw.utf == NULL) {
-			ath6kl_warn("testmode 2 not supported\n");
+			ath6kl_warn("testmode UTF not supported\n");
 			return -EOPNOTSUPP;
 		}
 
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.utf);
 		set_bit(TESTMODE_TCMD, &ar->flag);
-	} else if (ar->testmode == 4) { /* epping mode */
+	} else if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING)) {
 		if (ar->hw.fw.epping == NULL) {
 			ath6kl_warn("EPPing is not supported\n");
 			return -EOPNOTSUPP;
@@ -1002,22 +997,24 @@ static int ath6kl_fetch_testmode_file(struct ath6kl *ar)
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.epping);
 		set_bit(TESTMODE_EPPING, &ar->flag);
-	} else {
+	} else if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_TCMD)) {
 		if (ar->hw.fw.tcmd == NULL) {
-			ath6kl_warn("testmode 1 not supported\n");
+			ath6kl_warn("testmode TCMD not supported\n");
 			return -EOPNOTSUPP;
 		}
 
 		snprintf(filename, sizeof(filename), "%s/%s",
 			 ar->hw.fw.dir, ar->hw.fw.tcmd);
 		set_bit(TESTMODE_TCMD, &ar->flag);
+	} else {
+		return 0;
 	}
 
 
 	ret = ath6kl_get_fw(ar, filename, &ar->fw, &ar->fw_len);
 	if (ret) {
-		ath6kl_err("Failed to get testmode %d firmware file %s: %d\n",
-			   ar->testmode, filename, ret);
+		ath6kl_err("Failed to get firmware file %s: %d\n",
+				filename, ret);
 		return ret;
 	}
 
@@ -1079,7 +1076,7 @@ static int ath6kl_fetch_testscript_file(struct ath6kl *ar)
 	char filename[100];
 	int ret;
 
-	if (ar->testmode != 2)
+	if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_UTF))
 		return 0;
 
 	if (ar->fw_testscript != NULL)
@@ -1370,12 +1367,13 @@ static int ath6kl_upload_board_file(struct ath6kl *ar)
 	if (ar->hw.board_addr != 0) {
 		board_address = ar->hw.board_addr;
 
-        /* Setting board address to 0x436400 for getting the UTF mode working.
-         * Since UTF firmware size is more so board data needs to be written to
-         * 0x436400. Without this change, UTF firmware download will overwrite
-         * the board data section.
+	/* Setting board address to 0x436400 for getting the UTF/TCMD mode
+	 * working. Since UTF/TCMD firmware size is more so board data needs to
+	 * be written to 0x436400. Without this change, UTF/TCMD firmware
+	 * download will overwrite the board data section.
          */
-        if (ar->testmode && ar->target_type == TARGET_TYPE_AR6004) {
+        if (test_bit(TESTMODE_TCMD, &ar->flag) &&
+			ar->target_type == TARGET_TYPE_AR6004) {
             board_address = 0x436400;
         }
 
@@ -1564,7 +1562,7 @@ static int ath6kl_upload_testscript(struct ath6kl *ar)
 	u32 address;
 	int ret;
 
-	if (ar->testmode != 2)
+	if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_UTF))
 		return 0;
 
 	if (ar->fw_testscript == NULL)
