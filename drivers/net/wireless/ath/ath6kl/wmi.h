@@ -207,6 +207,11 @@ enum wmi_data_hdr_flags {
 #define WMI_DATA_HDR_DUMMY_DATA_BIT_MASK                0x1
 #define WMI_DATA_HDR_DUMMY_DATA_BIT_SHIFT               12
 
+#define WMI_DATA_HDR_AMPDU_FLUSH_ALL_BIT_MASK           0x1
+#define WMI_DATA_HDR_AMPDU_FLUSH_ALL_BIT_SHIFT          12
+
+#define WMI_DATA_HDR_AMPDU_PARTIAL_FLUSH_BIT_MASK       0x1
+#define WMI_DATA_HDR_AMPDU_PARTIAL_FLUSH_BIT_SHIFT      13
 
 struct wmi_data_hdr {
 	s8 rssi;
@@ -309,6 +314,18 @@ static inline u16 wmi_data_hdr_is_dummy_data(struct wmi_data_hdr *dhdr)
 {
 	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_DUMMY_DATA_BIT_SHIFT) &
 				 WMI_DATA_HDR_DUMMY_DATA_BIT_MASK;
+}
+
+static inline u16 wmi_data_hdr_is_ampdu_flush_all(struct wmi_data_hdr *dhdr)
+{
+	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_AMPDU_FLUSH_ALL_BIT_SHIFT) &
+				 WMI_DATA_HDR_AMPDU_FLUSH_ALL_BIT_MASK;
+}
+
+static inline u16 wmi_data_hdr_is_ampdu_partial_flush(struct wmi_data_hdr *dhdr)
+{
+	return (le16_to_cpu(dhdr->info3) >> WMI_DATA_HDR_AMPDU_PARTIAL_FLUSH_BIT_SHIFT) &
+				 WMI_DATA_HDR_AMPDU_PARTIAL_FLUSH_BIT_MASK;
 }
 #endif
 /* Tx meta version definitions */
