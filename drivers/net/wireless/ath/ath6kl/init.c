@@ -215,6 +215,7 @@ static const struct ath6kl_hw hw_list[] = {
 		.board_addr			= 0x436400,
 		.refclk_hz                      = 40000000,
 		.uarttx_pin                     = 11,
+		.uart_baud_rate			= 115200,
 		.flags				= ATH6KL_HW_FLAG_64BIT_RATES |
 							ATH6KL_HW_FLAG_AP_INACTIVITY_MINS,
 		.fw = {
@@ -596,6 +597,23 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		ath6kl_err("bmi_write_memory for uart debug failed\n");
 		return -EIO;
 	}
+	if (param) {
+		/* Configure GPIO AR600x UART */
+		status = ath6kl_bmi_write_hi32(ar, hi_dbg_uart_txpin,
+					       ar->hw.uarttx_pin);
+		if (status)
+			return status;
+
+		/* Configure UART baud rate */
+		status = ath6kl_bmi_write_hi32(ar, hi_desired_baud_rate,
+					       ar->hw.uart_baud_rate);
+		if (status)
+			return status;
+
+		ath6kl_dbg(ATH6KL_DBG_BOOT,
+			   "uarttx_pin %d baud_rate %d",
+			    ar->hw.uarttx_pin, ar->hw.uart_baud_rate);
+	}
 
 	/*
 	 * Note: Even though the firmware interface type is
@@ -729,12 +747,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	if (ath6kl_set_htc_params(ar, MBOX_YIELD_LIMIT, 0))
 		/* use default number of control buffers */
 		return -EIO;
-
-	/* Configure GPIO AR600x UART */
-	status = ath6kl_bmi_write_hi32(ar, hi_dbg_uart_txpin,
-				       ar->hw.uarttx_pin);
-	if (status)
-		return status;
 
 	/* Configure target refclk_hz */
 	status = ath6kl_bmi_write_hi32(ar, hi_refclk_hz, ar->hw.refclk_hz);

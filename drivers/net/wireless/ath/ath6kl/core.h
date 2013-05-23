@@ -892,6 +892,7 @@ struct ath6kl {
 
 		const char *fw_board;
 		const char *fw_default_board;
+		u32 uart_baud_rate;
 	} hw;
 
 	u16 conf_flags;
