@@ -2202,8 +2202,6 @@ static int ath6kl_wow_suspend_vif(struct ath6kl_vif *vif,
 	if (ret)
 		return ret;
 
-	netif_stop_queue(vif->ndev);
-
 	if (vif->nw_type != AP_NETWORK) {
 		ret = ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
 					ATH6KL_MAX_WOW_LISTEN_INTL,
@@ -2335,8 +2333,6 @@ static int ath6kl_wow_resume_vif(struct ath6kl_vif *vif)
 		if (ret)
 			return ret;
 	}
-
-	netif_wake_queue(vif->ndev);
 
 	return 0;
 }
