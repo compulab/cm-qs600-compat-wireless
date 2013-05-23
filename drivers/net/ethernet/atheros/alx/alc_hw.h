@@ -1112,6 +1112,7 @@
 #define L1C_LEGCYPS_ECNC_PS_EN              BIT(0)
 #define L1D_LEGCYPS_DEF                     0x129D
 #define L1C_LEGCYPS_DEF                     0x36DD
+#define L1C_LEGCYPS_DEF_MPQ                 0x30DD
 
 #define L1C_MIIDBG_TST100BTCFG              0x36
 #define L1C_TST100BTCFG_NORMAL_BW_EN        BIT(15)

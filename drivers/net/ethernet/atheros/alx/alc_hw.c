@@ -248,7 +248,7 @@ u16 l1c_reset_phy(struct alx_hw *hw, bool pws_en, bool az_en, bool ptp_en)
 		l1c_write_phydbg(hw, true, L1C_MIIDBG_LEGCYPS,
 				 (hw->pci_devid == L1D_DEV_ID ||
 				  hw->pci_devid == L1D2_DEV_ID) ?
-				 L1D_LEGCYPS_DEF : L1C_LEGCYPS_DEF);
+				 L1D_LEGCYPS_DEF : L1C_LEGCYPS_DEF_MPQ);
 		/* hib */
 		l1c_write_phydbg(hw, true, L1C_MIIDBG_SYSMODCTRL,
 				 L1C_SYSMODCTRL_IECHOADJ_DEF);
