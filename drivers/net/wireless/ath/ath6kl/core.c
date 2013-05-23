@@ -351,9 +351,10 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	if (ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_TESTMODE_TCMD |
 				ATH6KL_MODULE_TESTMODE_UTF |
 				ATH6KL_MODULE_ENABLE_EPPING))
-		vfree(ar->fw);
-	else
 		kfree(ar->fw);
+	else
+		vfree(ar->fw);
+
 	kfree(ar->fw_patch);
 	kfree(ar->fw_testscript);
 
