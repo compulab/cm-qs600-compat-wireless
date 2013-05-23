@@ -263,7 +263,9 @@ static int htc_issue_packets(struct htc_target *target,
 		put_unaligned((u16) payload_len, &htc_hdr->payld_len);
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		/* IPA process the data in Big Endian */
-		if (ath6kl_debug_quirks(target->dev->ar, ATH6KL_MODULE_BAM2BAM))
+		if (ath6kl_debug_quirks(target->dev->ar, ATH6KL_MODULE_BAM2BAM)
+				&& !ath6kl_debug_quirks(target->dev->ar,
+					ATH6KL_MODULE_ENABLE_EPPING))
 			htc_hdr->payld_len = cpu_to_be16(htc_hdr->payld_len);
 #endif
 		htc_hdr->flags = packet->info.tx.flags;
