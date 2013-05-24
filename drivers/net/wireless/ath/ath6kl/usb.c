@@ -320,8 +320,8 @@ static void ath6kl_ipa_data_callback(void *priv, enum ipa_dp_evt_type evt,
 		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
 			"BAM-CM: %s: pipe: %d, Received skb from IPA module\n",
 		       	__func__, pipe->logical_pipe_num);
-		ath6kl_core_rx_complete(ar_usb->ar, skb,
-				pipe->logical_pipe_num);
+		skb_queue_tail(&pipe->rx_io_comp_queue, skb);
+		queue_work(ar_usb->ar->ath6kl_wq_rx, &pipe->rx_io_complete_work);
 		break;
 
 		/* IPA sends Tx complete Event to WLAN */
