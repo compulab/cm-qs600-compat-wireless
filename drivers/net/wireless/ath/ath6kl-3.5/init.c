@@ -16,6 +16,7 @@
  */
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
+#include <linux/vmalloc.h>
 #ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
 #include <linux/of.h>
 #include <linux/interrupt.h>
@@ -967,15 +968,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-#ifdef CE_SUPPORT
-	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB)
-		&& (ar->version.target_ver != AR6004_HW_3_0_VERSION))
-		param = 0;
-	else if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
-		param = 2;
-	else /* sdio */
-		param = 3;
-#else
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_DIAGNOSTIC))
 		param = 0;
 	else{
@@ -984,7 +976,7 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		else /* sdio */
 			param = 3;
 	}
-#endif
+
 	if (ath6kl_bmi_write(ar,
 		ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_pktlog_num_buffers)),
 		(u8 *)&param, 4) != 0) {
@@ -1152,14 +1144,14 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_reg_deinit(ar);
 
-	kfree(ar->fw_board);
-	kfree(ar->fw_otp);
-	kfree(ar->fw);
-	kfree(ar->fw_ext);
-	kfree(ar->fw_patch);
-	kfree(ar->fw_testscript);
-	kfree(ar->fw_softmac);
-	kfree(ar->fw_softmac_2);
+	vfree(ar->fw_board);
+	vfree(ar->fw_otp);
+	vfree(ar->fw);
+	vfree(ar->fw_ext);
+	vfree(ar->fw_patch);
+	vfree(ar->fw_testscript);
+	vfree(ar->fw_softmac);
+	vfree(ar->fw_softmac_2);
 
 	ath6kl_deinit_ieee80211_hw(ar);
 
@@ -1290,10 +1282,12 @@ fail:
 		return ret;
 
 	*fw_len = fw_entry->size;
-	*fw = kmemdup(fw_entry->data, fw_entry->size, GFP_KERNEL);
+	*fw = vmalloc(fw_entry->size);
 
 	if (*fw == NULL)
 		ret = -ENOMEM;
+
+	memcpy(*fw, fw_entry->data, fw_entry->size);
 
 	release_firmware(fw_entry);
 

@@ -3403,21 +3403,27 @@ static ssize_t ath6kl_txseries_write(struct file *file,
 	struct ath6kl *ar = file->private_data;
 	struct ath6kl_vif *vif;
 	u64 tx_series;
-	int ret;
+	int ret, i;
 
-	vif = ath6kl_vif_first(ar);
-	if (!vif)
-		return -EIO;
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
 
-	ret = kstrtou64_from_user(user_buf, count, 0, &tx_series);
-	if (ret)
-		return ret;
+		if (vif) {
 
-	ar->debug.set_tx_series = tx_series;
+			ret = kstrtou64_from_user(user_buf, count, 0,
+						&tx_series);
+			if (ret)
+				return ret;
 
-	if (ath6kl_wmi_set_tx_select_rates_on_all_mode(ar->wmi, vif->fw_vif_idx,
+			ar->debug.set_tx_series = tx_series;
+
+			if (ath6kl_wmi_set_tx_select_rates_on_all_mode(
+							ar->wmi,
+							vif->fw_vif_idx,
 							tx_series))
-		return -EIO;
+				return -EIO;
+		}
+	}
 
 	return count;
 }
@@ -3798,6 +3804,128 @@ static const struct file_operations fops_pattern_gen = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
+
+
+static ssize_t ath6kl_wowpattern_write(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	int ret;
+
+	u8 pattern_idx = 0;
+	u8 pattern_offset;
+	u8 pattern_buf[128];
+	u8 pattern_mask[16];
+	u8 pattern_len;
+	u8 mask_idx = 0;
+	u32 host_req_delay = WOW_HOST_REQ_DELAY;
+
+	/* save user command */
+	u8 buf[512];
+	unsigned int len = 0;
+	char *sptr, *token;
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+	buf[len] = '\0';
+	sptr = buf;
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+
+	/* get pattern Idx */
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+	if (kstrtou8(token, 0, &pattern_idx))
+		return -EINVAL;
+	if (pattern_idx > 16)
+		return -EINVAL;
+
+	/* get pattern offset */
+	token = strsep(&sptr, " ");
+
+	/* delete wow pattern if no futher argument */
+	if (!token) {
+		ath6kl_wmi_del_wow_pattern_cmd(ar->wmi,
+								vif->fw_vif_idx,
+								WOW_LIST_ID,
+								pattern_idx);
+		return count;
+	}
+	if (kstrtou8(token, 0, &pattern_offset))
+		return -EINVAL;
+	/* get pattern path */
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	pattern_len = readpatternfile(token, pattern_buf, sizeof(pattern_buf));
+
+	if (!pattern_len || pattern_len > 128)
+		return -EINVAL;
+
+	/* Reset wakeup delay time to 2 secs for sdio, keep 5 secs for
+	 * usb now
+	 */
+	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
+		host_req_delay = 2000;
+
+	/* for hsic mode, reduce the wakeup time to 2 secs */
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
+		host_req_delay = 2000;
+
+	/* generate bytemask by pattern length */
+	for (mask_idx = 0; mask_idx < pattern_len/8; mask_idx++)
+		pattern_mask[mask_idx] = 0xff;
+
+	if (pattern_len % 8)
+		pattern_mask[mask_idx] = (1 << (pattern_len % 8)) - 1;
+
+	ath6kl_wmi_del_wow_pattern_cmd(ar->wmi,
+							vif->fw_vif_idx,
+							WOW_LIST_ID,
+							pattern_idx);
+
+	ret = ath6kl_wmi_add_wow_ext_pattern_cmd(ar->wmi,
+							vif->fw_vif_idx,
+							WOW_LIST_ID,
+							pattern_len,
+							pattern_idx,
+							pattern_offset,
+							pattern_buf,
+							pattern_mask);
+
+	if (ret)
+		return -EINVAL;
+
+	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
+					ATH6KL_WOW_MODE_ENABLE,
+					WOW_FILTER_OPTION_PATTERNS,
+					host_req_delay);
+
+	if (ret)
+		return -EINVAL;
+
+	set_bit(WLAN_WOW_ENABLE, &vif->flags);
+
+	ar->get_wow_pattern = true;
+
+	return count;
+}
+
+
+static const struct file_operations fops_wowpattern_gen = {
+	.write = ath6kl_wowpattern_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 static ssize_t ath6kl_p2p_flowctrl_stat_read(struct file *file,
 				char __user *user_buf,
@@ -5634,6 +5762,8 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("dtim_ext", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_dtim_ext);
 
+	debugfs_create_file("wow_pattern", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_wowpattern_gen);
 	return 0;
 }
 
