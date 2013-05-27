@@ -31,12 +31,14 @@
 unsigned int debug_mask;
 static unsigned int wow_mode;
 static unsigned int ath6kl_p2p;
+static unsigned int devmode = ATH6KL_DEFAULT_DEV_MODE;
 static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
 
 module_param(debug_mask, uint, 0644);
 module_param(wow_mode, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
 module_param(debug_quirks, uint, 0644);
+module_param(devmode, uint, 0644);
 
 void ath6kl_core_tx_complete(struct ath6kl *ar, struct sk_buff *skb)
 {
@@ -167,6 +169,14 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	else
 		ar->wow_suspend_mode = 0;
 
+	ar->vif_max = 1;
+	if (devmode != ATH6KL_SINGLE_DEV_MODE) {
+		ar->vif_max = 2;
+		if(ar->vif_max > 1 && !ar->p2p) {
+			ar->max_norm_iface = 2;
+		}
+	}
+
 	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_UART_DEBUG))
 		ar->conf_flags |= ATH6KL_CONF_UART_DEBUG;
 
@@ -269,7 +279,6 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 
 	ar->p2p = !!ath6kl_p2p;
 	ar->dev = dev;
-
 	ar->vif_max = 1;
 	ar->inter_bss = true;
 	ar->max_norm_iface = 1;
