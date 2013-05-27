@@ -3096,6 +3096,11 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 				return -EINVAL;
 			}
 		}
+		if (ar->acs_in_prog)
+			vif->ap_hold_conn = 1;
+		else
+			ar->acs_in_prog = 1;
+
 	} else {
                 band = info->channel->band;
                 p.ch = cpu_to_le16(info->channel->center_freq);
@@ -3154,9 +3159,14 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
                 return res;
 
 	memcpy(&vif->profile, &p, sizeof(p));
-	res = ath6kl_wmi_ap_profile_commit(ar->wmi, vif->fw_vif_idx, &p);
-	if (res < 0)
-		return res;
+
+	if (!vif->ap_hold_conn) {
+		res = ath6kl_wmi_ap_profile_commit(ar->wmi,
+							vif->fw_vif_idx, &p);
+		if (res < 0)
+			return res;
+	} else
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "Wait for ACS of prev AP\n");
 
 	if (!(cfg80211_find_ie(WLAN_EID_COUNTRY, info->beacon.tail, info->beacon.tail_len)))
 		ath6kl_wmi_set_regdomain_cmd(ar->wmi, WMI_DISABLE_REGULATORY_CODE);
