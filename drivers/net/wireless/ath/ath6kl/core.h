@@ -1064,6 +1064,11 @@ enum ath6kl_bam_tx_evt_type {
 
 #endif
 
+enum ATH6KL_WLAN_MODE {
+	ATH6KL_SINGLE_DEV_MODE     = 1,
+	ATH6KL_DEFAULT_DEV_MODE    = 2,
+};
+
 static inline struct ath6kl *ath6kl_priv(struct net_device *dev)
 {
 	return ((struct ath6kl_vif *) netdev_priv(dev))->ar;
