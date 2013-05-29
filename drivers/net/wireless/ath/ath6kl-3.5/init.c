@@ -16,6 +16,7 @@
  */
 #include <linux/moduleparam.h>
 #include <linux/errno.h>
+#include <linux/vmalloc.h>
 #ifndef CE_OLD_KERNEL_SUPPORT_2_6_23
 #include <linux/of.h>
 #include <linux/interrupt.h>
@@ -967,7 +968,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* Number of buffers used on the target for logging packets; use
 	 * zero to disable logging */
-
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_DIAGNOSTIC))
 		param = 0;
 	else{
@@ -1144,14 +1144,14 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 
 	ath6kl_reg_deinit(ar);
 
-	kfree(ar->fw_board);
-	kfree(ar->fw_otp);
-	kfree(ar->fw);
-	kfree(ar->fw_ext);
-	kfree(ar->fw_patch);
-	kfree(ar->fw_testscript);
-	kfree(ar->fw_softmac);
-	kfree(ar->fw_softmac_2);
+	vfree(ar->fw_board);
+	vfree(ar->fw_otp);
+	vfree(ar->fw);
+	vfree(ar->fw_ext);
+	vfree(ar->fw_patch);
+	vfree(ar->fw_testscript);
+	vfree(ar->fw_softmac);
+	vfree(ar->fw_softmac_2);
 
 	ath6kl_deinit_ieee80211_hw(ar);
 
@@ -1282,10 +1282,12 @@ fail:
 		return ret;
 
 	*fw_len = fw_entry->size;
-	*fw = kmemdup(fw_entry->data, fw_entry->size, GFP_KERNEL);
+	*fw = vmalloc(fw_entry->size);
 
 	if (*fw == NULL)
 		ret = -ENOMEM;
+
+	memcpy(*fw, fw_entry->data, fw_entry->size);
 
 	release_firmware(fw_entry);
 
@@ -3165,6 +3167,9 @@ int ath6kl_core_init(struct ath6kl *ar)
 	ar->green_tx_params.force_back_off =
 		ATH6KL_GTX_FORCE_BACKOFF;
 
+	/* init dtim ext params */
+	ar->dtim_ext = 1;
+
 	ret = ath6kl_init_hw_start(ar);
 	if (ret) {
 		ath6kl_err("Failed to start hardware: %d\n", ret);
@@ -3219,6 +3224,11 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ath6kl_info("Enable Firmware crash notiry.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
+
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_SKB_DUP))
+		ar->conf_flags |= ATH6KL_CONF_SKB_DUP;
+	else
+		ath6kl_info(" skb copy disable\n");
 
 	return ret;
 
