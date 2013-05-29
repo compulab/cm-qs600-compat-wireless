@@ -518,6 +518,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 				u16 channel, u8 sec_ch, u8 phymode)
 {
 	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *vif_tmp;
 	struct ath6kl_req_key *ik;
 	int res;
 	u8 key_rsc[ATH6KL_KEY_SEQ_LEN];
@@ -525,6 +526,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 	ik = &ar->ap_mode_bkey;
 
 	/* update the ch info */
+	ar->acs_in_prog = 0;
+	vif->ap_hold_conn = 0;
 	vif->bss_ch = channel;
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -572,6 +575,21 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 	netif_carrier_on(vif->ndev);
 	ath6kl_lte_coex_update_wlan_data(vif, channel);
 
+	list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+		if (vif_tmp->nw_type == AP_NETWORK) {
+			if (vif_tmp->ap_hold_conn && !ar->acs_in_prog) {
+				vif_tmp->ap_hold_conn = 0;
+				ar->acs_in_prog = 1;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Apply ACS for next AP\n");
+				res = ath6kl_wmi_ap_profile_commit(ar->wmi,
+					vif_tmp->fw_vif_idx, &vif_tmp->profile);
+				if (res)
+					ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Ap profile commit failure");
+			}
+		}
+	}
 }
 
 void ath6kl_connect_ap_mode_sta(struct ath6kl_vif *vif, u16 aid, u8 *mac_addr,

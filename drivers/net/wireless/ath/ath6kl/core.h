@@ -964,6 +964,7 @@ struct ath6kl {
 
 	u32 tx_psq_threshold;
 	bool is_mcc_enabled;
+	bool acs_in_prog;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
