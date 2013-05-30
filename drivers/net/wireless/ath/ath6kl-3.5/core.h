@@ -33,6 +33,7 @@
 #ifdef CONFIG_ANDROID
 #ifdef CONFIG_HAS_WAKELOCK
 #include <linux/wakelock.h>
+#include <asm/mach-types.h>
 #endif
 #endif
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -57,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.358)
+#define __BUILD_VERSION_ (3.5.0.374)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -66,9 +67,6 @@
 #ifdef ATH6KL_DIAGNOSTIC
 #include "diagnose.h"
 #endif
-
-/* for WMM issues, we might need to enlarge the number of cookies */
-#define ATH6KL_USE_LARGE_COOKIE      1
 
 #ifndef CONFIG_ATH6KL_MCC
 #define CONFIG_ATH6KL_MCC
@@ -207,6 +205,10 @@
  */
 #undef ATH6KL_SUPPORT_NL80211_QCA
 #endif
+
+#ifndef machine_is_apq8064_dma
+#define machine_is_apq8064_dma() 0
+#endif
 #endif
 
 /*
@@ -311,19 +313,18 @@
 /* Extra bytes for htc header alignment */
 #define ATH6KL_HTC_ALIGN_BYTES 3
 
-/* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
-#ifdef ATH6KL_USE_LARGE_COOKIE
-#define MAX_DEF_COOKIE_NUM                270
-#define MAX_HI_COOKIE_NUM                 27	/* 10% of MAX_COOKIE_NUM */
-#else
-#define MAX_DEF_COOKIE_NUM                180
-#define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
-#endif
+/*
+ * MAX_HI_COOKIE_NUM are reserved for high priority traffic.
+ * Need more cookies for WMM purpose.
+ */
+#define MAX_DEF_COOKIE_NUM                400
+#define MAX_HI_COOKIE_NUM                 40	/* 10% of MAX_COOKIE_NUM */
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
-#define MAX_COOKIE_CTRL_NUM	((MAX_DEF_COOKIE_NUM / WMM_NUM_AC) + 2)
+#define MAX_COOKIE_CTRL_NUM	(64 + 2)
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
+#define MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL MAX_COOKIE_CTRL_NUM
 
 #define DISCON_TIMER_INTVAL               10000  /* in msec */
 #define A_DEFAULT_LISTEN_INTERVAL         100
@@ -376,12 +377,18 @@
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 /*
- * 1500 ms. = RX EAPOL request +
+ * 1250 ms. = RX EAPOL +
+ *            ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE +
  *            supplicant procressing time +
- *            supplicant TX EAPOL response +
- *            wait next EAPOL request
+ *            TX EAPOL +
+ *            wait next RX EAPOL
+ * or,
+ *          = TX EAPOL +
+ *            peer's supplicant procressing time +
+ *            RX EAPOL +
+ *            wait next TX EAPOL
  */
-#define ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE	(msecs_to_jiffies(1500))
+#define ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE	(msecs_to_jiffies(1250))
 
 /* default roam mode for different situation */
 #if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
@@ -479,6 +486,7 @@ struct ath6kl_ioctl_cmd {
 #define ANDROID_SETBAND_5G		1
 #define ANDROID_SETBAND_2G		2
 #define ANDROID_SETBAND_NO_DFS		3
+#define ANDROID_SETBAND_NO_CH		4
 
 struct ath6kl_android_wifi_priv_cmd {
 	char *buf;
@@ -709,16 +717,12 @@ enum ath6kl_recovery_mode {
 #define AGGR_TX_MAX_NUM		6
 #define AGGR_TX_TIMEOUT         4	/* in ms */
 
-#define AGGR_TX_PROG_HS_THRESH		1200
+#define AGGR_TX_PROG_HS_THRESH		1000
 #define AGGR_TX_PROG_HS_FACTOR		2
 #define AGGR_TX_PROG_NS_THRESH		250
 #define AGGR_TX_PROG_NS_FACTOR		4
 #define AGGR_TX_PROG_CHECK_INTVAL	(1 * HZ)
-#ifdef CONFIG_ANDROID
-#define AGGR_TX_PROG_HS_MAX_NUM		18
-#else
 #define AGGR_TX_PROG_HS_MAX_NUM		22
-#endif
 #define AGGR_TX_PROG_HS_TIMEOUT		8	/* in ms */
 
 #define AGGR_GET_TXTID(_p, _x)           (&(_p->tx_tid[(_x)]))
@@ -751,6 +755,7 @@ enum scanband_type {
 	SCANBAND_TYPE_P2PCHAN,		/* Scan P2P channel only */
 	SCANBAND_TYPE_2_P2PCHAN,	/* Scan P2P channel 2 times */
 	SCANBAND_TYPE_IGNORE_DFS,	/* Scan all supported channel but DFS */
+	SCANBAND_TYPE_IGNORE_CH,	/* Scan all supported channel but CHs */
 };
 
 #define ATH6KL_RSN_CAP_NULLCONF		(0xffff)
@@ -1382,6 +1387,7 @@ struct ath6kl_vif {
 	struct p2p_ps_info *p2p_ps_info_ctx;
 	enum scanband_type scanband_type;
 	u32 scanband_chan;
+	u16 scanband_ignore_chan[64];		/* WMI_MAX_CHANNELS */
 	struct ath6kl_scan_plan scan_plan;
 	struct ap_keepalive_info *ap_keepalive_ctx;
 	struct ap_acl_info *ap_acl_ctx;
@@ -1710,6 +1716,8 @@ struct ath6kl {
 		u8 force_passive;
 		u16 bgscan_int;
 		enum wmi_roam_mode roam_mode;
+#define ROAM_NULL_5G_BIAS	(255)
+		u8 roam_5g_bias;
 
 		struct smps_param {
 			u8 flags;
@@ -1782,6 +1790,9 @@ struct ath6kl {
 
 	/* Force wakeup interval = DTIM * dtim_ext */
 	u8 dtim_ext;
+
+	/* set if wow pattern set by debug_fs */
+	bool get_wow_pattern;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1995,7 +2006,7 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				s32 snr,
 				struct ieee80211_channel *channel);
 
-#ifdef CONFIG_ANDROID_8960_SDIO
+#ifdef CONFIG_ANDROID
 void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
 #endif
@@ -2003,6 +2014,7 @@ void ath6kl_sdio_exit_msm(void);
 #ifdef ATH6KL_BUS_VOTE
 int ath6kl_hsic_init_msm(u8 *has_vreg);
 void ath6kl_hsic_exit_msm(void);
+int ath6kl_hsic_bind(int bind);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);

@@ -1238,7 +1238,7 @@ static int ath6kl_wmi_ready_event_rx(struct wmi *wmi, u8 *datap, int len)
  * WMI_SET_LRSSI_SCAN_PARAMS. Subtract 96 from RSSI to get the signal level
  * in dBm.
  */
-int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
+int ath6kl_wmi_set_roam_ctrl_cmd(struct wmi *wmi,
 	u8 fw_vif_idx,
 	u16  lowrssi_scan_period,
 	u16  lowrssi_scan_threshold,
@@ -1305,6 +1305,26 @@ int ath6kl_wmi_set_roam_mode_cmd(struct wmi *wmi, enum wmi_roam_mode mode)
 	cmd->roam_ctrl = WMI_SET_ROAM_MODE;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "set roam mode %d\n", mode);
+	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
+				   NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_roam_5g_bias_cmd(struct wmi *wmi, u8 bias_5g)
+{
+	struct sk_buff *skb;
+	struct roam_ctrl_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct roam_ctrl_cmd *) skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info.bias5G = bias_5g;
+	cmd->roam_ctrl = WMI_SET_HOST_5G_BIAS;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "set roam 5g bias %d\n", bias_5g);
 	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
 				   NO_SYNC_WMIFLAG);
 }
@@ -1916,6 +1936,12 @@ static int ath6kl_wmi_csa_event_rx(struct ath6kl_vif *vif,
 					u8 *datap, int len)
 {
 	ath6kl_tgt_ce_csa_event_rx(vif, datap, len);
+	return 0;
+}
+static int ath6kl_wmi_ce_get_ctl_event_rx(struct ath6kl_vif *vif,
+					u8 *datap, int len)
+{
+	ath6kl_tgt_ce_get_ctl_event(vif, datap, len);
 	return 0;
 }
 #endif
@@ -2610,6 +2636,9 @@ int ath6kl_wmi_powermode_cmd(struct wmi *wmi, u8 if_idx, u8 pwr_mode)
 	struct wmi_power_mode_cmd *cmd;
 	struct ath6kl_vif *vif;
 	int ret;
+
+	if ((pwr_mode != REC_POWER) && (pwr_mode != MAX_PERF_POWER))
+		return -EINVAL;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
 	if (!skb)
@@ -4745,6 +4774,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_CSA_EVENTID\n");
 		ret = ath6kl_wmi_csa_event_rx(vif, datap, len);
 		break;
+	case WMI_GET_CTL_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_CTL_EVENTID\n");
+		ret = ath6kl_wmi_ce_get_ctl_event_rx(vif, datap, len);
+		break;
 #endif
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
@@ -5094,7 +5127,8 @@ int ath6kl_wmi_set_apsd_buffered_traffic_cmd(struct wmi *wmi, u8 if_idx,
 
 int ath6kl_wmi_add_wow_ext_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   u8 list_id, u8 filter_size,
-				   u8 filter_id, u8 *filter, u8 *mask)
+				   u8 filter_id, u8 filter_offset,
+				   u8 *filter, u8 *mask)
 {
 	struct sk_buff *skb;
 	struct wmi_add_wow_ext_pattern_cmd *cmd;
@@ -5122,7 +5156,7 @@ int ath6kl_wmi_add_wow_ext_pattern_cmd(struct wmi *wmi, u8 if_idx,
 
 	cmd->filter_list_id = list_id;
 	cmd->filter_id = filter_id;
-	cmd->filter_offset = 0;
+	cmd->filter_offset = filter_offset;
 	cmd->filter_size = filter_size;
 
 	ath6kl_dbg(ATH6KL_DBG_WOWLAN, "Adding wow pattern\n");
