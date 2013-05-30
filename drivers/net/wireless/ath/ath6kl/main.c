@@ -491,7 +491,7 @@ int ath6kl_is_mcc_enabled (struct ath6kl *ar)
         struct ath6kl_vif *vif = NULL;
         int mcc_enabled = 0;
 
-	if (ar->num_vif < 1)
+	if (ar->num_vif < 2)
 		return mcc_enabled;
 
 	spin_lock_bh(&ar->list_lock);
