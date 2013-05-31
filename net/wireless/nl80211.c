@@ -301,6 +301,7 @@ static const struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] = {
 	[NL80211_ATTR_STA_CAP_REQ] = { .type = NLA_U8 },
 	[NL80211_ATTR_ACS] = { .type = NLA_U8 },
 	[NL80211_ATTR_HT_2040_MODE] = { .type = NLA_U8 },
+	[NL80211_ATTR_MAX_NUM_STA] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
@@ -2617,6 +2618,10 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		params.acl_mac =
 			!!nla_get_u8(info->attrs[NL80211_ATTR_MAC_ACL]);
 	}
+
+	if (info->attrs[NL80211_ATTR_MAX_NUM_STA])
+		params.max_num_sta =
+			nla_get_u32(info->attrs[NL80211_ATTR_MAX_NUM_STA]);
 
 	err = rdev->ops->start_ap(&rdev->wiphy, dev, &params);
 	if (!err) {

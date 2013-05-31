@@ -1930,6 +1930,10 @@ struct wmi_setinterbss_cmd {
 	bool enable;
 } __packed;
 
+struct wmi_set_max_num_cmd {
+	u32 max_num_sta;
+} __packed;
+
 #define AP_11BG_RATESET1        1
 #define AP_11BG_RATESET2        2
 #define DEF_AP_11BG_RATESET     AP_11BG_RATESET1
@@ -3209,8 +3213,11 @@ u8 ath6kl_wmi_get_traffic_class(u8 user_priority);
 u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri);
 /* AP mode */
 int ath6kl_wmi_ap_hidden_ssid(struct wmi *wmi, u8 if_idx, bool enable);
+
 int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 				 struct wmi_connect_cmd *p);
+
+int ath6kl_wmi_ap_set_num_sta_cmd(struct wmi *wmi, u8 if_idx, u32 max_num_sta);
 
 int ath6kl_wmi_ap_set_mlme(struct wmi *wmip, u8 if_idx, u8 cmd,
 			   const u8 *mac, u16 reason);

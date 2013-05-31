@@ -718,6 +718,7 @@ struct ath6kl_vif {
 	struct wmi_ap_acl_list ap_acl_list;
 	u32 cookie_used;
 	u32 intra_bss_data_cnt;
+	u32 max_num_sta;
 };
 
 #define WOW_LIST_ID		0

@@ -2884,6 +2884,8 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct ath6kl_htcap *htcap;
 	int inactivity_timeout = 0;
 	struct ieee80211_channel *tmp_channel = NULL;
+	u32 max_num_sta = 0;
+
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:\n", __func__);
 
@@ -2892,6 +2894,19 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	if (vif->next_mode != AP_NETWORK)
 		return -EOPNOTSUPP;
+
+	list_for_each_entry(tmp_vif, &ar->vif_list, list)
+		if (tmp_vif->nw_type == AP_NETWORK)
+			max_num_sta += tmp_vif->max_num_sta;
+
+	if (max_num_sta + info->max_num_sta > AP_MAX_NUM_STA)
+		return -EINVAL;
+
+	ret = ath6kl_wmi_ap_set_num_sta_cmd(ar->wmi, vif->fw_vif_idx,
+			info->max_num_sta);
+	if (ret)
+		return ret;
+	vif->max_num_sta = info->max_num_sta;
 
 	res = ath6kl_set_ies(vif, &info->beacon);
 
