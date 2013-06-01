@@ -2273,7 +2273,8 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 		}
 
 		if (skb1 && conn) {
-			vif->intra_bss_data_cnt++;
+			if (vif->intra_bss_data_cnt < vif->cookie_used)
+				vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skb1, conn->vif->ndev);
 		}
 
@@ -2339,7 +2340,8 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		}
 
 		if (skb1 && conn) {
-			vif->intra_bss_data_cnt++;
+			if (vif->intra_bss_data_cnt < vif->cookie_used)
+				vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skb1, conn->vif->ndev);
 		}
 
@@ -3049,7 +3051,6 @@ static void ath6kl_uapsd_trigger_frame_rx(struct ath6kl_vif *vif,
 		if ((is_apsdq_empty) || (!num_frames_to_deliver))
 			conn->sta_flags |= STA_PS_APSD_EOSP;
 
-		vif->intra_bss_data_cnt++;
 		ath6kl_data_tx(skb, vif->ndev);
 		conn->sta_flags &= ~(STA_PS_APSD_TRIGGER);
 		conn->sta_flags &= ~(STA_PS_APSD_EOSP);
@@ -3274,7 +3275,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 				conn->mgmt_psq_len = 0;
 				while ((skbuff = skb_dequeue(&conn->psq))) {
 					spin_unlock_bh(&conn->psq_lock);
-					vif->intra_bss_data_cnt++;
 					ath6kl_data_tx(skbuff, vif->ndev);
 					spin_lock_bh(&conn->psq_lock);
 				}
@@ -3282,7 +3282,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 				is_apsdq_empty = skb_queue_empty(&conn->apsdq);
 				while ((skbuff = skb_dequeue(&conn->apsdq))) {
 					spin_unlock_bh(&conn->psq_lock);
-					vif->intra_bss_data_cnt++;
 					ath6kl_data_tx(skbuff, vif->ndev);
 					spin_lock_bh(&conn->psq_lock);
 				}
@@ -3379,7 +3378,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 			 * OS stack as well as on the air.
 			 */
 			skb1 = skb_copy(skb, GFP_ATOMIC);
-			vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skb1, conn->vif->ndev);
 		}
 	}
@@ -4504,7 +4502,6 @@ void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid)
 		conn->mgmt_psq_len = 0;
 		while ((skbuff = skb_dequeue(&conn->psq))) {
 			spin_unlock_bh(&conn->psq_lock);
-			vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skbuff, vif->ndev);
 			spin_lock_bh(&conn->psq_lock);
 		}
@@ -4512,7 +4509,6 @@ void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid)
 		is_apsdq_empty = skb_queue_empty(&conn->apsdq);
 		while ((skbuff = skb_dequeue(&conn->apsdq))) {
 			spin_unlock_bh(&conn->psq_lock);
-			vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skbuff, vif->ndev);
 			spin_lock_bh(&conn->psq_lock);
 		}
