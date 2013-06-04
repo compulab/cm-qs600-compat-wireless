@@ -561,16 +561,12 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	connect.ep_cb.rx_refill = ath6kl_rx_refill;
 	connect.ep_cb.tx_full = ath6kl_tx_queue_full;
 
-	/*
-	 * Set the max queue depth so that our ath6kl_tx_queue_full handler
-	 * gets called.
-	*/
-	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH;
 	connect.ep_cb.rx_refill_thresh = ATH6KL_MAX_RX_BUFFERS / 4;
 	if (!connect.ep_cb.rx_refill_thresh)
 		connect.ep_cb.rx_refill_thresh++;
 
 	/* connect to control service */
+	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL;
 	connect.svc_id = WMI_CONTROL_SVC;
 	if (ath6kl_connectservice(ar, &connect, "WMI CONTROL"))
 		return -EIO;
@@ -600,6 +596,11 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	connect.conn_flags &= ~HTC_CONN_FLGS_THRESH_MASK;
 	connect.conn_flags |= HTC_CONN_FLGS_THRESH_LVL_HALF;
 
+	/*
+	 * Set the max queue depth so that our ath6kl_tx_queue_full handler
+	 * gets called.
+	 */
+	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH;
 	connect.svc_id = WMI_DATA_BE_SVC;
 
 	if (ath6kl_connectservice(ar, &connect, "WMI DATA BE"))
@@ -1019,6 +1020,10 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	param |= HI_OPTION_ENABLE_WLAN_HB;
 #endif
 
+	/* Enable single chain in wow */
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN))
+		param |= HI_OPTION_WOW_SINGLE_CHAIN;
+
 	/* Set firmware to support MCC */
 	if (ar->p2p_concurrent)
 		param |= HI_OPTION_MCC_ENABLE ;
@@ -1240,7 +1245,7 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 
 	fp = openFile(full_patch, O_RDONLY, 0);
 	if (fp != NULL) {
-		temp_buf = kmalloc(total_len, GFP_KERNEL);
+		temp_buf = vmalloc(total_len);
 		if (temp_buf != NULL) {
 			memset(buf, 0, MAX_BUFFER_SIZE);
 			ret = readFile(fp, buf, MAX_BUFFER_SIZE);
@@ -1262,13 +1267,16 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	if (status == 0) {
 		if (temp_buf != NULL) {
 			*fw_len = total_len;
-			*fw = kmemdup(temp_buf, total_len, GFP_KERNEL);
+			*fw = vmalloc(total_len);
+
 			if (*fw == NULL)
 				status = -ENOMEM;
+			else
+				memcpy(*fw, temp_buf, total_len);
 		}
 	}
 	if (temp_buf != NULL)
-		kfree(temp_buf);
+		vfree(temp_buf);
 fail:
 	set_fs(oldfs);
 #undef MAX_BUFFER_SIZE
@@ -3220,6 +3228,22 @@ int ath6kl_core_init(struct ath6kl *ar)
 		}
 	}
 
+#ifdef CE_SUPPORT
+	/* set power saving off as default for wlan0
+	 * (target side default is PS on)
+	*/
+	{
+		struct ath6kl_vif *vif_first;
+		vif_first = ath6kl_vif_first(ar);
+		u8 pwr_mode;
+		pwr_mode = MAX_PERF_POWER;
+		if (ath6kl_wmi_powermode_cmd(ar->wmi, vif_first->fw_vif_idx,
+			pwr_mode) != 0)
+			vif_first->wdev.ps = NL80211_PS_ENABLED;
+		else
+			vif_first->wdev.ps = NL80211_PS_DISABLED;
+	}
+#endif
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY)) {
 		ath6kl_info("Enable Firmware crash notiry.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;

@@ -753,11 +753,14 @@ enum wmi_cmd_id {
 	WMI_SET_CHAIN_MASK_CMDID,
 
 	WMI_SET_SCAN_CHAN_PLAN_CMDID,
-	WMI_SET_DTIM_EXT_CMDID,
+	WMI_SET_MCC_EVENT_MODE_CMDID,
 	WMI_GET_CTL,
-/* merge from olca mainline for align command id - end */
 
-	WMI_SET_CREDIT_BYPASS_CMDID,
+/* merge from olca mainline for align command id - end
+ * private commands shall grow back from 0xFFFE
+ */
+	WMI_SET_DTIM_EXT_CMDID = 0xFFFD,
+	WMI_SET_CREDIT_BYPASS_CMDID = 0xFFFE,
 };
 
 enum wmi_mgmt_frame_type {
@@ -1587,6 +1590,11 @@ enum wmi_event_id {
 	WMI_GET_WIDIMODE_EVENTID,/* 0x902C */
 	WMI_CSA_EVENTID,
 	WMI_GET_CTL_EVENTID,
+
+/* merge from olca mainline for align command id - end
+ * private commands shall grow back from 0xFFFE
+ */
+	WMI_EVENTID_LAST = 0xFFFE,
 };
 
 struct wmi_ready_event_2 {
@@ -1697,6 +1705,7 @@ enum wmi_roam_ctrl {
 	WMI_SET_ROAM_MODE,
 	WMI_SET_HOST_BIAS,
 	WMI_SET_LRSSI_SCAN_PARAMS,
+	WMI_SET_HOST_5G_BIAS,
 };
 
 enum wmi_roam_mode {
@@ -1728,6 +1737,7 @@ struct roam_ctrl_cmd {
 		u8 bssid[ETH_ALEN]; /* WMI_FORCE_ROAM */
 		u8 roam_mode; /* WMI_SET_ROAM_MODE */
 		struct bss_bias_info bss; /* WMI_SET_HOST_BIAS */
+		u8 bias5G; /* WMI_SET_HOST_5G_BIAS */
 		struct low_rssi_scan_params params; /* WMI_SET_LRSSI_SCAN_PARAMS
 						     */
 	} __packed info;
@@ -3350,13 +3360,14 @@ int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 				u8 *kek, u8 *kck, u8 *replay_ctr);
 
-int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
+int ath6kl_wmi_set_roam_ctrl_cmd(struct wmi *wmi,
 	u8 fw_vif_idx,	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
 	u16  lowrssi_roam_threshold,
 	u8   roam_rssi_floor);
 
 int ath6kl_wmi_force_roam_cmd(struct wmi *wmi, const u8 *bssid);
 int ath6kl_wmi_set_roam_mode_cmd(struct wmi *wmi, enum wmi_roam_mode mode);
+int ath6kl_wmi_set_roam_5g_bias_cmd(struct wmi *wmi, u8 bias_5g);
 
 /* AP mode */
 int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
