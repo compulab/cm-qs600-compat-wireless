@@ -1566,8 +1566,6 @@ static struct net_device *ath6kl_cfg80211_add_iface(struct wiphy *wiphy,
 	if (!ndev)
 		return ERR_PTR(-ENOMEM);
 
-	ar->num_vif++;
-
 	return ndev;
 }
 
@@ -3949,6 +3947,8 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 		vif->htcap[IEEE80211_BAND_2GHZ].cap_info = ath6kl_a_htcap;
 		ath6kl_set_htcap(vif, IEEE80211_BAND_2GHZ, true);
 	}
+
+	ar->num_vif++;
 
 	return ndev;
 
