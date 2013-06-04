@@ -485,16 +485,12 @@ static bool ath6kl_cfg80211_ready(struct ath6kl_vif *vif)
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 		"ignore wlan disabled in AUTO suspend mode!\n");
 	} else {
-		if (!test_bit(WLAN_ENABLED, &vif->flags)) {
-			ath6kl_err("wlan disabled\n");
+		if (!test_bit(WLAN_ENABLED, &vif->flags))
 			return false;
-		}
 	}
 #else
-	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
-		ath6kl_err("wlan disabled\n");
+	if (!test_bit(WLAN_ENABLED, &vif->flags))
 		return false;
-	}
 #endif
 
 	return true;
@@ -731,14 +727,14 @@ void ath6kl_judge_roam_parameter(
 
 DONE:
 	if (lrssi_scan_enable) {
-		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+		ath6kl_wmi_set_roam_ctrl_cmd(ar->wmi,
 				0,
 				ar->low_rssi_roam_params.lrssi_scan_period,
 				ar->low_rssi_roam_params.lrssi_scan_threshold,
 				ar->low_rssi_roam_params.lrssi_roam_threshold,
 				ar->low_rssi_roam_params.roam_rssi_floor);
 	} else {
-		ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(ar->wmi,
+		ath6kl_wmi_set_roam_ctrl_cmd(ar->wmi,
 			0, 0xFFFF, 0, 0, 100);
 	}
 
@@ -1833,6 +1829,147 @@ static int ath6kl_set_probe_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 	return ret;
 }
 
+static bool _ath6kl_scanband_ignore_ch(struct ath6kl_vif *vif, u16 freq)
+{
+	int i;
+
+	for (i = 0; i < 64; i++) {
+		if (freq == vif->scanband_ignore_chan[i])
+			return true;
+		if (vif->scanband_ignore_chan[i] == 0)
+			return false;
+	}
+
+	return false;
+}
+
+static s8 ath6kl_scanband(struct ath6kl_vif *vif,
+					u16 *channels,
+					s8 n_channels,
+					struct cfg80211_scan_request *request)
+{
+	int i;
+	u8 skip_chan_num = 0;
+	u8 num_chan = n_channels;
+
+	switch (vif->scanband_type) {
+	case SCANBAND_TYPE_CHAN_ONLY:
+		channels[0] = vif->scanband_chan;
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"Only signal channel scan, channel %d\n",
+			channels[0]);
+		num_chan = 1;
+		break;
+	case SCANBAND_TYPE_5G:
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"Only 5G channels scan, channel list - ");
+		for (i = 0; i < n_channels; i++) {
+			if (request->channels[i]->center_freq <= 2484) {
+				skip_chan_num++;
+				continue;
+			}
+			channels[i - skip_chan_num] =
+					request->channels[i]->center_freq;
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"%d ", channels[i - skip_chan_num]);
+		}
+		num_chan -= skip_chan_num;
+		break;
+	case SCANBAND_TYPE_2G:
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"Only 2G channels scan, channel list - ");
+		for (i = 0; i < n_channels; i++) {
+			if (request->channels[i]->center_freq > 2484) {
+				skip_chan_num++;
+				continue;
+			}
+			channels[i - skip_chan_num] =
+					request->channels[i]->center_freq;
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"%d ", channels[i - skip_chan_num]);
+		}
+		num_chan -= skip_chan_num;
+		break;
+	case SCANBAND_TYPE_P2PCHAN:
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"Only P2P channels scan, channel list - ");
+		for (i = 0; i < n_channels; i++) {
+			if (!ath6kl_reg_is_p2p_channel(vif->ar,
+					request->channels[i]->center_freq)) {
+				skip_chan_num++;
+				continue;
+			}
+			channels[i - skip_chan_num] =
+					request->channels[i]->center_freq;
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"%d ", channels[i - skip_chan_num]);
+		}
+		num_chan -= skip_chan_num;
+		break;
+	case SCANBAND_TYPE_2_P2PCHAN:
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"x2 P2P channels scan, channel list - ");
+		for (i = 0; i < n_channels; i++) {
+			if (!ath6kl_reg_is_p2p_channel(vif->ar,
+					request->channels[i]->center_freq)) {
+				skip_chan_num++;
+				continue;
+			}
+			channels[i - skip_chan_num] =
+					request->channels[i]->center_freq;
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"%d ", channels[i - skip_chan_num]);
+		}
+		num_chan -= skip_chan_num;
+		/* Avoid to scan lots of channels. */
+		if (num_chan <= (WMI_MAX_CHANNELS >> 1)) {
+			memcpy(&channels[num_chan],
+				&channels[0],
+				num_chan * sizeof(u16));
+			num_chan *= 2;
+		}
+		break;
+	case SCANBAND_TYPE_IGNORE_DFS:
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"No DFS channels scan, channel list - ");
+		for (i = 0; i < n_channels; i++) {
+			if (ath6kl_reg_is_dfs_channel(vif->ar,
+					request->channels[i]->center_freq)) {
+				skip_chan_num++;
+				continue;
+			}
+			channels[i - skip_chan_num] =
+					request->channels[i]->center_freq;
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"%d ", channels[i - skip_chan_num]);
+		}
+		num_chan -= skip_chan_num;
+		break;
+	case SCANBAND_TYPE_IGNORE_CH:
+		ath6kl_dbg(ATH6KL_DBG_INFO,
+			"Ignore channels scan, channel list - ");
+		for (i = 0; i < n_channels; i++) {
+			if (_ath6kl_scanband_ignore_ch(vif,
+					request->channels[i]->center_freq)) {
+				skip_chan_num++;
+				continue;
+			}
+			channels[i - skip_chan_num] =
+					request->channels[i]->center_freq;
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"%d ", channels[i - skip_chan_num]);
+		}
+		num_chan -= skip_chan_num;
+		break;
+	default:
+		for (i = 0; i < n_channels; i++)
+			channels[i] = request->channels[i]->center_freq;
+		break;
+	}
+
+	return num_chan;
+}
+
 static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 				struct cfg80211_scan_request *request)
 {
@@ -1842,7 +1979,6 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	u16 *channels = NULL;
 	int ret = 0;
 	u32 force_fg_scan = 0;
-	u8 skip_chan_num = 0;
 	bool sche_scan_trig, left;
 
 	if (test_bit(DISABLE_SCAN, &ar->flag)) {
@@ -1974,7 +2110,6 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	if ((request->n_channels > 0 &&
 	     request->n_channels <= WMI_MAX_CHANNELS) &&
 	    (!sche_scan_trig)) {
-		u8 i;
 
 		n_channels = request->n_channels;
 
@@ -1986,107 +2121,11 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		}
 
 		if (n_channels) {
-			switch (vif->scanband_type) {
-			case SCANBAND_TYPE_CHAN_ONLY:
-				channels[0] = vif->scanband_chan;
-				ath6kl_dbg(ATH6KL_DBG_INFO,
-					"Only signal channel scan, channel %d\n",
-					channels[0]);
-				n_channels = 1;
-				break;
-			case SCANBAND_TYPE_5G:
-				ath6kl_dbg(ATH6KL_DBG_INFO,
-					"Only 5G channels scan, channel list - ");
-				for (i = 0; i < n_channels; i++) {
-					if (request->channels[i]->center_freq <=
-						2484) {
-						skip_chan_num++;
-						continue;
-					}
-					channels[i - skip_chan_num] =
-					request->channels[i]->center_freq;
-					ath6kl_info("%d ",
-						channels[i - skip_chan_num]);
-				}
-				n_channels -= skip_chan_num;
-				break;
-			case SCANBAND_TYPE_2G:
-				ath6kl_dbg(ATH6KL_DBG_INFO,
-				    "Only 2G channels scan, channel list - ");
-				for (i = 0; i < n_channels; i++) {
-					if (request->channels[i]->center_freq >
-						2484) {
-						skip_chan_num++;
-						continue;
-					}
-					channels[i - skip_chan_num] =
-					   request->channels[i]->center_freq;
-					ath6kl_dbg(ATH6KL_DBG_INFO,
-					   "%d ", channels[i - skip_chan_num]);
-				}
-				n_channels -= skip_chan_num;
-				break;
-			case SCANBAND_TYPE_P2PCHAN:
-				ath6kl_dbg(ATH6KL_DBG_INFO,
-				    "Only P2P channels scan, channel list - ");
-				for (i = 0; i < n_channels; i++) {
-					if (!ath6kl_reg_is_p2p_channel(ar,
-					   request->channels[i]->center_freq)) {
-						skip_chan_num++;
-						continue;
-					}
-					channels[i - skip_chan_num] =
-					   request->channels[i]->center_freq;
-					ath6kl_dbg(ATH6KL_DBG_INFO,
-					   "%d ", channels[i - skip_chan_num]);
-				}
-				n_channels -= skip_chan_num;
-				break;
-			case SCANBAND_TYPE_2_P2PCHAN:
-				ath6kl_dbg(ATH6KL_DBG_INFO,
-					"x2 P2P channels scan, channel list - ");
-				for (i = 0; i < n_channels; i++) {
-					if (!ath6kl_reg_is_p2p_channel(ar,
-					   request->channels[i]->center_freq)) {
-						skip_chan_num++;
-						continue;
-					}
-					channels[i - skip_chan_num] =
-					   request->channels[i]->center_freq;
-					ath6kl_dbg(ATH6KL_DBG_INFO,
-					   "%d ", channels[i - skip_chan_num]);
-				}
-				n_channels -= skip_chan_num;
-				/* Avoid to scan lots of channels. */
-				if (n_channels <= (WMI_MAX_CHANNELS >> 1)) {
-					memcpy(&channels[n_channels],
-							&channels[0],
-						    n_channels * sizeof(u16));
-					n_channels *= 2;
-				}
-				break;
-			case SCANBAND_TYPE_IGNORE_DFS:
-				ath6kl_dbg(ATH6KL_DBG_INFO,
-				    "No DFS channels scan, channel list - ");
-				for (i = 0; i < n_channels; i++) {
-					if (ath6kl_reg_is_dfs_channel(ar,
-					   request->channels[i]->center_freq)) {
-						skip_chan_num++;
-						continue;
-					}
-					channels[i - skip_chan_num] =
-					   request->channels[i]->center_freq;
-					ath6kl_dbg(ATH6KL_DBG_INFO,
-					   "%d ", channels[i - skip_chan_num]);
-				}
-				n_channels -= skip_chan_num;
-				break;
-			default:
-				for (i = 0; i < n_channels; i++)
-					channels[i] =
-					request->channels[i]->center_freq;
-				break;
-			}
+			/* Rearrange according scanband */
+			n_channels = ath6kl_scanband(vif,
+						     channels,
+						     n_channels,
+						     request);
 		}
 	}
 
@@ -6630,18 +6669,18 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+#ifdef CONFIG_ANDROID
+	/* Enable htcoex for wlan0 in Android. Scan period is 60s */
+	if ((vif->fw_vif_idx == 0) &&
+	    (vif->ar->target_subtype & TARGET_SUBTYPE_HT40))
+		ath6kl_htcoex_config(vif, ATH6KL_HTCOEX_SCAN_PERIOD, 0);
+
+	/* WAR: CR480066 */
 	vif->bss_post_proc_ctx = ath6kl_bss_post_proc_init(vif);
 	if (!vif->bss_post_proc_ctx) {
 		ath6kl_err("failed to initialize bss_post_proc\n");
 		return -ENOMEM;
 	}
-
-#ifdef CONFIG_ANDROID
-	/*Enable htcoex for wlan0 in Android. Scan period is 60s*/
-	if ((vif->fw_vif_idx == 0) &&
-	    (vif->ar->target_subtype & TARGET_SUBTYPE_HT40))
-		ath6kl_htcoex_config(vif,
-			ATH6KL_HTCOEX_SCAN_PERIOD, 0);
 #endif
 
 	vif->p2p_ps_info_ctx = ath6kl_p2p_ps_init(vif);
@@ -6708,6 +6747,7 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 	} else
 		vif->scanband_type = SCANBAND_TYPE_ALL;
 
+	vif->saved_pwr_mode =
 	vif->last_pwr_mode = REC_POWER;
 
 	return 0;
