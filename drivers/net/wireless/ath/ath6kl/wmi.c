@@ -3293,7 +3293,7 @@ int ath6kl_wmi_sta_bmiss_enhance_cmd(struct wmi *wmi, u8 if_idx, bool enhance)
 	return ret;
 }
 
-int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
+int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, u8 if_idx, const char *alpha2)
 {
 	struct sk_buff *skb;
 	struct wmi_set_regdomain_cmd *cmd;
@@ -3306,7 +3306,7 @@ int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
 	memcpy(cmd->iso_name, alpha2, 2);
         cmd->length = 2;
 
-	return ath6kl_wmi_cmd_send(wmi, 0, skb,
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 				   WMI_SET_REGDOMAIN_CMDID,
 				   NO_SYNC_WMIFLAG);
 }
