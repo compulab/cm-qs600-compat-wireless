@@ -1429,11 +1429,25 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 	struct ath6kl *ar = vif->ar;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s scan timer hit\n", __func__);
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+	vif->vifscan_timer_hit++;
+#endif
+
 	if (vif->scan_req) {
-		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
-		cfg80211_scan_done(vif->scan_req, true);
-		vif->scan_req = NULL;
-		clear_bit(SCANNING, &vif->flags);
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+		if (vif->vifscan_timer_hit < ATH6KL_SCAN_RETRY_MAX)
+			ath6kl_wmi_startscan_cmd(ar->wmi, vif->fw_vif_idx,
+					WMI_LONG_SCAN, 0, false, 0,
+					ATH6KL_FG_SCAN_INTERVAL, 0, NULL);
+		else {
+#endif
+			ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
+			cfg80211_scan_done(vif->scan_req, true);
+			vif->scan_req = NULL;
+			clear_bit(SCANNING, &vif->flags);
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+		}
+#endif
 	}
 }
 
@@ -1443,8 +1457,10 @@ static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
 	struct ath6kl_vif *vif;
 	u16 connected_count = 0;
 
+#ifndef CONFIG_ATH6KL_SCAN_RETRY
 	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 		return ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM;
+#endif
 
 	if (ath6kl_scan_timeout &&
 		(ath6kl_scan_timeout < ATH6KL_SCAN_TIMEOUT_SHORT))
@@ -1453,8 +1469,13 @@ static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
 			connected_count++;
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+			if (connected_count >= 1)
+				return ATH6KL_SCAN_TIMEOUT_LONG;
+#else
 			if (connected_count > 1)
 				return ATH6KL_SCAN_TIMEOUT_LONG;
+#endif
 		}
 	}
 
@@ -1703,6 +1724,9 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		vif->scan_req = request;
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
+#ifdef CONFIG_ATH6KL_SCAN_RETRY
+		vif->vifscan_timer_hit = 0;
+#endif
 	}
 
 	kfree(channels);
