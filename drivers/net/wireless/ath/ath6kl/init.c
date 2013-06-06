@@ -338,7 +338,7 @@ static int ath6kl_connectservice(struct ath6kl *ar,
 		return status;
 	}
 
-	if (response.endpoint >= ENDPOINT_MAX &&
+	if (response.endpoint >= ENDPOINT_MAX ||
 			response.endpoint <= ENDPOINT_UNUSED)
 		return -EINVAL;
 
