@@ -35,7 +35,7 @@
  /* Dont define if IPA conf. Manager is not present */
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
-
+#define ATH6KL_IPA_HOLB_TIMER_VAL 0x7f
 u32 un_ordered = 0;
 u32 ordered = 0;
 u32 flt_hdl_ipv6=0;
@@ -4528,6 +4528,24 @@ void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid)
 		ath6kl_wmi_set_pvb_cmd(ar->wmi, vif->fw_vif_idx,
 				conn->aid, 0);
 	}
+}
+
+void ath6kl_allow_packet_drop(struct ath6kl_vif *vif, u8 enable_drop)
+{
+	struct ipa_ep_cfg_holb ipa_ep_cfg;
+	ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
+			"IPA-CM: IPA HOLB event is successfully received\n");
+	if (enable_drop)
+		ipa_ep_cfg.en = true;
+	else
+		ipa_ep_cfg.en = false;
+
+	ipa_ep_cfg.tmr_val = ATH6KL_IPA_HOLB_TIMER_VAL;
+	ipa_cfg_ep_holb_by_client(IPA_CLIENT_HSIC1_CONS, &ipa_ep_cfg);
+	ipa_cfg_ep_holb_by_client(IPA_CLIENT_HSIC2_CONS, &ipa_ep_cfg);
+	ipa_cfg_ep_holb_by_client(IPA_CLIENT_HSIC3_CONS, &ipa_ep_cfg);
+	ipa_cfg_ep_holb_by_client(IPA_CLIENT_HSIC4_CONS, &ipa_ep_cfg);
+
 }
 #endif
 

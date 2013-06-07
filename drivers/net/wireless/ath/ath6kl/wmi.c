@@ -3562,6 +3562,19 @@ int ath6kl_wmi_client_power_save_event_rx(struct wmi *wmi, u8 *datap, int len,
     return 0;
 }
 
+int ath6kl_wmi_allow_packet_drop_event_rx(struct wmi *wmi, u8 *datap, int len,
+                              struct ath6kl_vif *vif)
+{
+    struct wmi_allow_packet_drop_event *ev;
+
+    if (len < sizeof(struct wmi_allow_packet_drop_event))
+        return -EINVAL;
+
+    ev = (struct wmi_allow_packet_drop_event *)datap;
+    ath6kl_allow_packet_drop(vif, ev->enable_drop);
+
+    return 0;
+}
 #endif
 
 int ath6kl_wmi_set_pvb_cmd(struct wmi *wmi, u8 if_idx, u16 aid,
@@ -4234,6 +4247,14 @@ static int ath6kl_wmi_proc_events_vif(struct wmi *wmi, u16 if_idx, u16 cmd_id,
             return ath6kl_wmi_client_power_save_event_rx(wmi, datap, len, vif);
         }
         break;
+    case WMI_ALLOW_PACKET_DROP_EVENTID:
+        if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+        {
+            ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_ALLOW_PACKET_DROP_EVENTID\n");
+            return ath6kl_wmi_allow_packet_drop_event_rx(wmi, datap, len, vif);
+        }
+        break;
+
 #endif
 	case WMI_WLAN_INFO_LTE_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_WLAN_INFO_LTE_EVENTID\n");

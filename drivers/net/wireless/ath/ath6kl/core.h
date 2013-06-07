@@ -1211,6 +1211,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 		u8 ac_category);
 /* Power save event handler */
 void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid);
+void ath6kl_allow_packet_drop(struct ath6kl_vif *vif, u8 enable_drop);
 /* IPA interface clean up */
 void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name);
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar);

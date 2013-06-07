@@ -1818,8 +1818,9 @@ enum wmi_event_id {
 	WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID	= 0x9020,
 	WMI_SEND_DUMMY_DATA_EVENTID = 0x9021,
 	WMI_FLUSH_BUFFERED_DATA_EVENTID,
-    WMI_WLAN_INFO_LTE_EVENTID,
-    WMI_CLIENT_POWER_SAVE_EVENTID,
+	WMI_WLAN_INFO_LTE_EVENTID,
+	WMI_CLIENT_POWER_SAVE_EVENTID,
+	WMI_ALLOW_PACKET_DROP_EVENTID = 0x902f,
 };
 
 struct wmi_get_wow_list_cmd {
@@ -2940,6 +2941,10 @@ struct wmi_send_dummy_data_event {
 struct wmi_client_power_save_event {
     u8 power_save;
     u8 aid;
+}__packed;
+
+struct wmi_allow_packet_drop_event {
+    u8 enable_drop;
 }__packed;
 #endif
 
