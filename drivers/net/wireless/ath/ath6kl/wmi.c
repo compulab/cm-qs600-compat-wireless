@@ -25,7 +25,6 @@
 #include <ctype.h>
 #include "wmiconfig.h"
 
-
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
 static const s32 wmi_rate_tbl[][2] = {
@@ -214,6 +213,9 @@ int ath6kl_wmi_data_hdr_add(struct wmi *wmi, struct sk_buff *skb,
 
 	if (flags & WMI_DATA_HDR_FLAGS_EOSP)
 		data_hdr->info3 |= cpu_to_le16(WMI_DATA_HDR_EOSP);
+
+	if (flags & WMI_DATA_HDR_FLAGS_UAPSD)
+		data_hdr->info3 |= cpu_to_le16(WMI_DATA_HDR_UAPSD);
 
 	data_hdr->info2 |= cpu_to_le16(meta_ver << WMI_DATA_HDR_META_SHIFT);
 	data_hdr->info3 |= cpu_to_le16(if_idx & WMI_DATA_HDR_IF_IDX_MASK);
