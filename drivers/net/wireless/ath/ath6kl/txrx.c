@@ -2199,8 +2199,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 				!flushing[vif->fw_vif_idx]) {
 			spin_unlock_bh(&ar->list_lock);
 			if ((vif->intra_bss_data_cnt > 0) ||
-				(vif->cookie_used < NETIF_WAKE_THOLD) ||
-				(ar->is_mcc_enabled)) {
+				(vif->cookie_used < NETIF_WAKE_THOLD)) {
 				if (test_bit(NETQ_STOPPED, &vif->flags)) {
 					clear_bit(NETQ_STOPPED, &vif->flags);
 					netif_wake_queue(vif->ndev);
@@ -3961,55 +3960,6 @@ void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg)
 	return;
 }
 
-/*
- * Get the total number of hold buffers for the off-channel
- * including self
- */
-int ath6kl_get_offch_hold_buf_cnt(struct ath6kl *ar)
-{
-	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
-	int i, hold_cnt = 0;
-
-	for(i = 0;i < NUM_CONN;i++) {
-		struct ath6kl_fw_conn_list *con = (struct ath6kl_fw_conn_list *)
-						&mcc_flowctrl->fw_conn_list[i];
-		if(con->ocs) {
-			hold_cnt += get_queue_depth(&con->conn_queue);
-			hold_cnt += get_queue_depth(&con->re_queue);
-		}
-	}
-
-	return hold_cnt;
-}
-
-/*
- * Queue the packet and check for threshold limit of hold-q
- */
-void ath6kl_queue_offch_pkt(struct ath6kl *ar,
-                           struct ath6kl_fw_conn_list *fw_conn,
-                           void *pkt)
-{
-	struct ath6kl_cookie *cookie = (struct ath6kl_cookie *)pkt;
-	int offch_buf_cnt = 0;
-	struct ath6kl_vif *vif = fw_conn->vif;
-
-	list_add_tail(&cookie->htc_pkt.list, &fw_conn->conn_queue);
-	offch_buf_cnt = ath6kl_get_offch_hold_buf_cnt(ar);
-
-	spin_lock_bh(&vif->if_lock);
-	if((MAX_OFFCH_HOLD_COOKIE_NUM < offch_buf_cnt)  &&
-		(!test_bit(NETQ_STOPPED, &vif->flags))) {
-		/* keep the current buf, but stop consuming */
-		set_bit(NETQ_STOPPED, &vif->flags);
-		netif_stop_queue(vif->ndev);
-		ath6kl_dbg(ATH6KL_DBG_FLOWCTRL, "stopq for vif %d \n",
-			vif->fw_vif_idx);
-	}
-	spin_unlock_bh(&vif->if_lock);
-
-	return;
-}
-
 /* Check if this packet needs to be held(cached) in host.
  * If not, send the packets that were cached earlier for this conn
  *
@@ -4027,6 +3977,7 @@ enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar
 	struct ath6kl_cookie *cookie = (struct ath6kl_cookie *)pkt;
 	int conn_id = cookie->htc_pkt.connid;
 	enum htc_send_queue_result ret = HTC_SEND_QUEUE_OK;
+	struct ath6kl_vif *vif = NULL;
 
 	WARN_ON(!mcc_flowctrl);
 
@@ -4051,24 +4002,27 @@ enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar
 		}
 	}
 #endif
+	fw_conn = &mcc_flowctrl->fw_conn_list[conn_id];
+	vif = fw_conn->vif;
 
+	/* irrespective of channel, keep consuming only in multiples of
+	 * this count
+	 */
+	if(((MAX_OFFCH_HOLD_COOKIE_NUM) < vif->cookie_used)  &&
+		(!test_bit(NETQ_STOPPED, &vif->flags))) {
+		set_bit(NETQ_STOPPED, &vif->flags);
+		netif_stop_queue(vif->ndev);
+	}
 
 	spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
 	fw_conn = &mcc_flowctrl->fw_conn_list[conn_id];
 
 	if (!ath6kl_check_can_send(mcc_flowctrl, conn_id)) {
-		ath6kl_queue_offch_pkt(ar, fw_conn, pkt);
 		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
-
-		goto result;
-	} else if (!list_empty(&fw_conn->conn_queue)) {
 		list_add_tail(&cookie->htc_pkt.list, &fw_conn->conn_queue);
-		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
-
-		ath6kl_mcc_flowctrl_tx_schedule(ar, 0);
-
 		goto result;
 	} else {
+		/* send thr packet through */
 		ret = HTC_SEND_QUEUE_SENT;
 	}
 
