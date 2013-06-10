@@ -194,6 +194,7 @@ enum wmi_data_hdr_flags {
 
 #define WMI_DATA_HDR_TRIG	    0x10
 #define WMI_DATA_HDR_EOSP	    0x10
+#define WMI_DATA_HDR_UAPSD	    0x40
 
 #define WMI_DATA_HDR_EXCEPTION_BIT_MASK                 0x1
 #define WMI_DATA_HDR_EXCEPTION_BIT_SHIFT                8
