@@ -3527,26 +3527,26 @@ int ath6kl_wmi_send_dummy_data_event_rx(struct wmi *wmi, u8 *datap, int len,
 					  struct ath6kl_vif *vif)
 {
 	struct wmi_send_dummy_data_event *ev;
-    int i;
+	int i;
+	int ret;
 
-	if (len < sizeof(struct wmi_send_dummy_data_event))
+	if (!datap || len < sizeof(struct wmi_send_dummy_data_event))
 		return -EINVAL;
 
 	ev = (struct wmi_send_dummy_data_event *)datap;
-        ath6kl_dbg(ATH6KL_DBG_OOO,
-            "IPA-CM:OOO:num_packets = %d\n", ev->num_packets);
-        ath6kl_dbg(ATH6KL_DBG_OOO,
-            "IPA-CM:OOO:ac_category= %d\n", ev->ac_category);
-	for (i = 0 ; i < ev->num_packets ; i++){
-		if (!ath6kl_send_dummy_data(vif, ev->num_packets, ev->ac_category))
-		{
-			ath6kl_dbg(ATH6KL_DBG_OOO,
-					"IPA-CM:OOO:Successfully sent dummy packets\n");
-		} else {
-			ath6kl_dbg(ATH6KL_DBG_OOO,
-				"IPA-CM:OOO:Failed to send dummy packets\n");
-		}
+
+	ath6kl_dbg(ATH6KL_DBG_OOO,
+			"IPA-CM:OOO: num_packets = %d, ac_category: %d\n",
+			ev->num_packets, ev->ac_category);
+
+	for (i = 0 ; i < ev->num_packets ; i++) {
+		ret = ath6kl_send_dummy_data(vif, ev->ac_category);
+
+		if (ret)
+			ath6kl_dbg(ATH6KL_DBG_OOO, "IPA-CM: OOO: Failed to send"
+					" dummy packet: %d\n", ret);
 	}
+
 	return 0;
 }
 

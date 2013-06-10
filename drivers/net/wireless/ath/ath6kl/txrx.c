@@ -4319,46 +4319,33 @@ void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
 	}
 }
 
-int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
-		u8 ac_category)
+int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 ac_category)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_cookie *cookie = NULL;
 	enum htc_endpoint_id eid = ENDPOINT_UNUSED;
 	u16 htc_tag = ATH6KL_DATA_PKT_TAG;
-	struct sk_buff *skb = dev_alloc_skb(60);
-	void *meta;
-	u8 meta_ver = 0;
-	struct net_device *dev = vif->ndev;
-	int ret;
+	struct sk_buff *skb = NULL;
+	int ret = 0;
 	struct wmi_data_hdr *data_hdr;
 
 	if(ar->cookie_count < (MAX_DEF_COOKIE_NUM/3))
-		goto dfail_tx;
+		return -ENOMEM;
 
 	if (WARN_ON_ONCE(ar->state != ATH6KL_STATE_ON))
-		goto dfail_tx;
+		return -EINVAL;
 
 	if (!test_bit(WMI_READY, &ar->flag))
-		goto dfail_tx;
+		return -EINVAL;
 
-	if (skb_headroom(skb) < dev->needed_headroom) {
-		struct sk_buff *tmp_skb = skb;
-
-		skb = skb_realloc_headroom(skb, dev->needed_headroom);
-		kfree_skb(tmp_skb);
-		if (skb == NULL) {
-			return 0;
-		}
-	}
-
-	meta_ver = 0;
-	meta = NULL;
+	skb = ath6kl_buf_alloc(0);
+	if (skb == NULL)
+		return -ENOMEM;
 
 	ret = ath6kl_wmi_data_hdr_add(ar->wmi, skb,
 			DATA_MSGTYPE, 0, 0,
-			meta_ver,
-			meta, vif->fw_vif_idx);
+			0,
+			NULL, vif->fw_vif_idx);
 	if (ret) {
 		ath6kl_warn("failed to add wmi data header:%d\n"
 				, ret);
@@ -4378,6 +4365,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	if (eid == 0 || eid == ENDPOINT_UNUSED) {
 		ath6kl_err("eid %d is not mapped!\n", eid);
 		spin_unlock_bh(&ar->lock);
+		ret = -EINVAL;
 		goto dfail_tx;
 	}
 
@@ -4386,6 +4374,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
+		ret = -ENOMEM;
 		goto dfail_tx;
 	}
 
@@ -4419,7 +4408,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 			eid, htc_tag);
 	cookie->htc_pkt.skb = skb;
 
-	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "tx ",
+	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "dummy tx ",
 			skb->data, skb->len);
 
 	/*
@@ -4427,7 +4416,7 @@ int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
 	 * happen in the ath6kl_tx_complete callback.
 	 */
 	ath6kl_htc_tx(ar->htc_target, &cookie->htc_pkt);
-	ath6kl_dbg(ATH6KL_DBG_OOO, "dummy_data_sent\n");
+
 	return 0;
 
 dfail_skbexp:
@@ -4435,12 +4424,10 @@ dfail_skbexp:
 	ath6kl_free_cookie(ar, vif, cookie);
 
 dfail_tx:
-	dev_kfree_skb(skb);
+	if (skb)
+		dev_kfree_skb(skb);
 
-	vif->net_stats.tx_dropped++;
-	vif->net_stats.tx_aborted_errors++;
-
-	return 1;
+	return ret;
 }
 
 void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid)
