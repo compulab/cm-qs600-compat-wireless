@@ -880,7 +880,7 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
 
 				ath6kl_wmi_set_mcc_event_mode_cmd(vif->ar->wmi,
-				vif->fw_vif_idx, MCC_STOP_EVENT);
+						MCC_STOP_EVENT);
 			}
 #endif
 
@@ -4078,8 +4078,7 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
 }
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
-void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 if_idx,
-					u8 mcc_event_mode)
+void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 mcc_event_mode)
 {
 	struct sk_buff *skb;
 	struct wmi_set_mcc_event_mode_cmd *cmd;
@@ -4091,7 +4090,7 @@ void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 if_idx,
 	cmd = (struct wmi_set_mcc_event_mode_cmd *) skb->data;
 	cmd->send_event = mcc_event_mode;
 
-	ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_MCC_EVENT_MODE_CMDID,
+	ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_MCC_EVENT_MODE_CMDID,
 				NO_SYNC_WMIFLAG);
 }
 #endif

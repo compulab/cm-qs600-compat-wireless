@@ -3279,8 +3279,7 @@ struct ath6kl_vif *ath6kl_get_vif_by_index(struct ath6kl *ar, u8 if_idx);
 void *ath6kl_wmi_init(struct ath6kl *devt);
 void ath6kl_wmi_shutdown(struct wmi *wmi);
 void ath6kl_wmi_reset(struct wmi *wmi);
-void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 if_idx, u8
-		send_event);
+void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 send_event);
 
 #endif
 #endif /* WMI_H */
