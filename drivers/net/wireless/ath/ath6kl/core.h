@@ -72,8 +72,8 @@
 /*CTRL_EP_RSVD_COOKIE_NUM are reserved for control endpoint */
 #define CTRL_EP_RSVD_COOKIE_NUM           2
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
-#define MAX_DEF_COOKIE_NUM                180
-#define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+#define MAX_DEF_COOKIE_NUM               288
+#define MAX_HI_COOKIE_NUM                 28	/* 10% of MAX_COOKIE_NUM */
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM + CTRL_EP_RSVD_COOKIE_NUM)
 
 #define NETIF_STOP_THOLD		(MAX_DEF_COOKIE_NUM/5)
