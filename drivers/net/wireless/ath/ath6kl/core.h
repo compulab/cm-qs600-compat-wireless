@@ -1207,8 +1207,7 @@ int ath6kl_usb_create_sysbam_pipes(void);
 /* Out of order processing APIs */
 void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
 		u8 aid);
-int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
-		u8 ac_category);
+int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 ac_category);
 /* Power save event handler */
 void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid);
 void ath6kl_allow_packet_drop(struct ath6kl_vif *vif, u8 enable_drop);
