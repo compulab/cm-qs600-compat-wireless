@@ -165,7 +165,7 @@ struct ath6kl_urb_context {
 #define ATH6KL_USB_CTRL_DIAG_CC_READ               0
 #define ATH6KL_USB_CTRL_DIAG_CC_WRITE              1
 
-#define HIF_USB_RX_QUEUE_THRESHOLD              64
+#define HIF_USB_RX_QUEUE_THRESHOLD          256
 
 struct ath6kl_usb_ctrl_diag_cmd_write {
 	__le32 cmd;
@@ -1273,7 +1273,9 @@ static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
 				pipe->logical_pipe_num);
 	}
 
-	if (pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+	if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
+			skb_queue_len(&pipe->rx_io_comp_queue) <
+			pipe->ar_usb->rxq_threshold) {
 		/* our free urbs are piling up, post more transfers */
 		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 	}
