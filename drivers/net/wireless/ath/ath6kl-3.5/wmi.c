@@ -3563,6 +3563,7 @@ int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
 
 	cmd = (struct wmi_set_regdomain_cmd *) skb->data;
 	memcpy(cmd->iso_name, alpha2, 2);
+	cmd->length = 2;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "%s: regdomain = %s\n", __func__, alpha2);
 
@@ -4434,6 +4435,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_READY_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_READY_EVENTID\n");
 		ret = ath6kl_wmi_ready_event_rx(wmi, datap, len);
+		mdelay(400);
 		ath6kl_send_event_to_app(skb->dev, id, skb->dev->ifindex,
 			datap, len);
 		break;
