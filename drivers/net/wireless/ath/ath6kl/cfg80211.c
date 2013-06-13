@@ -1291,7 +1291,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 				     key_type, key_usage, key->key_len,
 				     key->seq, key->seq_len, key->key,
 				     KEY_OP_INIT_VAL,
-				     (u8 *) mac_addr, SYNC_BOTH_WMIFLAG);
+				     (u8 *) mac_addr, NO_SYNC_WMIFLAG);
 }
 
 static int ath6kl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev,
@@ -1407,7 +1407,7 @@ static int ath6kl_cfg80211_set_default_key(struct wiphy *wiphy,
 				     key->key_len, key->seq, key->seq_len,
 				     key->key,
 				     KEY_OP_INIT_VAL, NULL,
-				     SYNC_BOTH_WMIFLAG);
+				     NO_SYNC_WMIFLAG);
 }
 
 void ath6kl_cfg80211_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid,
