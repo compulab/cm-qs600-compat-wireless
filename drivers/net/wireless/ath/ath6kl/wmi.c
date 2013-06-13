@@ -25,7 +25,6 @@
 #include <ctype.h>
 #include "wmiconfig.h"
 
-
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
 
 static const s32 wmi_rate_tbl[][2] = {
@@ -214,6 +213,9 @@ int ath6kl_wmi_data_hdr_add(struct wmi *wmi, struct sk_buff *skb,
 
 	if (flags & WMI_DATA_HDR_FLAGS_EOSP)
 		data_hdr->info3 |= cpu_to_le16(WMI_DATA_HDR_EOSP);
+
+	if (flags & WMI_DATA_HDR_FLAGS_UAPSD)
+		data_hdr->info3 |= cpu_to_le16(WMI_DATA_HDR_UAPSD);
 
 	data_hdr->info2 |= cpu_to_le16(meta_ver << WMI_DATA_HDR_META_SHIFT);
 	data_hdr->info3 |= cpu_to_le16(if_idx & WMI_DATA_HDR_IF_IDX_MASK);
@@ -3293,7 +3295,7 @@ int ath6kl_wmi_sta_bmiss_enhance_cmd(struct wmi *wmi, u8 if_idx, bool enhance)
 	return ret;
 }
 
-int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
+int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, u8 if_idx, const char *alpha2)
 {
 	struct sk_buff *skb;
 	struct wmi_set_regdomain_cmd *cmd;
@@ -3306,7 +3308,7 @@ int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
 	memcpy(cmd->iso_name, alpha2, 2);
         cmd->length = 2;
 
-	return ath6kl_wmi_cmd_send(wmi, 0, skb,
+	return ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 				   WMI_SET_REGDOMAIN_CMDID,
 				   NO_SYNC_WMIFLAG);
 }
@@ -3525,26 +3527,26 @@ int ath6kl_wmi_send_dummy_data_event_rx(struct wmi *wmi, u8 *datap, int len,
 					  struct ath6kl_vif *vif)
 {
 	struct wmi_send_dummy_data_event *ev;
-    int i;
+	int i;
+	int ret;
 
-	if (len < sizeof(struct wmi_send_dummy_data_event))
+	if (!datap || len < sizeof(struct wmi_send_dummy_data_event))
 		return -EINVAL;
 
 	ev = (struct wmi_send_dummy_data_event *)datap;
-        ath6kl_dbg(ATH6KL_DBG_OOO,
-            "IPA-CM:OOO:num_packets = %d\n", ev->num_packets);
-        ath6kl_dbg(ATH6KL_DBG_OOO,
-            "IPA-CM:OOO:ac_category= %d\n", ev->ac_category);
-	for (i = 0 ; i < ev->num_packets ; i++){
-		if (!ath6kl_send_dummy_data(vif, ev->num_packets, ev->ac_category))
-		{
-			ath6kl_dbg(ATH6KL_DBG_OOO,
-					"IPA-CM:OOO:Successfully sent dummy packets\n");
-		} else {
-			ath6kl_dbg(ATH6KL_DBG_OOO,
-				"IPA-CM:OOO:Failed to send dummy packets\n");
-		}
+
+	ath6kl_dbg(ATH6KL_DBG_OOO,
+			"IPA-CM:OOO: num_packets = %d, ac_category: %d\n",
+			ev->num_packets, ev->ac_category);
+
+	for (i = 0 ; i < ev->num_packets ; i++) {
+		ret = ath6kl_send_dummy_data(vif, ev->ac_category);
+
+		if (ret)
+			ath6kl_dbg(ATH6KL_DBG_OOO, "IPA-CM: OOO: Failed to send"
+					" dummy packet: %d\n", ret);
 	}
+
 	return 0;
 }
 
@@ -3562,6 +3564,19 @@ int ath6kl_wmi_client_power_save_event_rx(struct wmi *wmi, u8 *datap, int len,
     return 0;
 }
 
+int ath6kl_wmi_allow_packet_drop_event_rx(struct wmi *wmi, u8 *datap, int len,
+                              struct ath6kl_vif *vif)
+{
+    struct wmi_allow_packet_drop_event *ev;
+
+    if (len < sizeof(struct wmi_allow_packet_drop_event))
+        return -EINVAL;
+
+    ev = (struct wmi_allow_packet_drop_event *)datap;
+    ath6kl_allow_packet_drop(vif, ev->enable_drop);
+
+    return 0;
+}
 #endif
 
 int ath6kl_wmi_set_pvb_cmd(struct wmi *wmi, u8 if_idx, u16 aid,
@@ -4234,6 +4249,14 @@ static int ath6kl_wmi_proc_events_vif(struct wmi *wmi, u16 if_idx, u16 cmd_id,
             return ath6kl_wmi_client_power_save_event_rx(wmi, datap, len, vif);
         }
         break;
+    case WMI_ALLOW_PACKET_DROP_EVENTID:
+        if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
+        {
+            ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_ALLOW_PACKET_DROP_EVENTID\n");
+            return ath6kl_wmi_allow_packet_drop_event_rx(wmi, datap, len, vif);
+        }
+        break;
+
 #endif
 	case WMI_WLAN_INFO_LTE_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_WLAN_INFO_LTE_EVENTID\n");

@@ -194,6 +194,7 @@ enum wmi_data_hdr_flags {
 
 #define WMI_DATA_HDR_TRIG	    0x10
 #define WMI_DATA_HDR_EOSP	    0x10
+#define WMI_DATA_HDR_UAPSD	    0x40
 
 #define WMI_DATA_HDR_EXCEPTION_BIT_MASK                 0x1
 #define WMI_DATA_HDR_EXCEPTION_BIT_SHIFT                8
@@ -1818,8 +1819,9 @@ enum wmi_event_id {
 	WMI_AP_IDLE_CLOSE_TIMEOUT_EVENTID	= 0x9020,
 	WMI_SEND_DUMMY_DATA_EVENTID = 0x9021,
 	WMI_FLUSH_BUFFERED_DATA_EVENTID,
-    WMI_WLAN_INFO_LTE_EVENTID,
-    WMI_CLIENT_POWER_SAVE_EVENTID,
+	WMI_WLAN_INFO_LTE_EVENTID,
+	WMI_CLIENT_POWER_SAVE_EVENTID,
+	WMI_ALLOW_PACKET_DROP_EVENTID = 0x902f,
 };
 
 struct wmi_get_wow_list_cmd {
@@ -2941,6 +2943,10 @@ struct wmi_client_power_save_event {
     u8 power_save;
     u8 aid;
 }__packed;
+
+struct wmi_allow_packet_drop_event {
+    u8 enable_drop;
+}__packed;
 #endif
 
 struct wmi_p2p_rx_probe_req_event {
@@ -3199,7 +3205,7 @@ int ath6kl_wmi_mcast_filter_cmd(struct wmi *wmi, u8 if_idx, bool mc_all_on);
 int ath6kl_wmi_add_del_mcast_filter_cmd(struct wmi *wmi, u8 if_idx,
 					u8 *filter, bool add_filter);
 int ath6kl_wmi_sta_bmiss_enhance_cmd(struct wmi *wmi, u8 if_idx, bool enable);
-int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2);
+int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, u8 if_idx, const char *alpha2);
 
 /* AP mode uAPSD */
 int ath6kl_wmi_ap_set_apsd(struct wmi *wmi, u8 if_idx, u8 enable);

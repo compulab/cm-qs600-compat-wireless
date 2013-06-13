@@ -2897,8 +2897,13 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		if (tmp_vif->nw_type == AP_NETWORK)
 			max_num_sta += tmp_vif->max_num_sta;
 
-	if (max_num_sta + info->max_num_sta > AP_MAX_NUM_STA)
+	if (!info->max_num_sta || max_num_sta + info->max_num_sta >
+					AP_MAX_NUM_STA) {
+		ath6kl_warn("Invalid max_num_sta value :: %d currently"
+				" configured value :: %d\n", info->max_num_sta,
+				max_num_sta);
 		return -EINVAL;
+	}
 
 	ret = ath6kl_wmi_ap_set_num_sta_cmd(ar->wmi, vif->fw_vif_idx,
 			info->max_num_sta);
@@ -3182,7 +3187,7 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "Wait for ACS of prev AP\n");
 
 	if (!(cfg80211_find_ie(WLAN_EID_COUNTRY, info->beacon.tail, info->beacon.tail_len)))
-		ath6kl_wmi_set_regdomain_cmd(ar->wmi, WMI_DISABLE_REGULATORY_CODE);
+		ath6kl_wmi_set_regdomain_cmd(ar->wmi, vif->fw_vif_idx, WMI_DISABLE_REGULATORY_CODE);
 
 	return 0;
 }
@@ -3215,6 +3220,7 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 	clear_bit(CONNECTED, &vif->flags);
 
 	vif->prwise_crypto = NONE_CRYPT;
+	vif->max_num_sta = 0;
 
 	/* Restore ht setting in firmware */
 	return ath6kl_restore_htcap(vif);
@@ -3797,7 +3803,7 @@ static int ath6kl_cfg80211_reg_notify(struct wiphy *wiphy,
 		   request->processed ? " processed" : "",
 		   request->initiator);
 
-	ret = ath6kl_wmi_set_regdomain_cmd(ar->wmi, request->alpha2);
+	ret = ath6kl_wmi_set_regdomain_cmd(ar->wmi, 0, request->alpha2);
 	if (ret) {
 		ath6kl_err("failed to set regdomain: %d\n", ret);
 		return ret;

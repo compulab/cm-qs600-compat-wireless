@@ -72,8 +72,8 @@
 /*CTRL_EP_RSVD_COOKIE_NUM are reserved for control endpoint */
 #define CTRL_EP_RSVD_COOKIE_NUM           2
 /* MAX_HI_COOKIE_NUM are reserved for high priority traffic */
-#define MAX_DEF_COOKIE_NUM                180
-#define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+#define MAX_DEF_COOKIE_NUM               288
+#define MAX_HI_COOKIE_NUM                 28	/* 10% of MAX_COOKIE_NUM */
 #define MAX_COOKIE_NUM                 (MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM + CTRL_EP_RSVD_COOKIE_NUM)
 
 #define NETIF_STOP_THOLD		(MAX_DEF_COOKIE_NUM/5)
@@ -1207,10 +1207,10 @@ int ath6kl_usb_create_sysbam_pipes(void);
 /* Out of order processing APIs */
 void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
 		u8 aid);
-int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 num_packets,
-		u8 ac_category);
+int ath6kl_send_dummy_data(struct ath6kl_vif *vif, u8 ac_category);
 /* Power save event handler */
 void ath6kl_client_power_save(struct ath6kl_vif *vif, u8 power_save, u8 aid);
+void ath6kl_allow_packet_drop(struct ath6kl_vif *vif, u8 enable_drop);
 /* IPA interface clean up */
 void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name);
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar);

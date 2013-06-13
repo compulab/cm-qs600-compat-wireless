@@ -165,7 +165,7 @@ struct ath6kl_urb_context {
 #define ATH6KL_USB_CTRL_DIAG_CC_READ               0
 #define ATH6KL_USB_CTRL_DIAG_CC_WRITE              1
 
-#define HIF_USB_RX_QUEUE_THRESHOLD              64
+#define HIF_USB_RX_QUEUE_THRESHOLD          256
 
 struct ath6kl_usb_ctrl_diag_cmd_write {
 	__le32 cmd;
@@ -1219,7 +1219,6 @@ void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context)
 {
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct sk_buff *skb;
-	struct ath6kl_usb *ar_usb = pipe->ar_usb;
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
@@ -1236,10 +1235,9 @@ void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context)
 	ath6kl_usb_free_urb_to_pipe(urb_context->pipe, urb_context);
 	ath6kl_put_context(skb, NULL);
 
-	/* calling directly instead of worker thread to speed up the Tx complete
-	 * path to reduce the tx_complete_error(-12)  */
-	WARN_ON_ONCE(in_interrupt());
-	ath6kl_core_tx_complete(ar_usb->ar, skb);
+	/* note: queue implements a lock */
+	skb_queue_tail(&pipe->tx_io_comp_queue, skb);
+	queue_work(pipe->ar_usb->ar->ath6kl_wq_tx, &pipe->tx_io_complete_work);
 }
 #endif
 
@@ -1273,7 +1271,9 @@ static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
 				pipe->logical_pipe_num);
 	}
 
-	if (pipe->urb_cnt >= pipe->urb_cnt_thresh) {
+	if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
+			skb_queue_len(&pipe->rx_io_comp_queue) <
+			pipe->ar_usb->rxq_threshold) {
 		/* our free urbs are piling up, post more transfers */
 		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 	}
