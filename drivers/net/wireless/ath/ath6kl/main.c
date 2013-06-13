@@ -556,7 +556,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 			ar->wmi, vif->fw_vif_idx, ik->key_index, ik->key_type,
 			GROUP_USAGE, ik->key_len, key_rsc, ATH6KL_KEY_SEQ_LEN,
 			ik->key,
-			KEY_OP_INIT_VAL, NULL, SYNC_BOTH_WMIFLAG);
+			KEY_OP_INIT_VAL, NULL, NO_SYNC_WMIFLAG);
 		if (res) {
 			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 				   "Delayed addkey failed: %d\n", res);

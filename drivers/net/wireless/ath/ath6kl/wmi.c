@@ -2648,7 +2648,7 @@ int ath6kl_wmi_delete_pstream_cmd(struct wmi *wmi, u8 if_idx, u8 traffic_class,
 		   traffic_class, tsid);
 
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_DELETE_PSTREAM_CMDID,
-				  SYNC_BEFORE_WMIFLAG);
+					NO_SYNC_WMIFLAG);
 
 	spin_lock_bh(&wmi->lock);
 	wmi->stream_exist_for_ac[traffic_class] &= ~(1 << tsid);
