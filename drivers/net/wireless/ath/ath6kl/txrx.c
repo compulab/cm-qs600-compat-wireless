@@ -4000,10 +4000,8 @@ enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar
 			jiffies + msecs_to_jiffies(MCC_STOP_EVENT_TIMER_INTVL));
 
 		if (!mcc_flowctrl->mcc_events_resumed) {
-			struct ath6kl_vif *vif = ath6kl_vif_first(ar);
-
 			ath6kl_wmi_set_mcc_event_mode_cmd(ar->wmi,
-				vif->fw_vif_idx, MCC_START_EVENT);
+					MCC_START_EVENT);
 			mcc_flowctrl->mcc_events_resumed = 1;
 		}
 	}
@@ -4499,13 +4497,8 @@ static void ath6kl_mcc_event_ctrl_timer_handler(unsigned long ptr)
 {
 	struct ath6kl *ar = (struct ath6kl *)ptr;
 	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
-	struct ath6kl_vif *vif = ath6kl_vif_first(ar);
 
-	if (!vif)
-		return;
-
-	ath6kl_wmi_set_mcc_event_mode_cmd(ar->wmi,
-			 vif->fw_vif_idx, MCC_STOP_EVENT);
+	ath6kl_wmi_set_mcc_event_mode_cmd(ar->wmi, MCC_STOP_EVENT);
 	mcc_flowctrl->mcc_events_resumed = 0;
 	return;
 }
