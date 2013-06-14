@@ -1708,7 +1708,8 @@ static int htc_parse_trailer(struct htc_target *target,
 					"htc rx next look ahead",
 					"", next_lk_ahds, 4);
 
-			*n_lk_ahds = 1;
+			if (n_lk_ahds)
+				*n_lk_ahds = 1;
 		}
 		break;
 	case HTC_RECORD_LOOKAHEAD_BUNDLE:
@@ -1733,7 +1734,8 @@ static int htc_parse_trailer(struct htc_target *target,
 				bundle_lkahd_rpt++;
 			}
 
-			*n_lk_ahds = i;
+			if (n_lk_ahds)
+				*n_lk_ahds = i;
 		}
 		break;
 	default:

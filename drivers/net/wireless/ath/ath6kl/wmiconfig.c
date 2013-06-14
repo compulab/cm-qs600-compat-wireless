@@ -358,7 +358,7 @@ static void ath6kl_setup_wlan_sta_lte_coex_mode(struct ath6kl *ar,
 	}
 	spin_unlock_bh(&ar->list_lock);
 	/* Select wwan band */
-	for (i = 0; i < LTE_COEX_REF_LOOKUP_ROWS; i++) {
+	for (i = 0; i < LTE_COEX_REF_LOOKUP_ROWS - 1; i++) {
 		if (ar->lte_coex->wwan_freq >= lte_coex_chk[i].wwan_min_freq
 		&& ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq) {
 			/*select wlan band */

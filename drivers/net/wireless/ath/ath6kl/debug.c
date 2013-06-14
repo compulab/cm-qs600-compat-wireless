@@ -834,7 +834,7 @@ static bool ath6kl_dbg_is_diag_reg_valid(u32 reg_addr)
 			return true;
 	}
 
-	return false;
+	return true;
 }
 
 static ssize_t ath6kl_regread_read(struct file *file, char __user *user_buf,
