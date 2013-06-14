@@ -1634,47 +1634,27 @@ static int ath6kl_usb_map_service_pipe(struct ath6kl *ar, u16 svc_id,
 		case WMI_CONTROL_SVC:
 			*ul_pipe = ATH6KL_USB_PIPE_TX_CTRL;
 			/* due to large control packets, shift to data pipe */
-			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
 			break;
 		case WMI_DATA_BE_SVC:
-			if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
-				/* BE and BK pipe hardware fifo are interchanged
-				 * in HW, so need changes for BAM */
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			} else {
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			}
+			/* BE and BK pipe hardware fifo are interchanged
+			 * in HW, so need changes for BAM */
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA;
 			break;
 		case WMI_DATA_BK_SVC:
-			if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
-				/* BE and BK pipe hardware fifo are interchanged
-				 * in HW, so need changes for BAM */
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_MP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			} else {
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_LP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			}
+			/* BE and BK pipe hardware fifo are interchanged
+			 * in HW, so need changes for BAM */
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_MP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA;
 			break;
 		case WMI_DATA_VI_SVC:
-			if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_HP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			} else {
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_MP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			}
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_HP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA;
 			break;
 		case WMI_DATA_VO_SVC:
-			if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_VHP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			} else {
-				*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_HP;
-				*dl_pipe = ATH6KL_USB_PIPE_RX_DATA2;
-			}
+			*ul_pipe = ATH6KL_USB_PIPE_TX_DATA_VHP;
+			*dl_pipe = ATH6KL_USB_PIPE_RX_DATA;
 			break;
 		default:
 			status = -EPERM;
