@@ -1791,6 +1791,11 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		}
 	}
 
+	if (eid <= ENDPOINT_UNUSED || eid >= ENDPOINT_MAX) {
+		ath6kl_err("Invalid eid %d!\n", eid);
+		goto fail_tx;
+	}
+
 	/* allocate resource for this packet */
 	cookie = ath6kl_alloc_cookie(ar, vif, eid);
 
@@ -1837,6 +1842,9 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 		(ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL))) {
 		enum htc_send_queue_result queue_result;
 		u8 conn_id = ath6kl_mcc_flowctrl_get_conn_id(vif, skb);
+
+		if (conn_id >= NUM_CONN)
+			goto fail_skbexp;
 
 		cookie->htc_pkt.connid = conn_id;
 		cookie->htc_pkt.recycle_count = 0;
@@ -2074,7 +2082,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool wake_event = false;
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
-	struct ath6kl_vif *vif;
+	struct ath6kl_vif *vif = NULL;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -2103,6 +2111,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 		__skb_queue_tail(&skb_queue, skb);
 
 		if (!status && (packet->act_len != skb->len))
+			goto fatal;
+
+		if (eid <= ENDPOINT_UNUSED || eid >= ENDPOINT_MAX)
 			goto fatal;
 
 		ar->tx_pending[eid]--;
@@ -2134,7 +2145,8 @@ void ath6kl_tx_complete(struct htc_target *target,
 		}
 
 		vif = ath6kl_get_vif_by_index(ar, if_idx);
-		if (!vif) {
+
+		if (!vif || if_idx >= ATH6KL_VIF_MAX) {
 			ath6kl_free_cookie(ar, vif, ath6kl_cookie);
 			continue;
 		}
@@ -2247,7 +2259,7 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 		return;
 	datap = (struct ethhdr *) skb->data;
 	if (vif->nw_type == AP_NETWORK) {
-		if (ar && vif && datap)
+		if (datap)
 			conn = ath6kl_find_sta(vif, datap->h_dest,
 					ar->inter_bss);
 		/*
@@ -2292,8 +2304,7 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 	skb->protocol = eth_type_trans(skb, skb->dev);
 
 	status = ath6kl_usb_data_send_to_sysbam_pipe(ar, skb);
-	if (status < 0)
-	{
+	if (status) {
 		ath6kl_dbg(ATH6KL_DBG_OOO,
 			"BAM-CM: Failed to send data over sysbam pipe %s\n",
 		       			__func__);
@@ -2314,7 +2325,7 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		return;
 	datap = (struct ethhdr *) skb->data;
 	if (vif->nw_type == AP_NETWORK) {
-		if (ar && vif && datap)
+		if (datap)
 			conn = ath6kl_find_sta(vif, datap->h_dest,
 					ar->inter_bss);
 		/*
@@ -3050,7 +3061,8 @@ static void ath6kl_uapsd_trigger_frame_rx(struct ath6kl_vif *vif,
 		if ((is_apsdq_empty) || (!num_frames_to_deliver))
 			conn->sta_flags |= STA_PS_APSD_EOSP;
 
-		ath6kl_data_tx(skb, vif->ndev);
+		if (skb)
+			ath6kl_data_tx(skb, vif->ndev);
 		conn->sta_flags &= ~(STA_PS_APSD_TRIGGER);
 		conn->sta_flags &= ~(STA_PS_APSD_EOSP);
 	}
@@ -3374,10 +3386,11 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		if (is_multicast_ether_addr(datap->h_dest)) {
 			/*
 			 * Bcast/Mcast frames should be sent to the
-			 * OS stack as well as on the air.
+			 * OS stack as well as over the air.
 			 */
 			skb1 = skb_copy(skb, GFP_ATOMIC);
-			ath6kl_data_tx(skb1, conn->vif->ndev);
+			if (skb1)
+				ath6kl_data_tx(skb1, conn->vif->ndev);
 		}
 	}
 
@@ -3921,8 +3934,6 @@ void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg)
 				list_for_each_entry_safe(packet, tmp_pkt,
 						&fw_conn->re_queue, list) {
 					list_del(&packet->list);
-					if (packet == NULL)
-						continue;
 
 					if (packet->endpoint >= ENDPOINT_MAX)
 						continue;
@@ -3936,9 +3947,6 @@ void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg)
 				list_for_each_entry_safe(packet, tmp_pkt,
 						&fw_conn->conn_queue, list) {
 					list_del(&packet->list);
-
-					if (packet == NULL)
-						continue;
 
 					if (packet->endpoint >= ENDPOINT_MAX)
 						continue;
