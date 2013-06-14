@@ -865,12 +865,11 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 							ev->u.ap_bss.bssid,
 							ev->u.ap_bss.aid);
 			sec_ch = ATH6KL_MASK_SEC_CH & ev->u.ap_bss.ht_info;
-			phymode = (ATH6KL_MASK_PHYMODE & 
+			phymode = (ATH6KL_MASK_PHYMODE &
 					ev->u.ap_bss.ht_info) >> 0x2;
 			ath6kl_connect_ap_mode_bss(
 				vif, le16_to_cpu(ev->u.ap_bss.ch),
 			       		sec_ch, phymode);
-
                         if (ath6kl_is_mcc_enabled(vif->ar)) {
 				vif->ar->is_mcc_enabled = true;
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -886,7 +885,7 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			}
 #endif
 
-				ath6kl_dbg(ATH6KL_DBG_WMI, 
+				ath6kl_dbg(ATH6KL_DBG_WMI,
 					"connect_event-ap_nw: (MCC_ENABLED)\n");
 			}
 		} else {
@@ -916,7 +915,7 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 	/* STA/IBSS mode connection event */
 
 	ath6kl_dbg(ATH6KL_DBG_WMI,
-		   "wmi event connect freq %d bssid %pM listen_intvl %d beacon_intvl %d type %d\n",
+		"wmi event connect freq %d bssid %pM listen_intvl %d beacon_intvl %d type %d\n",
 		   le16_to_cpu(ev->u.sta.ch), ev->u.sta.bssid,
 		   le16_to_cpu(ev->u.sta.listen_intvl),
 		   le16_to_cpu(ev->u.sta.beacon_intvl),
@@ -959,6 +958,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			     le32_to_cpu(ev->u.sta.nw_type),
 			     ev->beacon_ie_len, ev->assoc_req_len,
 			     ev->assoc_resp_len, ev->assoc_info);
+	ath6kl_check_adj_vif_ch_overlap(vif,
+				le16_to_cpu(ev->u.sta.ch));
 
 	if (ath6kl_is_mcc_enabled(vif->ar)) {
 		vif->ar->is_mcc_enabled = true;
@@ -1077,6 +1078,9 @@ static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len,
 		vif->ar->is_mcc_enabled = false;
 		ath6kl_dbg(ATH6KL_DBG_WMI, "disconnect_event: (MCC_DISABLED)\n");
         }
+
+	if (vif->nw_type == INFRA_NETWORK)
+		vif->ar->sta_bh_override = 0;
 
 	return 0;
 }
@@ -3378,9 +3382,11 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 
 	cm = (struct wmi_connect_cmd *) skb->data;
 	memcpy(cm, p, sizeof(*cm));
-	if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch))
-		cm->ch = cpu_to_le16(ap_acs_ch);
 
+	if (!ar->sta_bh_override) {
+		if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch))
+			cm->ch = cpu_to_le16(ap_acs_ch);
+	}
 	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_CONFIG_COMMIT_CMDID,
 				  NO_SYNC_WMIFLAG);
 	ath6kl_dbg(ATH6KL_DBG_WMI,
