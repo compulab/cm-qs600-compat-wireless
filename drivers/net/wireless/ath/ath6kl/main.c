@@ -839,10 +839,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 {
 	struct ath6kl *ar = vif->ar;
 
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	ath6kl_send_msg_ipa(vif, WLAN_STA_CONNECT, bssid);
-#endif
-
 	ath6kl_cfg80211_connect_event(vif, channel, bssid,
 				      listen_int, beacon_int,
 				      net_type, beacon_ie_len,
@@ -868,7 +864,7 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	spin_unlock_bh(&vif->if_lock);
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
-    vif->aggr_cntxt->aggr_conn->vif = vif;
+	vif->aggr_cntxt->aggr_conn->vif = vif;
 #endif
 	aggr_reset_state(vif->aggr_cntxt->aggr_conn);
 	vif->reconnect_flag = 0;
@@ -1203,12 +1199,6 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			vif->ap_hold_conn = 1;
 		}
 
-#ifdef CONFIG_ATH6KL_BAM2BAM
-		if(memcmp(bssid, vif->ndev->dev_addr, ETH_ALEN) == 0) {
-			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
-		}
-#endif
-
 		if (!(removed = ath6kl_remove_sta(vif, bssid,
 						prot_reason_status))) {
 			return;
@@ -1237,6 +1227,9 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		}
 
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
+#ifdef CONFIG_ATH6KL_BAM2BAM
+			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
+#endif
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
 			vif->max_num_sta = 0;
@@ -1255,16 +1248,12 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		}
 	}
 
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	ath6kl_send_msg_ipa(vif, WLAN_STA_DISCONNECT, bssid);
-#endif
-
 	ath6kl_cfg80211_disconnect_event(vif, reason, bssid,
 					 assoc_resp_len, assoc_info,
 					 prot_reason_status);
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
-    vif->aggr_cntxt->aggr_conn->vif = vif;
+	vif->aggr_cntxt->aggr_conn->vif = vif;
 #endif
 	aggr_reset_state(vif->aggr_cntxt->aggr_conn);
 
