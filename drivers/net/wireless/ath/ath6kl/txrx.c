@@ -36,6 +36,10 @@
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 #define ATH6KL_IPA_HOLB_TIMER_VAL 0x7f
+
+#define ATH6KL_BAM2BAM_IPV4_NAME_EXT "-ipv4"
+#define ATH6KL_BAM2BAM_IPV6_NAME_EXT "-ipv6"
+
 u32 un_ordered = 0;
 u32 ordered = 0;
 u32 flt_hdl_ipv6=0;
@@ -101,168 +105,181 @@ int ath6kl_ipa_enable_host_route_config (struct ath6kl_vif *vif, bool enable)
 int ath6kl_ipa_add_flt_rule(struct ath6kl *ar, enum ipa_client_type client)
 {
 	struct ipa_ioc_get_rt_tbl rt_lookup;
-	struct ipa_ioc_add_flt_rule *flt;
-	int status=0;
+	struct ipa_ioc_add_flt_rule *flt = NULL;
 	int ret = 0;
 
-	if (client == IPA_CLIENT_HSIC1_PROD) /* Rx Pipe */
-	{
-		flt_hdl_ipv4 = 0;
-		flt_hdl_ipv6 = 0;
+	if (client != IPA_CLIENT_HSIC1_PROD)
+		return -EINVAL;
 
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
+	flt_hdl_ipv4 = 0;
+	flt_hdl_ipv6 = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 			"IPA-CM: Creating flr rule for(HSIC1_PROD) client %d\n",
-				client);
+			client);
 
-		flt = (struct ipa_ioc_add_flt_rule *)
-			(kmalloc(((sizeof(struct ipa_ioc_add_flt_rule)) +
-			(sizeof(struct ipa_flt_rule_add)*1)), GFP_KERNEL));
-		if (flt == NULL)
-		{
-			ath6kl_err("IPA-CM: Failed to create filter "
-				"rule for(HSIC1_PROD) client %d\n",client);
-			return ATH6KL_IPA_FAILURE;
-		}
+	flt = (struct ipa_ioc_add_flt_rule *)
+		kzalloc(sizeof(struct ipa_ioc_add_flt_rule) +
+				sizeof(struct ipa_flt_rule_add),
+				GFP_KERNEL);
+	if (flt == NULL) {
+		ath6kl_err("IPA-CM: Failed to create filter "
+				"rule for(HSIC1_PROD) client %d\n", client);
+		return -ENOMEM;
+	}
 
-		flt->commit = 1;
-		flt->ip = IPA_IP_v4;
-		flt->ep = client;
-		flt->global = 0;
-		flt->num_rules = 1;
+	flt->commit = 1;
+	flt->ip = IPA_IP_v4;
+	flt->ep = client;
+	flt->global = 0;
+	flt->num_rules = 1;
 
-		/* Setting the Filter rule for Exception Packet */
-		flt->rules[0].rule.action = IPA_PASS_TO_EXCEPTION;
-		flt->rules[0].at_rear = 0;
+	/* Setting the Filter rule for Exception Packet */
+	flt->rules[0].rule.action = IPA_PASS_TO_EXCEPTION;
+	flt->rules[0].at_rear = 0;
 
-		memset(&rt_lookup,0,sizeof(rt_lookup));
-		rt_lookup.ip = IPA_IP_v4;
-		strcpy(rt_lookup.name, IPA_DFLT_RT_TBL_NAME);
+	memset(&rt_lookup, 0, sizeof(rt_lookup));
+
+	rt_lookup.ip = IPA_IP_v4;
+	strlcpy(rt_lookup.name, IPA_DFLT_RT_TBL_NAME,
+			sizeof(rt_lookup.name));
+
+	ret = ipa_get_rt_tbl(&rt_lookup);
+
+	if (ret) {
+		ath6kl_err("IPA-CM: Geting RT table failed for IPV4 :"
+				"client : %d\n", client);
+		goto end;
+	}
+
+	flt->rules[0].rule.rt_tbl_hdl = rt_lookup.hdl;
+
+	/* 12th Byte, d0 bit is set for exception ,
+	 * 			meta data offset is 11 */
+	flt->rules[0].rule.attrib.meta_data = 0x01000000;
+	flt->rules[0].rule.attrib.meta_data_mask = 0x01000000;
+	flt->rules[0].rule.attrib.attrib_mask = IPA_FLT_META_DATA;
+
+	ret = ipa_add_flt_rule(flt);
+
+	if (ret || flt->rules[0].status != 0) {
+		ath6kl_err("IPA-CM: Error in adding Flt for IPV4: %d "
+				"ret: %d, status: %d\n",
+				client, ret, flt->rules[0].status);
+		goto end;
+	}
+
+	/* Remember the handle, needed while clean up */
+	flt_hdl_ipv4 = flt->rules[0].flt_rule_hdl;
+
+	ret = ipa_commit_flt(IPA_IP_v4);
+
+	if (ret)
+		goto end;
+
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6)) {
+		flt->ip = IPA_IP_v6;
+
+		memset(&rt_lookup, 0, sizeof(rt_lookup));
+
+		rt_lookup.ip = IPA_IP_v6;
+		strlcpy(rt_lookup.name, IPA_DFLT_RT_TBL_NAME,
+				sizeof(rt_lookup.name));
 
 		ret = ipa_get_rt_tbl(&rt_lookup);
 
-		if (!ret) {
-			flt->rules[0].rule.rt_tbl_hdl = rt_lookup.hdl;
-		} else {
-			ath6kl_err("IPA-CM: Geting RT table failed for IPV4 :"
-				"client : %d\n", client);
-			kfree(flt);
-			return ATH6KL_IPA_FAILURE;
-		}
-		memset(&(flt->rules[0].rule.attrib) ,0,
-				sizeof(struct ipa_rule_attrib));
-		/* 12th Byte, d0 bit is set for exception ,
-		 * 			meta data offset is 11 */
-		flt->rules[0].rule.attrib.meta_data = 0x01000000;
-		flt->rules[0].rule.attrib.meta_data_mask = 0x01000000;
-		flt->rules[0].rule.attrib.attrib_mask = IPA_FLT_META_DATA;
-
-		if ((status=ipa_add_flt_rule(flt)) < 0)
-		{
-			ath6kl_err("IPA-CM: Error in adding Flt for IPV4 %d "
-					"status %d\n", client, status);
-			kfree(flt);
-			return ATH6KL_IPA_FAILURE;
+		if (ret) {
+			ath6kl_err("IPA-CM: Get RT table failed for "
+					"IPV6: client : %d, %d\n",
+					client, ret);
+			goto end;
 		}
 
-		if (flt->rules[0].status != 0)
-		{
-			ath6kl_err("IPA-CM: Error in adding the Flt for IPV4 "
-				"%d:status:%d\n", client, flt->rules[0].status);
-			kfree(flt);
-			return ATH6KL_IPA_FAILURE;
+		flt->rules[0].rule.rt_tbl_hdl = rt_lookup.hdl;
+
+		ret = ipa_add_flt_rule(flt);
+
+		if (ret || flt->rules[0].status < 0) {
+			ath6kl_err("IPA-CM: Error in adding Flt for IPV6 client: "
+					"%d ret: %d, status: %d\n",
+					client, ret, flt->rules[0].status);
+			goto end;
 		}
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: Successfully created IPV4 exception "
-				"filter rule for client %d\n", client);
 
 		/* Remember the handle, needed while clean up */
-		flt_hdl_ipv4 = flt->rules[0].flt_rule_hdl;
+		flt_hdl_ipv6 = flt->rules[0].flt_rule_hdl;
 
-		ipa_commit_flt(IPA_IP_v4);
-
-#ifdef CONFIG_ATH6KL_IPA_WITH_IPV6
-		if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
-		{
-			flt->ip = IPA_IP_v6;
-
-			memset(&rt_lookup,0,sizeof(rt_lookup));
-			rt_lookup.ip = IPA_IP_v6;
-			strcpy(rt_lookup.name, IPA_DFLT_RT_TBL_NAME);
-
-			ret = ipa_get_rt_tbl(&rt_lookup);
-			if (!ret) {
-				flt->rules[0].rule.rt_tbl_hdl = rt_lookup.hdl;
-			} else {
-				ath6kl_err("IPA-CM: Get RT table failed for "
-						"IPV6: client : %d\n", client);
-				kfree(flt);
-				return ATH6KL_IPA_FAILURE;
-			}
-
-			if ((status=ipa_add_flt_rule(flt)) < 0)
-			{
-				ath6kl_err("IPA-CM: Error in adding Flt for "
-						"IPV6 client %d status %d\n",
-						client, status);
-				kfree(flt);
-				return ATH6KL_IPA_FAILURE;
-			}
-
-			if (flt->rules[0].status < 0)
-			{
-				ath6kl_err("IPA-CM: Error in adding Flt for "
-					"IPV6 client %d : status : %d\n",
-					client, flt->rules[0].status);
-				kfree(flt);
-				return ATH6KL_IPA_FAILURE;
-			}
-			ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: Successfully created IPV6 "
-				"exception filter rule for client %d\n",client);
-			/* Remember the handle, needed while clean up */
-			flt_hdl_ipv6 = flt->rules[0].flt_rule_hdl;
-
-			ipa_commit_flt(IPA_IP_v6);
-		}
-#endif
-		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
-			"IPA-CM: Successfully created the Exception Flt for "
-			"client %d : status : %d\n", client,
-				flt->rules[0].status);
-		kfree(flt);
-	}
-	else
-	{
-		/* Filter rule to be set for Tx pipe, if any */
+		ret = ipa_commit_flt(IPA_IP_v6);
+		if (ret)
+			goto end;
 	}
 
-	return ATH6KL_IPA_SUCCESS;
+end:
+	kfree(flt);
+
+	return ret;
 }
 EXPORT_SYMBOL(ath6kl_ipa_add_flt_rule);
 
-#ifdef CONFIG_ATH6KL_IPA_WITH_IPV6
-struct ipa_ioc_tx_intf_prop artxprop[8+8];
-struct ipa_ioc_rx_intf_prop rxprop[1+1];
-#else
-/* Allocate only for IPV4 by default*/
-struct ipa_ioc_tx_intf_prop artxprop[8];
-struct ipa_ioc_rx_intf_prop rxprop[1];
-#endif
+#define ATH6KL_IPA_IP_MAX_TX_PROP		8
+
+static struct {
+	uint8_t tos_tc;
+	enum ipa_client_type dst_pipe;
+} tx_prop_map [] = {
+	/* BK */
+	{1, IPA_CLIENT_HSIC2_CONS},
+	{2, IPA_CLIENT_HSIC2_CONS},
+	/* BE */
+	{0, IPA_CLIENT_HSIC1_CONS},
+	{3, IPA_CLIENT_HSIC1_CONS},
+	/* VI */
+	{4, IPA_CLIENT_HSIC3_CONS},
+	{5, IPA_CLIENT_HSIC3_CONS},
+	/* VO */
+	{6, IPA_CLIENT_HSIC4_CONS},
+	{7, IPA_CLIENT_HSIC4_CONS},
+};
+
 int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		const char *name, char* hdr_name_ip)
 {
-	struct ipa_tx_intf txintf;
-	struct ipa_rx_intf rxintf;
-	char hdr_name[30];
+	struct ipa_tx_intf tx_intf;
+	struct ipa_rx_intf rx_intf;
+	struct ipa_ioc_tx_intf_prop *tx_prop = NULL;
+	struct ipa_ioc_rx_intf_prop *rx_prop = NULL;
+	char ipv4_hdr_name[IPA_RESOURCE_NAME_MAX];
+	char ipv6_hdr_name[IPA_RESOURCE_NAME_MAX];
+	int i, j;
+	int ret = 0;
 
-	hdr_name[0] = '\0';
-	strcpy(hdr_name, hdr_name_ip);
-	strcat(hdr_name, "-ipv4");
+	/* Allocate TX properties, 1 each for IPv4 & IPv6 */
+	tx_prop = kzalloc(sizeof(struct ipa_ioc_tx_intf_prop) *
+			ATH6KL_IPA_IP_MAX_TX_PROP * 2, GFP_KERNEL);
 
-	memset(&txintf,0,sizeof(txintf));
-	memset(&rxintf,0,sizeof(rxintf));
-	memset(&artxprop,0,sizeof(artxprop));
-	memset(&rxprop,0,sizeof(rxprop));
+	if (tx_prop == NULL) {
+		ath6kl_err("Failed to allocate memory for TX properties\n");
+		goto end;
+	}
+
+	/* Allocate RX properties, 1 each for IPv4 & IPv6 */
+	rx_prop = kzalloc(sizeof(struct ipa_ioc_rx_intf_prop) * 2, GFP_KERNEL);
+
+	if (rx_prop == NULL) {
+		ath6kl_err("Failed to allocate memory for RX properties\n");
+		goto end;
+	}
+
+	strlcpy(ipv4_hdr_name, hdr_name_ip, sizeof(ipv4_hdr_name));
+	strlcat(ipv4_hdr_name, ATH6KL_BAM2BAM_IPV4_NAME_EXT,
+			sizeof(ipv4_hdr_name));
+
+	strlcpy(ipv6_hdr_name, hdr_name_ip, sizeof(ipv6_hdr_name));
+	strlcat(ipv6_hdr_name, ATH6KL_BAM2BAM_IPV6_NAME_EXT,
+			sizeof(ipv6_hdr_name));
+
+	memset(&tx_intf, 0, sizeof(tx_intf));
+	memset(&rx_intf, 0, sizeof(rx_intf));
 
 	/*
 	   TOS value: 1, 2 - > Maps to BK pipe [HSIC2_CONS]
@@ -271,206 +288,93 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 	   TOS Value: 6, 7 - > Maps to VO pipe [HSIC4_CONS]
 	 */
 
-	// tx properties
-	// for BK
-	artxprop[0].ip = IPA_IP_v4;
-	memset(&artxprop[0].attrib,0,sizeof(artxprop[0].attrib));
-	artxprop[0].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[0].attrib.u.v4.tos = 1;
-	artxprop[0].dst_pipe = IPA_CLIENT_HSIC2_CONS;
-	strcpy(artxprop[0].hdr_name,hdr_name);
+	for (i = 0; i < ATH6KL_IPA_IP_MAX_TX_PROP; i++) {
+		tx_prop[i].ip = IPA_IP_v4;
+		tx_prop[i].attrib.attrib_mask = IPA_FLT_TOS;
+		tx_prop[i].attrib.u.v4.tos = tx_prop_map[i].tos_tc;
+		tx_prop[i].dst_pipe = tx_prop_map[i].dst_pipe;
+		strlcpy(tx_prop[i].hdr_name, ipv4_hdr_name,
+				IPA_RESOURCE_NAME_MAX);
 
-	artxprop[1].ip = IPA_IP_v4;
-	memset(&artxprop[1].attrib,0,sizeof(artxprop[1].attrib));
-	artxprop[1].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[1].attrib.u.v4.tos = 2;
-	artxprop[1].dst_pipe = IPA_CLIENT_HSIC2_CONS;
-	strcpy(artxprop[1].hdr_name,hdr_name);
+		tx_intf.num_props++;
 
-	// for BE
-	artxprop[2].ip = IPA_IP_v4;
-	memset(&artxprop[2].attrib,0,sizeof(artxprop[2].attrib));
-	artxprop[2].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[2].attrib.u.v4.tos = 0;
-	artxprop[2].dst_pipe = IPA_CLIENT_HSIC1_CONS;
-	strcpy(artxprop[2].hdr_name,hdr_name);
+		/* Dont update if IPV6 is not enabled */
+		if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
+			continue;
 
-	artxprop[3].ip = IPA_IP_v4;
-	memset(&artxprop[3].attrib,0,sizeof(artxprop[3].attrib));
-	artxprop[3].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[3].attrib.u.v4.tos = 3;
-	artxprop[3].dst_pipe = IPA_CLIENT_HSIC1_CONS;
-	strcpy(artxprop[3].hdr_name,hdr_name);
+		j = i + ATH6KL_IPA_IP_MAX_TX_PROP;
 
-	// for VO
-	artxprop[4].ip = IPA_IP_v4;
-	memset(&artxprop[4].attrib,0,sizeof(artxprop[4].attrib));
-	artxprop[4].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[4].attrib.u.v4.tos = 4;
-	artxprop[4].dst_pipe = IPA_CLIENT_HSIC3_CONS;
-	strcpy(artxprop[4].hdr_name,hdr_name);
+		tx_prop[j].ip = IPA_IP_v6;
+		tx_prop[j].attrib.attrib_mask = IPA_FLT_TC;
+		tx_prop[j].attrib.u.v6.tc = tx_prop_map[i].tos_tc;
+		tx_prop[j].dst_pipe = tx_prop_map[i].dst_pipe;
+		strlcpy(tx_prop[j].hdr_name, ipv6_hdr_name,
+				IPA_RESOURCE_NAME_MAX);
 
-	artxprop[5].ip = IPA_IP_v4;
-	memset(&artxprop[5].attrib,0,sizeof(artxprop[5].attrib));
-	artxprop[5].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[5].attrib.u.v4.tos = 5;
-	artxprop[5].dst_pipe = IPA_CLIENT_HSIC3_CONS;
-	strcpy(artxprop[5].hdr_name,hdr_name);
+		tx_intf.num_props++;
+	}
 
-	// for VI
-	artxprop[6].ip = IPA_IP_v4;
-	memset(&artxprop[6].attrib,0,sizeof(artxprop[6].attrib));
-	artxprop[6].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[6].attrib.u.v4.tos = 6;
-	artxprop[6].dst_pipe = IPA_CLIENT_HSIC4_CONS;
-	strcpy(artxprop[6].hdr_name,hdr_name);
 
-	artxprop[7].ip = IPA_IP_v4;
-	memset(&artxprop[7].attrib,0,sizeof(artxprop[7].attrib));
-	artxprop[7].attrib.attrib_mask = IPA_FLT_TOS;
-	artxprop[7].attrib.u.v4.tos = 7;
-	artxprop[7].dst_pipe = IPA_CLIENT_HSIC4_CONS;
-	strcpy(artxprop[7].hdr_name,hdr_name);
-
-	// rx properties
 	/* Enable this for switching between WLAN or WAN  */
-	rxprop[0].ip = IPA_IP_v4;
-	memset(&rxprop[0].attrib,0,sizeof(rxprop[0].attrib));
-	// meta data based filtering for rx
-	rxprop[0].attrib.attrib_mask = IPA_FLT_META_DATA;
+	rx_prop[0].ip = IPA_IP_v4;
+	rx_prop[0].attrib.attrib_mask = IPA_FLT_META_DATA;
 
 	/* 12th Byte, d2 bit is set for wlan or wan interface*/
 	if(sta_ap == 1) /* Means AP mode */
-		rxprop[0].attrib.meta_data = 0x04000000;
+		rx_prop[0].attrib.meta_data = 0x04000000;
 	else
-		rxprop[0].attrib.meta_data = 0x00000000;
+		rx_prop[0].attrib.meta_data = 0x00000000;
 
-	rxprop[0].attrib.meta_data_mask = 0x04000000;
-	rxprop[0].src_pipe = IPA_CLIENT_HSIC1_PROD;
+	rx_prop[0].attrib.meta_data_mask = 0x04000000;
+	rx_prop[0].src_pipe = IPA_CLIENT_HSIC1_PROD;
+	rx_intf.num_props++;
 
-#ifdef CONFIG_ATH6KL_IPA_WITH_IPV6
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
-	{
-		hdr_name[0] = '\0';
-		strcpy(hdr_name, hdr_name_ip);
-		strcat(hdr_name, "-ipv6");
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6)) {
 
-		// tx properties
-		// for BK
-		artxprop[8].ip = IPA_IP_v6;
-		memset(&artxprop[8].attrib,0,sizeof(artxprop[8].attrib));
-		artxprop[8].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[8].attrib.u.v6.tc = 1;
-		artxprop[8].dst_pipe = IPA_CLIENT_HSIC2_CONS;
-		strcpy(artxprop[8].hdr_name,hdr_name);
-
-		artxprop[9].ip = IPA_IP_v6;
-		memset(&artxprop[9].attrib,0,sizeof(artxprop[9].attrib));
-		artxprop[9].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[9].attrib.u.v6.tc = 2;
-		artxprop[9].dst_pipe = IPA_CLIENT_HSIC2_CONS;
-		strcpy(artxprop[9].hdr_name,hdr_name);
-
-		// for BE
-		artxprop[10].ip = IPA_IP_v6;
-		memset(&artxprop[10].attrib,0,sizeof(artxprop[10].attrib));
-		artxprop[10].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[10].attrib.u.v6.tc = 0;
-		artxprop[10].dst_pipe = IPA_CLIENT_HSIC1_CONS;
-		strcpy(artxprop[10].hdr_name,hdr_name);
-
-		artxprop[11].ip = IPA_IP_v6;
-		memset(&artxprop[11].attrib,0,sizeof(artxprop[11].attrib));
-		artxprop[11].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[11].attrib.u.v6.tc = 3;
-		artxprop[11].dst_pipe = IPA_CLIENT_HSIC1_CONS;
-		strcpy(artxprop[11].hdr_name,hdr_name);
-
-		// for VO
-		artxprop[12].ip = IPA_IP_v6;
-		memset(&artxprop[12].attrib,0,sizeof(artxprop[12].attrib));
-		artxprop[12].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[12].attrib.u.v6.tc = 4;
-		artxprop[12].dst_pipe = IPA_CLIENT_HSIC3_CONS;
-		strcpy(artxprop[12].hdr_name,hdr_name);
-
-		artxprop[13].ip = IPA_IP_v6;
-		memset(&artxprop[13].attrib,0,sizeof(artxprop[13].attrib));
-		artxprop[13].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[13].attrib.u.v6.tc = 5;
-		artxprop[13].dst_pipe = IPA_CLIENT_HSIC3_CONS;
-		strcpy(artxprop[13].hdr_name,hdr_name);
-
-		// for VI
-		artxprop[14].ip = IPA_IP_v6;
-		memset(&artxprop[14].attrib,0,sizeof(artxprop[14].attrib));
-		artxprop[14].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[14].attrib.u.v6.tc = 6;
-		artxprop[14].dst_pipe = IPA_CLIENT_HSIC4_CONS;
-		strcpy(artxprop[14].hdr_name,hdr_name);
-
-		artxprop[15].ip = IPA_IP_v6;
-		memset(&artxprop[15].attrib,0,sizeof(artxprop[15].attrib));
-		artxprop[15].attrib.attrib_mask = IPA_FLT_TC;
-		artxprop[15].attrib.u.v6.tc = 7;
-		artxprop[15].dst_pipe = IPA_CLIENT_HSIC4_CONS;
-		strcpy(artxprop[15].hdr_name,hdr_name);
-
-		// rx properties
 		/* Enable this for switching between WLAN or WAN  */
-		rxprop[1].ip = IPA_IP_v6;
-		memset(&rxprop[1].attrib,0,sizeof(rxprop[1].attrib));
-		// meta data based filtering for rx
-		rxprop[1].attrib.attrib_mask = IPA_FLT_META_DATA;
+		rx_prop[1].ip = IPA_IP_v6;
+		rx_prop[1].attrib.attrib_mask = IPA_FLT_META_DATA;
 
 		/* 12th Byte, d2 bit is set for wlan or wan interface*/
 		if(sta_ap == 1) /* Means AP mode */
-			rxprop[1].attrib.meta_data = 0x04000000;
+			rx_prop[1].attrib.meta_data = 0x04000000;
 		else
-			rxprop[1].attrib.meta_data = 0x00000000;
+			rx_prop[1].attrib.meta_data = 0x00000000;
 
-		rxprop[1].attrib.meta_data_mask = 0x04000000;
-		rxprop[1].src_pipe = IPA_CLIENT_HSIC1_PROD;
+		rx_prop[1].attrib.meta_data_mask = 0x04000000;
+		rx_prop[1].src_pipe = IPA_CLIENT_HSIC1_PROD;
 
-		txintf.num_props = 16; /* each tos value has 1 */
-		rxintf.num_props = 2;
-	}else {
-		txintf.num_props = 8; /* each tos value has 1 */
-		rxintf.num_props = 1;
+		rx_intf.num_props++;
 	}
-#else
-	/* Allocate only for IPV4 by default*/
-	txintf.num_props = 8; /* each tos value has 1 */
-	rxintf.num_props = 1;
-#endif
 
 	/* If Rx is SW path, then no need to set Rx properties */
 	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
-		rxintf.num_props = 0;
+		rx_intf.num_props = 0;
 
-	// set the properties
-	txintf.prop = artxprop;
-	rxintf.prop = rxprop;
+	tx_intf.prop = tx_prop;
+	rx_intf.prop = rx_prop;
 
-	// Call the ipa api to register interface
-	if(ATH6KL_IPA_SUCCESS != ipa_register_intf(name, &txintf, &rxintf))
-		return ATH6KL_IPA_FAILURE;
+	/* Call the ipa api to register interface */
+	ret = ipa_register_intf(name, &tx_intf, &rx_intf);
 
-	return ATH6KL_IPA_SUCCESS;
+end:
+	kfree(tx_prop);
+	kfree(rx_prop);
+	return ret;
 }
 EXPORT_SYMBOL(ath6kl_ipa_register_interface);
 
 /* @brief
  * add the specified headers to SW and optionally commit them to IPA HW
  * @return
- * @return
- * ATH6KL_IPA_SUCCESS on success,
- * ATH6KL_IPA_FAILURE on failure
+ * 0 on success,
+ * error on failure
  */
 int ath6kl_ipa_add_header_info(struct ath6kl *ar, u8 ap_sta, u8 device_id,
 		char* interface_name, u8 *mac_addr)
 {
-	struct ipa_ioc_add_hdr *ipahdr;
+	struct ipa_ioc_add_hdr *ipahdr = NULL;
+	int ret;
 
 	uint8_t hdr[ATH6KL_IPA_WLAN_HDR_LENGTH + 1]={
 		/* HTC Header - 6 bytes */
@@ -504,27 +408,23 @@ int ath6kl_ipa_add_header_info(struct ath6kl *ar, u8 ap_sta, u8 device_id,
 		0x08, 0x00  /* type value(2 bytes) ,filled by wlan  */
 		/* 0x0800 - IPV4, 0x86dd - IPV6 */
 	};
-	int status;
 
-	if(interface_name == NULL)
-	{
+	if(interface_name == NULL) {
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 			"IPA-CM: Interface name is null and not defined\n");
-		return ATH6KL_IPA_FAILURE;
+		return -EINVAL;
 	}
 	/* dynamically allocate the memory to add the hdrs */
 	ipahdr = (struct ipa_ioc_add_hdr *)
-		(kmalloc(((sizeof(struct ipa_ioc_add_hdr)) +
-			  (sizeof(struct ipa_hdr_add))), GFP_KERNEL));
-	if (ipahdr == NULL)
-	{
+		kzalloc(sizeof(struct ipa_ioc_add_hdr) +
+			  sizeof(struct ipa_hdr_add), GFP_KERNEL);
+	if (ipahdr == NULL) {
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 			"IPA-CM: Failed while creating hdr for interface %s\n",
 				interface_name);
-		return ATH6KL_IPA_FAILURE;
+		return -ENOMEM;
 	}
-	memset(ipahdr,0,((sizeof(struct ipa_ioc_add_hdr))+
-				(sizeof(struct ipa_hdr_add))));
+
 	ipahdr->commit = 0;
 	ipahdr->num_hdrs = 1;
 
@@ -542,79 +442,78 @@ int ath6kl_ipa_add_header_info(struct ath6kl *ar, u8 ap_sta, u8 device_id,
 	ipahdr->hdr[0].hdr_hdl 	= 0;   /* output param, no need to fill */
 
 	/* Call the ipa api to configure ep */
-	ipahdr->hdr[0].name[0]='\0';
-	strcpy(ipahdr->hdr[0].name,interface_name);
-	strcat(ipahdr->hdr[0].name,"-ipv4");
+	strlcpy(ipahdr->hdr[0].name, interface_name,
+			sizeof(ipahdr->hdr[0].name));
+	strlcat(ipahdr->hdr[0].name, ATH6KL_BAM2BAM_IPV4_NAME_EXT,
+			sizeof(ipahdr->hdr[0].name));
+	ret = ipa_add_hdr(ipahdr);
 
-	if(ATH6KL_IPA_SUCCESS != ipa_add_hdr(ipahdr))
-	{
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: Failed adding hdr for interface %s\n",
+	if(ret) {
+		ath6kl_err("IPA-CM: Failed adding hdr for interface %s\n",
 				interface_name);
-		kfree(ipahdr);
-		return ATH6KL_IPA_FAILURE;
+		goto end;
 	}
+
 	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 			"IPA-CM: IPA Handle for header: %s : %x\n",
 			ipahdr->hdr[0].name, ipahdr->hdr[0].hdr_hdl);
 
-#ifdef CONFIG_ATH6KL_IPA_WITH_IPV6
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
-	{
-		ipahdr->hdr[0].name[0]='\0';
-		strcpy(ipahdr->hdr[0].name,interface_name);
-		strcat(ipahdr->hdr[0].name,"-ipv6");
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6)) {
+		strlcpy(ipahdr->hdr[0].name, interface_name,
+				sizeof(ipahdr->hdr[0].name));
+		strlcat(ipahdr->hdr[0].name, ATH6KL_BAM2BAM_IPV6_NAME_EXT,
+				sizeof(ipahdr->hdr[0].name));
 		/* Set the type to IPV6 in the header*/
 		/* 0x0800 - IPV4, 0x86dd - IPV6 */
 		ipahdr->hdr[0].hdr[32] = 0x86;
 		ipahdr->hdr[0].hdr[33] = 0xdd;
 
-		if(ATH6KL_IPA_SUCCESS != ipa_add_hdr(ipahdr))
-		{
-			ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: Failed adding hdr for interface %s\n",
+		ret = ipa_add_hdr(ipahdr);
+		if(ret) {
+			ath6kl_err("IPA-CM: Failed adding hdr for iface %s\n",
 				interface_name);
-			kfree(ipahdr);
-			return ATH6KL_IPA_FAILURE;
+			goto end;
 		}
+
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 				"IPA Handle for header: %s : %x\n",
 				ipahdr->hdr[0].name, ipahdr->hdr[0].hdr_hdl);
 	}
-#endif
+
 	/* Configure the TX and RX pipes filter rules */
-	status = ath6kl_ipa_register_interface(ar, ap_sta, interface_name,
+	ret = ath6kl_ipa_register_interface(ar, ap_sta, interface_name,
 			interface_name);
-	if(ATH6KL_IPA_SUCCESS != status)
-	{
+	if(ret) {
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Failed registering the interface for :%s\n",
-			interface_name);
-		kfree(ipahdr);
-		return ATH6KL_IPA_FAILURE;
+			"IPA-CM: Failed registering the interface for :%s,"
+			" ret: %d\n", interface_name, ret);
 	}
 
+end:
 	kfree(ipahdr);
-	return ATH6KL_IPA_SUCCESS;
+	return ret;
 }
 EXPORT_SYMBOL(ath6kl_ipa_add_header_info);
 
 int ath6kl_ipa_get_header_hdl(char *hdr_name, uint32_t *hdl)
 {
 	struct ipa_ioc_get_hdr hdrlookup;
+	int ret = 0;
 
 	memset(&hdrlookup,0,sizeof(hdrlookup));
 	strcpy(hdrlookup.name, hdr_name);
 
-	if(ATH6KL_IPA_SUCCESS != ipa_get_hdr(&hdrlookup))
-	{
+	ret = ipa_get_hdr(&hdrlookup);
+
+	if (ret) {
 		ath6kl_err("IPA-CM: Error in getting the hdr Handle for : %s\n",
 				hdr_name);
-		return ATH6KL_IPA_FAILURE;
+		return ret;
 	}
 
 	*hdl = hdrlookup.hdl;
-	return ATH6KL_IPA_SUCCESS;
+
+	return 0;
 }
 
 int ath6kl_ipa_put_header_hdl(char *hdr_name, uint32_t *hdl)
@@ -623,13 +522,13 @@ int ath6kl_ipa_put_header_hdl(char *hdr_name, uint32_t *hdl)
 
 	/* Put and release hdr, and it is equivalent of deleting the header */
 	status = ipa_put_hdr(*hdl);
-	if (status < 0)
-	{
+
+	if (status) {
 		ath6kl_err("IPA-CM: Error in put the hdr Handle %x for hdr : "
 				"%s\n", *hdl, hdr_name);
-		return ATH6KL_IPA_FAILURE;
 	}
-	return ATH6KL_IPA_SUCCESS;
+
+	return status;
 }
 
 int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg)
@@ -638,24 +537,25 @@ int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg)
 		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
 				"IPA-CM: ep_cfg : Null Value %s, %d\n",
 				__func__, __LINE__);
-		return ATH6KL_IPA_FAILURE;
+		return -EINVAL;
 	}
 
 	// Fill the details for configuration of IPA end-point
-	if (ipa_client == IPA_CLIENT_A5_WLAN_AMPDU_PROD)
-	{
+	if (ipa_client == IPA_CLIENT_A5_WLAN_AMPDU_PROD) {
 		ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH;
 		/* Rx pipe */
 		// NAT configuration in IPA end-point
 		ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_SRC_NAT;
 
-		/*!< 0: Metadata_Ofst value is invalid, i.e.,
-		  	no metadata within header
-		1: Metadata_Ofst value is valid, i.e., metadata
-		within header is in offset Metadata_Ofst
-		Valid for Input Pipes only (IPA Consumer)
-		(for output pipes, metadata already set within
-		the header) */
+		/*
+		 * 0: Metadata_Ofst value is invalid, i.e.,
+		 * no metadata within header
+		 * 1: Metadata_Ofst value is valid, i.e., metadata
+		 * within header is in offset Metadata_Ofst
+		 * Valid for Input Pipes only (IPA Consumer)
+		 * (for output pipes, metadata already set within
+		 * the header)
+		 */
 		ep_cfg->hdr.hdr_ofst_metadata_valid = 1;
 
 		/*!< Offset within header in which metadata resides
@@ -670,87 +570,83 @@ int ath6kl_ipacm_get_ep_config_info(u32 ipa_client, struct ipa_ep_cfg *ep_cfg)
 		ep_cfg->hdr.hdr_ofst_pkt_size_valid = 0;
 		ep_cfg->hdr.hdr_ofst_pkt_size = 0;
 
+	} else if (ipa_client == IPA_CLIENT_HSIC1_PROD) {
+		// Hdr conf in IPA end-point(HTC(6)+WMI(6)+ 802.3 (22) )
+		ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH;
+		/* Rx pipe */
+		// NAT configuration in IPA end-point
+		ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_SRC_NAT;
+
+		/* 0: Metadata_Ofst value is invalid, i.e.,
+		 * no metadata within header
+		 * 1: Metadata_Ofst value is valid, i.e., metadata
+		 * within header is in offset Metadata_Ofst
+		 * Valid for Input Pipes only (IPA Consumer)
+		 * (for output pipes, metadata already set within
+		 * the header)
+		 */
+		ep_cfg->hdr.hdr_ofst_metadata_valid = 1;
+
+		/*!< Offset within header in which metadata resides
+		  Size of metadata - 4bytes
+		  Example - Stream ID/SSID/mux ID
+		  Valid for Input Pipes only (IPA Consumer)
+		  (for output pipes, metadata already set within the
+		  header) */
+		/* 12th Byte, d0 set for excp, so offset should be 11 */
+		ep_cfg->hdr.hdr_ofst_metadata = 11;
+
+		ep_cfg->hdr.hdr_additional_const_len = 0;
+		ep_cfg->hdr.hdr_ofst_pkt_size_valid = 0;
+		ep_cfg->hdr.hdr_ofst_pkt_size = 0;
+	} else {
+		/* Header conf IPA end-point(HTC(6)+WMI(6)+802.3 (22) ) */
+		ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH;
+
+		/* Tx pipe */
+		ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_DST_NAT;
+		/* This is not valid for Tx Pipe */
+		ep_cfg->hdr.hdr_ofst_metadata_valid = 0;
+
+		ep_cfg->hdr.hdr_ofst_metadata = 0;
+		/*!< Defines the constant length that should be added
+		  to the payload length in order for IPA to update
+		  correctly the length field within the header
+		  (valid only in case Hdr_Ofst_Pkt_Size_Valid=1)
+		  Valid for Output Pipes (IPA Producer) */
+		ep_cfg->hdr.hdr_additional_const_len =
+			ATH6KL_IPA_TX_PKT_LEN_POS;
+
+		ep_cfg->hdr.hdr_ofst_pkt_size_valid = 1;
+
+		/*!< Offset within header in which packet size
+		  reside. Upon Header Insertion, IPA will update this
+		  field within the header with the packet length .
+		  Assumption is that header length field size is
+		  constant and is 2Bytes
+		  Valid for Output Pipes (IPA Producer) */
+		ep_cfg->hdr.hdr_ofst_pkt_size = 2;
 	}
-	else
-		if (ipa_client == IPA_CLIENT_HSIC1_PROD)
-		{
-			// Hdr conf in IPA end-point(HTC(6)+WMI(6)+ 802.3 (22) )
-			ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH;
-			/* Rx pipe */
-			// NAT configuration in IPA end-point
-			ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_SRC_NAT;
-
-			/*!< 0: Metadata_Ofst value is invalid, i.e.,
-			 no metadata within header
-			1: Metadata_Ofst value is valid, i.e., metadata
-			within header is in offset Metadata_Ofst
-			Valid for Input Pipes only (IPA Consumer)
-			(for output pipes, metadata already set within
-			the header) */
-			ep_cfg->hdr.hdr_ofst_metadata_valid = 1;
-
-			/*!< Offset within header in which metadata resides
-			  Size of metadata - 4bytes
-			  Example - Stream ID/SSID/mux ID
-			  Valid for Input Pipes only (IPA Consumer)
-			  (for output pipes, metadata already set within the
-			  header) */
-			/* 12th Byte, d0 set for excp, so offset should be 11 */
-			ep_cfg->hdr.hdr_ofst_metadata = 11;
-
-			ep_cfg->hdr.hdr_additional_const_len = 0;
-			ep_cfg->hdr.hdr_ofst_pkt_size_valid = 0;
-			ep_cfg->hdr.hdr_ofst_pkt_size = 0;
-		}
-		else
-		{
-			// Header conf IPA end-point(HTC(6)+WMI(6)+802.3 (22) )
-			ep_cfg->hdr.hdr_len = ATH6KL_IPA_WLAN_HDR_LENGTH;
-
-			/* Tx pipe */
-			ep_cfg->nat.nat_en = IPA_BYPASS_NAT; // IPA_DST_NAT;
-			// This is not valid for Tx Pipe
-			ep_cfg->hdr.hdr_ofst_metadata_valid = 0;
-
-			ep_cfg->hdr.hdr_ofst_metadata = 0;
-			/*!< Defines the constant length that should be added
-			  to the payload length in order for IPA to update
-			  correctly the length field within the header
-			  (valid only in case Hdr_Ofst_Pkt_Size_Valid=1)
-			  Valid for Output Pipes (IPA Producer) */
-			ep_cfg->hdr.hdr_additional_const_len =
-						ATH6KL_IPA_TX_PKT_LEN_POS;
-
-			ep_cfg->hdr.hdr_ofst_pkt_size_valid = 1;
-
-			/*!< Offset within header in which packet size
-			  reside. Upon Header Insertion, IPA will update this
-			  field within the header with the packet length .
-			  Assumption is that header length field size is
-			  constant and is 2Bytes
-			  Valid for Output Pipes (IPA Producer) */
-			ep_cfg->hdr.hdr_ofst_pkt_size = 2;
-		}
 
 	ep_cfg->hdr.hdr_a5_mux = 0;
 
-	// Mode setting type in IPA end-point
+	/* Mode setting type in IPA end-point */
 	ep_cfg->mode.mode = IPA_BASIC;
 
 	ep_cfg->mode.dst = ipa_client;
 
-	// Aggregation configuration in IPA end-point
+	/* Aggregation configuration in IPA end-point */
 	ep_cfg->aggr.aggr_en = IPA_BYPASS_AGGR;
 	ep_cfg->aggr.aggr = IPA_MBIM_16;
 	ep_cfg->aggr.aggr_byte_limit = 0;
 	ep_cfg->aggr.aggr_time_limit = 0;
 
-	// Route configuration in IPA end-point
+	/* Route configuration in IPA end-point */
 	ep_cfg->route.rt_tbl_hdl = 0;
 
 	ep_cfg->route.rt_tbl_hdl = 0;
 
-	return ATH6KL_IPA_SUCCESS;
+	return 0;
 }
 
 EXPORT_SYMBOL(ath6kl_ipacm_get_ep_config_info);
@@ -758,19 +654,21 @@ EXPORT_SYMBOL(ath6kl_ipacm_get_ep_config_info);
 int ath6kl_data_ipa_ampdu_tx_complete_cb(enum ath6kl_bam_tx_evt_type evt_type,
 		struct sk_buff *skb)
 {
-	switch (evt_type){
+	switch (evt_type) {
 	case AMPDU_FLUSH:
 		if (!skb || !skb->data)
 			goto fatal;
 		ath6kl_dbg(ATH6KL_DBG_OOO,
-				"ooo:AMPDU TX comp callback recv, "
+				"ooo: AMPDU TX comp callback recv, "
 				"Freeing the skb\n");
 		dev_kfree_skb(skb);
-		return 0;
+		break;
 	default:
-		ath6kl_err("ooo:Unknown event from sysbam tx_complete\n");
-		return 0;
+		ath6kl_err("ooo: Unknown event from sysbam tx_complete\n");
+		break;
 	}
+
+	return 0;
 fatal:
 	WARN_ON(1);
 	return -1;
@@ -788,8 +686,7 @@ void ath6kl_ipa_sysbam_tx_callback(void *priv, enum ipa_dp_evt_type evt,
 	skb = (struct sk_buff *) data;
 
 	client = *((enum ipa_client_type *)priv);
-	switch (evt)
-	{
+	switch (evt) {
 		/* IPA sends data to WLAN class driver */
 	case IPA_RECEIVE:
 		ath6kl_err("BAM-CM: Received Data from SysBAM pipe\n");
@@ -798,8 +695,7 @@ void ath6kl_ipa_sysbam_tx_callback(void *priv, enum ipa_dp_evt_type evt,
 
 		/* IPA sends Tx complete Event to WLAN */
 	case IPA_WRITE_DONE:
-		switch (client)
-		{
+		switch (client) {
 			/* AMPDU Flush completed by IPA and event received */
 		case IPA_CLIENT_A5_WLAN_AMPDU_PROD:
 			ath6kl_dbg(ATH6KL_DBG_OOO,
@@ -828,13 +724,10 @@ void ath6kl_disconnect_sysbam_pipes(void)
 {
 	int status,i;
 
-	for (i = 0; i < MAX_SYSBAM_PIPE; i++)
-	{
+	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
 		status = ipa_teardown_sys_pipe(sysbam_pipe[i].clnt_hdl);
 		if (status != 0)
-		{
 			ath6kl_err("BAM-CM:Error in disconnect SYSBAM pipe \n");
-		}
 	}
 
 }
@@ -863,10 +756,12 @@ int ath6kl_usb_create_sysbam_pipes(void)
 		status = ipa_setup_sys_pipe(&(sysbam_pipe[i].ipa_params),
 				&(sysbam_pipe[i].clnt_hdl));
 
-		if (status < 0) {
-			ath6kl_err("BAM-CM: Failed to create SYSBAM :%d pipe \n"
-					,sysbam_pipe[i].ipa_params.client);
-			return status;
+		if (status) {
+			ath6kl_err("BAM-CM: Failed to create SYSBAM: %d pipe "
+					"status: %d\n",
+					sysbam_pipe[i].ipa_params.client,
+					status);
+			break;
 		}
 
 		ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
@@ -884,10 +779,8 @@ int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 {
 	int status=0;
 
-#ifdef CONFIG_ATH6KL_WITH_IPACM
 	if ( (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPACM)) &&
-		!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_AMPDU_TO_NETIF)))
-	{
+		!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_AMPDU_TO_NETIF))) {
 		ath6kl_dbg(ATH6KL_DBG_OOO,
 			"BAM-CM: TX:(AMPDU_PROD)Sending reorderd pkt of size %d (dec)\n",
 			skb->len);
@@ -909,7 +802,6 @@ int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 					IPA_CLIENT_A5_WLAN_AMPDU_PROD);
 		return status;
 	}
-#endif
 
 	/* Use netif to send re-ordered packets in absence of IPACM */
 	ath6kl_dbg(ATH6KL_DBG_OOO,
@@ -931,22 +823,19 @@ void ath6kl_delete_ipa_header(uint32_t hdl)
 
 	len = sizeof(struct ipa_ioc_del_hdr) + sizeof(struct ipa_hdr_del)*1;
 
-	ipahdr = (struct ipa_ioc_del_hdr *) kmalloc(len, GFP_KERNEL);
-	if (ipahdr == NULL)
-	{
+	ipahdr = (struct ipa_ioc_del_hdr *) kzalloc(len, GFP_KERNEL);
+	if (ipahdr == NULL) {
 		ath6kl_err("IPA-CM: Failed to allocate memory for hdr removal "
 				"for handle: %x\n", hdl);
 		return;
 	}
-	memset(ipahdr,0,len);
 
 	ipahdr->num_hdls = 1;
 	ipahdr->commit = 0;
 	ipahdr->hdl[0].hdl = hdl;
 	ipahdr->hdl[0].status = -1;
 	status = ipa_del_hdr(ipahdr);
-	if (status != 0)
-	{
+	if (status != 0) {
 		ath6kl_err("IPA-CM: Delete hdr from IPA Failed, return-status: "
 				"%d param-status: %d handle: %x\n",
 				status, ipahdr->hdl[0].status,
@@ -954,9 +843,6 @@ void ath6kl_delete_ipa_header(uint32_t hdl)
 		kfree(ipahdr);
 		return;
 	}
-	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Successfully Deleted the IPA Hdr for handle :"
-			"%x\n", hdl);
 
 	kfree(ipahdr);
 	return;
@@ -968,8 +854,8 @@ void ath6kl_remove_ipa_header(char *name)
 
 	/* Remove the headers */
 	status = ath6kl_ipa_get_header_hdl(name, &hdl);
-	if (status != 0)
-	{
+
+	if (status != 0) {
 		ath6kl_err("IPA-CM: Get header handle Failed for header : %s\n",
 				name);
 		return;
@@ -996,10 +882,9 @@ void ath6kl_remove_filter_rule(enum ipa_ip_type ip_type, uint32_t hdl)
 			"IPA-CM: Deleting the exception filter for IPV6...\n");
 
 	fltdel = (struct ipa_ioc_del_flt_rule *)
-		(kmalloc(((sizeof(struct ipa_ioc_del_flt_rule)) +
-			  (sizeof(struct ipa_flt_rule_del)*1)), GFP_KERNEL));
-	if (fltdel == NULL)
-	{
+		kmalloc(sizeof(struct ipa_ioc_del_flt_rule) +
+			  sizeof(struct ipa_flt_rule_del), GFP_KERNEL);
+	if (fltdel == NULL) {
 		ath6kl_err("IPA-CM: Failed in allocating memory for deleting "
 				"the Filter : Handle :%x \n", hdl);
 		return;
@@ -1012,17 +897,13 @@ void ath6kl_remove_filter_rule(enum ipa_ip_type ip_type, uint32_t hdl)
 	fltdel->hdl[0].status = -1;
 
 	status = ipa_del_flt_rule(fltdel);
-	if ((status < 0) || ((fltdel->hdl[0].status) != 0))
-	{
+	if (status < 0 || fltdel->hdl[0].status != 0) {
 		ath6kl_err("IPA-CM: Failed to delete exception filter for "
 				"Handle : %x\n", hdl);
 		kfree(fltdel);
 		return;
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Successfully Deleted the Exception Filter for "
-			"handle : %x\n", hdl);
 	kfree(fltdel);
 	return;
 }
@@ -1033,66 +914,46 @@ void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar)
 	/* Remove the filters */
 	ath6kl_remove_filter_rule(IPA_IP_v4, flt_hdl_ipv4);
 
-#ifdef CONFIG_ATH6KL_IPA_WITH_IPV6
 	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
-	{
 		ath6kl_remove_filter_rule(IPA_IP_v6, flt_hdl_ipv6);
-	}
-#endif
 }
 EXPORT_SYMBOL(ath6kl_remove_ipa_exception_filters);
 
 void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name)
 {
 	int status;
-	char name_ipa[30];
+	char name_ipa[IPA_RESOURCE_NAME_MAX];
 
 	if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM2BAM))
 		return;
 
 	/* Remove the headers */
-	name_ipa[0] = '\0';
-	strcpy(name_ipa, name);
-	strcat(name_ipa, "-ipv4");
+	strlcpy(name_ipa, name, sizeof(name_ipa));
+	strlcat(name_ipa, ATH6KL_BAM2BAM_IPV4_NAME_EXT, sizeof(name_ipa));
 	ath6kl_remove_ipa_header(name_ipa);
 
-#ifdef CONFIG_ATH6KL_IPA_WITH_IPV6
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
-	{
-		name_ipa[0] = '\0';
-		strcpy(name_ipa, name);
-		strcat(name_ipa, "-ipv6");
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6)) {
+		strlcpy(name_ipa, name, sizeof(name_ipa));
+		strlcat(name_ipa, ATH6KL_BAM2BAM_IPV6_NAME_EXT,
+				sizeof(name_ipa));
 		ath6kl_remove_ipa_header(name_ipa);
 	}
-#endif
+
 	/* unregister the interface with IPA */
 	status = ipa_deregister_intf(name);
 	if (status != 0)
-	{
 		ath6kl_err("IPA-CM: Interface %s : deregister failed...\n",
 				name);
-	}
-	else
-	{
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Successfully de-register interface:%s\n",name);
-	}
 }
 EXPORT_SYMBOL(ath6kl_clean_ipa_headers);
 
-#ifdef CONFIG_ATH6KL_WITH_IPACM
 /* IPA calls this fn, once the message is processed */
-void ath6kl_ipa_msg_free_fn(void *buff, u32 len, u32 type)
+static void ath6kl_ipa_msg_free_fn(void *buff, u32 len, u32 type)
 {
-	if (buff != NULL)
-	{
-		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: Msg Callback freeing the msg type:%d\n",type);
-		kfree(buff);
-	}
-	else
-		ath6kl_err("IPA-CM: Msg Callback with null for msg type:%d\n",
-				type);
+	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
+			"IPA-CM: Msg Callback msg type: %d, len: %d\n",
+			type, len);
+	kfree(buff);
 }
 
 #ifdef CONFIG_ATH6KL_DEBUG
@@ -1142,8 +1003,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 	if (is_zero_ether_addr(mac_addr))
 		return 0;
 
-	iface_name[0] = '\0';
-	strcpy(iface_name, vif->ndev->name);
+	strlcpy(iface_name, vif->ndev->name, sizeof(iface_name));
 
 	ATH6KL_DBG_PRINT_IPA_EVENT(ATH6KL_DBG_IPA_MSG, iface_name, type,
 			mac_addr);
@@ -1227,15 +1087,6 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 
 	return status;
 }
-#else
-/* Use dummy msg send function in absence of IPACM */
-int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
-		u8 *mac_addr )
-{
-	return 0;
-}
-
-#endif /* CONFIG_ATH6KL_WITH_IPACM */
 
 #endif /* CONFIG_ATH6KL_BAM2BAM */
 

@@ -1051,11 +1051,6 @@ LLC SNAP - 8 bytes [Filled by WLAN configuration module]
 /* SYSBAM PIPE defines */
 #define MAX_SYSBAM_PIPE				1
 
-enum ath6kl_ipa_api_result {
-	ATH6KL_IPA_SUCCESS = 0,
-	ATH6KL_IPA_FAILURE = -1,
-};
-
 enum ath6kl_bam_tx_evt_type {
 	AMPDU_FLUSH = 0,
 	BAM_WMM_AC_BK,
