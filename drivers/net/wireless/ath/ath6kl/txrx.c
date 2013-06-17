@@ -1012,7 +1012,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 
 	case WLAN_AP_CONNECT:
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-				"IPA-CM: AP mode Adding Partial hdr: %s, %d\n",
+				"IPA-CM: AP mode Adding Partial hdr: %s, %pM\n",
 				vif->ndev->name, vif->ndev->dev_addr);
 		/* Add partial header with IPA for this interface */
 		ath6kl_ipa_add_header_info(vif->ar, 1, vif->fw_vif_idx,
@@ -1025,7 +1025,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 
 	case WLAN_STA_CONNECT:
 		ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
-			"IPA-CM: STA Connect adding partial hdr: %s, %d\n",
+			"IPA-CM: STA Connect adding partial hdr: %s, %pM\n",
 				vif->ndev->name, vif->ndev->dev_addr);
 		ath6kl_ipa_add_header_info(vif->ar, 0, vif->fw_vif_idx,
 				vif->ndev->name, vif->ndev->dev_addr);

@@ -1173,13 +1173,14 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			vif->ap_hold_conn = 1;
 		}
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		if(memcmp(bssid, vif->ndev->dev_addr, ETH_ALEN) == 0) {
+			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
+		}
+#endif
+
 		if (!(removed = ath6kl_remove_sta(vif, bssid,
 						prot_reason_status))) {
-#ifdef CONFIG_ATH6KL_BAM2BAM
-			if(reason == BSS_DISCONNECTED)
-				ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT,
-								bssid);
-#endif
 			return;
 		}
 
