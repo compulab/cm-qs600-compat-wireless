@@ -720,9 +720,13 @@ void ath6kl_ipa_sysbam_tx_callback(void *priv, enum ipa_dp_evt_type evt,
 	}
 }
 /* Disconnect all the Sys BAM pipes, in our case, only 1 pipe */
-void ath6kl_disconnect_sysbam_pipes(void)
+void ath6kl_disconnect_sysbam_pipes(struct ath6kl *ar)
 {
 	int status,i;
+
+	if (!ath6kl_debug_quirks(ar,
+			ATH6KL_MODULE_BAM_RX_SW_PATH))
+		return;
 
 	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
 		status = ipa_teardown_sys_pipe(sysbam_pipe[i].clnt_hdl);
@@ -734,9 +738,13 @@ void ath6kl_disconnect_sysbam_pipes(void)
 EXPORT_SYMBOL(ath6kl_disconnect_sysbam_pipes);
 
 /* Create the SysBAM pipe */
-int ath6kl_usb_create_sysbam_pipes(void)
+int ath6kl_usb_create_sysbam_pipes(struct ath6kl *ar)
 {
 	int status,i;
+
+	/* Create sysbam pipe only for Rx HW path */
+	if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+		return 0;
 
 	/* The config is similar to the RX Bam pipe configuration */
 	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
@@ -780,7 +788,8 @@ int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 	int status=0;
 
 	if ( (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPACM)) &&
-		!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_AMPDU_TO_NETIF))) {
+		!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_AMPDU_TO_NETIF) &&
+		!(ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH)))) {
 		ath6kl_dbg(ATH6KL_DBG_OOO,
 			"BAM-CM: TX:(AMPDU_PROD)Sending reorderd pkt of size %d (dec)\n",
 			skb->len);
@@ -908,9 +917,12 @@ void ath6kl_remove_filter_rule(enum ipa_ip_type ip_type, uint32_t hdl)
 	return;
 }
 
-/* This function not used, since IPA has to fix the delete hdr */
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar)
 {
+	if (!ath6kl_debug_quirks(ar,
+				ATH6KL_MODULE_BAM_RX_SW_PATH))
+		return;
+
 	/* Remove the filters */
 	ath6kl_remove_filter_rule(IPA_IP_v4, flt_hdl_ipv4);
 

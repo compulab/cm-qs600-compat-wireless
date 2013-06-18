@@ -871,9 +871,10 @@ static int ath6kl_usb_setup_bampipe_resources(struct ath6kl_usb *ar_usb)
 	}
 
 	/* Crate the SYS BAM pipe for WLAN AMPDU Flushing */
-	status = ath6kl_usb_create_sysbam_pipes();
+	status = ath6kl_usb_create_sysbam_pipes(ar_usb->ar);
 	if (status) {
-		ath6kl_err("BAM-CM: Failed to create sysbam pipe: %d,", status);
+		ath6kl_err("BAM-CM: Failed to create sysbam pipe: %d,",
+				status);
 		goto cleanup_bam_pipe;
 	}
 
@@ -1374,10 +1375,8 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	if (ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM)) {
 		mdelay(20);
-		if (!ath6kl_debug_quirks(ar_usb->ar,
-					ATH6KL_MODULE_BAM_RX_SW_PATH))
-			ath6kl_remove_ipa_exception_filters(ar_usb->ar);
-		ath6kl_disconnect_sysbam_pipes();
+		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
+		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
 		ath6kl_disconnect_bam_pipes(ar_usb);
 	}
 #endif
@@ -2084,8 +2083,8 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	if (ret) {
 		ath6kl_err("Failed to init ath6kl bampipe: %d\n", ret);
-		ath6kl_remove_ipa_exception_filters(ar);
-		ath6kl_disconnect_sysbam_pipes();
+		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
+		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
 		goto err_core_cleanup;
 	}
 
