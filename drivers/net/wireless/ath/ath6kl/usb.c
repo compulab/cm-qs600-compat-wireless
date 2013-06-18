@@ -495,8 +495,7 @@ static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
 		 * */
 		status = ath6kl_ipa_add_flt_rule(pipe->ar_usb->ar,
 				bam_pipe->ipa_params.client);
-		if (status == ATH6KL_IPA_FAILURE)
-		{
+		if (status) {
 			ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
 					"BAM-CM: Failed to add filter rule for "
 					"RX pipe DATA2(HSIC1_PROD) : status: "
