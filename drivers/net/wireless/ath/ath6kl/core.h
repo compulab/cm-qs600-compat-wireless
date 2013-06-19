@@ -96,6 +96,8 @@
 
 #define ATH6KL_CONN_TX_PSQ_MAX_LEN 128
 
+#define ATH6KL_DEF_MCC_ADJ_CH_SPACING 20
+
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
 	ATH6KL_FW_IE_TIMESTAMP = 1,
@@ -967,6 +969,8 @@ struct ath6kl {
 	u32 tx_psq_threshold;
 	bool is_mcc_enabled;
 	bool acs_in_prog;
+	u16 mcc_adj_ch_spacing;
+	bool sta_bh_override;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -1227,5 +1231,6 @@ u8 ath6kl_mcc_flowctrl_get_conn_id(struct ath6kl_vif *vif, struct sk_buff *skb);
 int ath6kl_mcc_flowctrl_stat(struct ath6kl_fw_conn_list *conn, u8 *buf,
 		int buf_len);
 int ath6kl_is_mcc_enabled (struct ath6kl *ar);
+int ath6kl_check_adj_vif_ch_overlap(struct ath6kl_vif *vif, uint16_t chan);
 
 #endif /* CORE_H */

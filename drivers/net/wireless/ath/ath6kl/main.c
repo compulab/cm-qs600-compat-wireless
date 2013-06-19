@@ -780,6 +780,37 @@ static int ath6kl_commit_ch_switch(struct ath6kl_vif *vif, u16 channel)
 	}
 }
 
+int ath6kl_check_adj_vif_ch_overlap(struct ath6kl_vif *vif, uint16_t chan)
+{
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *tmp_vif = NULL;
+	uint16_t othervif_ch = 0, adj_ch_diff = 0;
+#define CHANNEL_14 2484
+
+	if (vif->nw_type == INFRA_NETWORK && chan < CHANNEL_14)
+		ar->sta_bh_override = 1;
+	else
+		return 0;
+
+	list_for_each_entry(tmp_vif, &ar->vif_list, list)
+	if ((test_bit(CONNECTED, &tmp_vif->flags)) && (tmp_vif != vif)) {
+		if (tmp_vif->nw_type == AP_NETWORK) {
+			othervif_ch = tmp_vif->bss_ch;
+			adj_ch_diff = (chan > othervif_ch ?
+				(chan - othervif_ch) : (othervif_ch - chan));
+			if (adj_ch_diff != 0 &&
+					adj_ch_diff < ar->mcc_adj_ch_spacing) {
+				tmp_vif->profile.ch = cpu_to_le16(chan);
+				ath6kl_wmi_ap_profile_commit(ar->wmi,
+					tmp_vif->fw_vif_idx, &tmp_vif->profile);
+			}
+		}
+	}
+
+	return 0;
+#undef CHANNEL_14
+}
+
 static void ath6kl_check_ch_switch(struct ath6kl *ar, u16 channel)
 {
 

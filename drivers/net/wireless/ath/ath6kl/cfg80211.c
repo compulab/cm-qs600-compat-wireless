@@ -913,7 +913,8 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	vif->sme_state = SME_DISCONNECTED;
 	ath6kl_lte_coex_update_wlan_data(vif, 0);
 
-
+	if (vif->nw_type == INFRA_NETWORK)
+		vif->ar->sta_bh_override = 0;
 	/*
 	 * Send a disconnect command to target when a disconnect event is
 	 * received with reason code other than 3 (DISCONNECT_CMD - disconnect
@@ -2878,7 +2879,7 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct wmi_connect_cmd p;
 	int res;
 	int i, ret;
-	u16 rsn_capab = 0,othervif_ch = 0;
+	u16 rsn_capab = 0, othervif_ch = 0, adj_vif_ch = 0, adj_ch_diff = 0;
 	struct ath6kl_htcap *htcap;
 	int inactivity_timeout = 0;
 	struct ieee80211_channel *tmp_channel = NULL;
@@ -3080,11 +3081,12 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	 * vif already in connected state and use it's channel to start up rather
 	 * than acs or deny the ap start if the ch requested is different .
 	 */
-        if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL)) {
+	if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_MCC_FLOWCTRL)) {
 		list_for_each_entry(tmp_vif, &ar->vif_list, list)
 		if((test_bit(CONNECTED, &tmp_vif->flags)) && (tmp_vif != vif)){
-			othervif_ch = tmp_vif->bss_ch;
-			tmp_channel = ieee80211_get_channel(ar->wiphy,othervif_ch);
+				othervif_ch = tmp_vif->bss_ch;
+			tmp_channel = ieee80211_get_channel(ar->wiphy,
+								othervif_ch);
 			if (tmp_channel == NULL)
 				return -EINVAL;
 			else
@@ -3093,11 +3095,27 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (info->auto_channel_select)  {
-
                 if (vif->phy_mode == WMI_11A_MODE)
                         band = IEEE80211_BAND_5GHZ;
                 else
                         band = IEEE80211_BAND_2GHZ;
+	} else {
+		band = info->channel->band;
+	}
+
+	/* In MCC Case when other vif is present adjcent to this vif
+	 * then mcc switching causes desense in both channels. Hence
+	 * fallback to SCC if adj channel spacing is less than default 20Mhz
+	 */
+	if (band == IEEE80211_BAND_2GHZ) {
+		list_for_each_entry(tmp_vif, &ar->vif_list, list)
+		if (test_bit(CONNECTED, &tmp_vif->flags) && tmp_vif != vif) {
+			adj_vif_ch = tmp_vif->bss_ch;
+			break;
+		}
+	}
+
+	if (info->auto_channel_select)  {
 
                 ar->want_ch_switch |= 1 << vif->fw_vif_idx;
                 p.ch = info->auto_channel_select - 1;
@@ -3114,13 +3132,20 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 				return -EINVAL;
 			}
 		}
+
 		if (ar->acs_in_prog)
 			vif->ap_hold_conn = 1;
 		else
 			ar->acs_in_prog = 1;
 
+		if (adj_vif_ch > 0) {
+			p.ch = adj_vif_ch;
+			ath6kl_warn("Override ACS to %d due to MCC intf\n",
+								 adj_vif_ch);
+			ar->acs_in_prog = 0;
+		}
+
 	} else {
-                band = info->channel->band;
                 p.ch = cpu_to_le16(info->channel->center_freq);
 
 		/* in case of scc, if ch specified differnt than
@@ -3129,8 +3154,16 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		if((othervif_ch > 0 ) && (othervif_ch != p.ch)){
 			ath6kl_warn("Denied to start ap on %d channel in scc\n", p.ch);
 			return -EINVAL;
+		} else if (adj_vif_ch > 0 && adj_vif_ch != p.ch) {
+			adj_ch_diff = (adj_vif_ch > p.ch ? (adj_vif_ch - p.ch) :
+					(p.ch - adj_vif_ch));
+			if (adj_ch_diff < ar->mcc_adj_ch_spacing) {
+				ath6kl_warn("Override to %d due to MCC intf\n",
+								 adj_vif_ch);
+				p.ch = adj_vif_ch;
+			}
 		}
-        }
+	}
 
         htcap  = &vif->htcap[band];
 
