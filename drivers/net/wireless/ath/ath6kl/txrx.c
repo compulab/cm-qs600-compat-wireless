@@ -3931,8 +3931,6 @@ void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar)
 					list_del(&packet->list);
 					if (packet->recycle_count >
 					ATH6KL_MCC_FLOWCTRL_RECYCLE_LIMIT) {
-						ath6kl_info("recycle packet"
-						"exceeded limitation\n");
 						packet->status = 0;
 						list_add_tail(&packet->list,
 								&container);
