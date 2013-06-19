@@ -33,12 +33,14 @@ static unsigned int wow_mode;
 static unsigned int ath6kl_p2p;
 static unsigned int devmode = ATH6KL_DEFAULT_DEV_MODE;
 static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
+static unsigned int mcc_adj_ch_spacing = ATH6KL_DEF_MCC_ADJ_CH_SPACING;
 
 module_param(debug_mask, uint, 0644);
 module_param(wow_mode, uint, 0644);
 module_param(ath6kl_p2p, uint, 0644);
 module_param(debug_quirks, uint, 0644);
 module_param(devmode, uint, 0644);
+module_param(mcc_adj_ch_spacing, uint, 0644);
 
 void ath6kl_core_tx_complete(struct ath6kl *ar, struct sk_buff *skb)
 {
@@ -147,6 +149,7 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	ath6kl_refill_amsdu_rxbufs(ar, ATH6KL_MAX_AMSDU_RX_BUFFERS);
 
 	ath6kl_cookie_init(ar);
+	ar->mcc_adj_ch_spacing = mcc_adj_ch_spacing;
 
 	ar->conf_flags = ATH6KL_CONF_IGNORE_ERP_BARKER |
 			 ATH6KL_CONF_ENABLE_11N | ATH6KL_CONF_ENABLE_TX_BURST;
