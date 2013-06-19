@@ -43,7 +43,6 @@
 	(30 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME     \
 	(60 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
-#define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 #define BTCOEX_A2DP_BDR_WLAN_MAX_DUR           20
 #define BTCOEX_APMODE_A2DP_BDR_WLAN_MAX_DUR    40
@@ -166,7 +165,8 @@ u8 fe_antenna_type(struct ath6kl *ar)
 
 	if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
 #ifdef CONFIG_ANDROID
-		if (machine_is_apq8064_dma())
+		if (machine_is_apq8064_dma() ||
+			machine_is_apq8064_bueller())
 			fe_antenna =
 				WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
 		else
@@ -249,9 +249,6 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				/* use BDR parameter for A2DP EDR slave case */
 				a2dp_config->a2dp_flags |= cpu_to_le32(
 					BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
-
-				pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-					BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 			}
 			pspoll_config->a2dp_wlan_max_dur =
 				BTCOEX_A2DP_WLAN_MAX_DUR;
@@ -259,8 +256,6 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 			/* A2DP BDR config overwrites */
 			a2dp_config->a2dp_flags |= cpu_to_le32(
 				BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
-			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-				BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 			pspoll_config->a2dp_wlan_max_dur =
 				BTCOEX_A2DP_BDR_WLAN_MAX_DUR;
 		}
