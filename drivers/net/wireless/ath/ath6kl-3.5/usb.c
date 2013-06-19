@@ -2167,6 +2167,8 @@ int ath6kl_usb_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	pm_message_t message;
 	int ret;
 
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb suspend\n");
+
 #ifdef CONFIG_ANDROID
 	if (ath6kl_android_need_wow_suspend(ar)) {
 #else
@@ -2187,6 +2189,8 @@ int ath6kl_usb_resume(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 	struct usb_interface *interface = device->interface;
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb resume: state %d\n", ar->state);
 
 	return ath6kl_usb_pm_resume(interface);
 }
@@ -2412,6 +2416,11 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	vendor_id = le16_to_cpu(dev->descriptor.idVendor);
 	product_id = le16_to_cpu(dev->descriptor.idProduct);
+
+	ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_INFO1,
+			"usb new card added, vendor_id %04x product_id %04x\n",
+			vendor_id, product_id);
+
 #ifdef ATHTST_SUPPORT
 	g_product_info.idVendor = vendor_id =
 					le16_to_cpu(dev->descriptor.idVendor);
@@ -2428,9 +2437,6 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 				sizeof(g_product_info.serial));
 #endif
 
-	ath6kl_dbg(ATH6KL_DBG_USB, "vendor_id = %04x\n", vendor_id);
-	ath6kl_dbg(ATH6KL_DBG_USB, "product_id = %04x\n", product_id);
-
 	if (interface->cur_altsetting)
 		ath6kl_dbg(ATH6KL_DBG_USB, "USB Interface %d\n",
 			   interface->cur_altsetting->desc.bInterfaceNumber);
@@ -2444,6 +2450,7 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	ar_usb = ath6kl_usb_create(interface);
 
 	if (ar_usb == NULL) {
+		ath6kl_err("Failed to create USB interface\n");
 		ret = -ENOMEM;
 		goto err_usb_put;
 	}
@@ -2518,6 +2525,8 @@ err_usb_put:
 
 static void ath6kl_usb_remove(struct usb_interface *interface)
 {
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb card removed\n");
+
 	usb_put_dev(interface_to_usbdev(interface));
 	ath6kl_usb_device_detached(interface);
 }

@@ -1596,12 +1596,18 @@ static inline u8 __p2p_rc_average_snr(struct p2p_rc_chan_record *chan[],
 static inline bool __p2p_rc_is_lte_channel(struct ath6kl_p2p_rc_info *p2p_rc,
 					struct ieee80211_channel *chan)
 {
-#define _2G_LTE_START_FREQ	(2500 - 20)
-	if (chan->center_freq >= _2G_LTE_START_FREQ)
+#define _LTE_BAND7_START_FREQ	(2457)	/* Not used after Ch10 */
+
+	/*
+	 * FDD LTE band 7 uplink (2500Mhz ~ 2570MHz)
+	 * TDD LTE band 40 (2300Mhz ~ 2400MHz)
+	 */
+
+	if (chan->center_freq >= _LTE_BAND7_START_FREQ)
 		return true;
 	else
 		return false;
-#undef _2G_LTE_START_FREQ
+#undef _LTE_BAND7_START_FREQ
 }
 
 static bool __p2p_rc_is_user_channel(struct ath6kl_p2p_rc_info *p2p_rc,

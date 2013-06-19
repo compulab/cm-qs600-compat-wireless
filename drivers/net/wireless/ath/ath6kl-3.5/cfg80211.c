@@ -1553,8 +1553,8 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int ret;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: reason=%u\n", __func__,
-		   reason_code);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1, "%s: reason=%u\n",
+			__func__, reason_code);
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -1615,7 +1615,8 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 {
 	struct ath6kl *ar = vif->ar;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: reason=%u, proto_reason %u\n",
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1,
+		"%s: reason=%u, proto_reason %u\n",
 		__func__, reason, proto_reason);
 
 	if (vif->scan_req) {
