@@ -35,6 +35,7 @@
 #include "pm.h"
 
 unsigned int debug_mask;
+unsigned int debug_mask_ext;
 unsigned int htc_bundle_recv;
 unsigned int htc_bundle_send;
 unsigned int htc_bundle_send_timer;
@@ -69,6 +70,7 @@ char *ath6kl_wifi_mac;
 char *fwpath = "android_fw_path_compatible_str";
 
 module_param(debug_mask, uint, 0644);
+module_param(debug_mask_ext, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
 module_param(htc_bundle_send, uint, 0644);
 module_param(htc_bundle_send_timer, uint, 0644);

@@ -2654,9 +2654,44 @@ static ssize_t ath6kl_debug_mask_read(struct file *file,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
+static ssize_t ath6kl_debug_mask_ext_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	int ret;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &debug_mask_ext);
+
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t ath6kl_debug_mask_ext_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	char buf[32];
+	int len;
+
+	len = snprintf(buf, sizeof(buf), "debug_mask_ext: 0x%x\n",
+				debug_mask_ext);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
 static const struct file_operations fops_debug_mask = {
 	.read = ath6kl_debug_mask_read,
 	.write = ath6kl_debug_mask_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_debug_mask_ext = {
+	.read = ath6kl_debug_mask_ext_read,
+	.write = ath6kl_debug_mask_ext_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -5871,6 +5906,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("debug_mask", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_debug_mask);
+
+	debugfs_create_file("debug_mask_ext", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_debug_mask_ext);
 
 	debugfs_create_file("tx_amsdu", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_tx_amsdu);
