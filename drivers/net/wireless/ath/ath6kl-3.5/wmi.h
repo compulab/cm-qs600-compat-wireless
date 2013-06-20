@@ -761,6 +761,7 @@ enum wmi_cmd_id {
 /* merge from olca mainline for align command id - end
  * private commands shall grow back from 0xFFFE
  */
+	WMI_SET_GO_SYNC_CMDID = 0xFFFC,
 	WMI_SET_DTIM_EXT_CMDID = 0xFFFD,
 	WMI_SET_CREDIT_BYPASS_CMDID = 0xFFFE,
 };
@@ -3230,6 +3231,13 @@ struct wmi_set_mcc_profile_cmd {
 	u32 mcc_profile;
 } __packed;
 
+struct wmi_set_go_sync_cmd {
+	u16 freq;
+	u8 addr[ETH_ALEN];
+	u8 repeat;
+	u8 sta_dwell_time;
+} __packed;
+
 #define DISALBE_AP_INACTIVE_TIMEMER 0
 struct wmi_ap_conn_inact_cmd {
 	u32	period;
@@ -3310,6 +3318,8 @@ int ath6kl_wmi_scanparams_cmd(struct wmi *wmi, u8 if_idx, u16 fg_start_sec,
 			      u16 maxact_scan_per_ssid);
 int ath6kl_wmi_bssfilter_cmd(struct wmi *wmi, u8 if_idx, u8 filter,
 			     u32 ie_mask);
+int ath6kl_wmi_go_sync_cmd(struct wmi *wmi, u8 if_idx,
+				struct wmi_set_go_sync_cmd *gsync);
 int ath6kl_wmi_probedssid_cmd(struct wmi *wmi, u8 if_idx, u8 index, u8 flag,
 			      u8 ssid_len, u8 *ssid);
 int ath6kl_wmi_listeninterval_cmd(struct wmi *wmi, u8 if_idx,
@@ -3565,6 +3575,8 @@ int ath6kl_wmi_anistate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len);
 
 int ath6kl_wmi_anistate_debug_event_rx(struct ath6kl_vif *vif,
 	u8 *datap, int len);
+int ath6kl_wmi_anistate_enable(struct wmi *wmi,
+	struct wmi_config_enable_cmd *options);
 int ath6kl_ani_stat_debug(struct ath6kl *ar, u8 *buf, int buf_len);
 int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 
