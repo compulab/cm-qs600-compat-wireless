@@ -97,6 +97,11 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 
+#ifdef ATH6KL_HSIC_RECOVER
+u8 cached_mac[ETH_ALEN];
+bool cached_mac_valid;
+#endif
+
 static const struct ath6kl_hw hw_list[] = {
 	{
 		.id				= AR6003_HW_2_0_VERSION,
@@ -726,6 +731,8 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
 	vif->scan_plan.numChan = 0;
+	vif->data_cookie_count = 0;
+
 }
 
 /*
@@ -3051,8 +3058,13 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 
 	/* Always use internal-regdb by default. */
-	if (ath6kl_regdb)
+	if (ath6kl_regdb == 1) {
+		clear_bit(CFG80211_REGDB, &ar->flag);
 		set_bit(INTERNAL_REGDB, &ar->flag);
+	} else if (ath6kl_regdb == 2) {
+		clear_bit(INTERNAL_REGDB, &ar->flag);
+		set_bit(CFG80211_REGDB, &ar->flag);
+	}
 
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)
@@ -3331,6 +3343,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
 	}
+	vif->data_cookie_count = 0;
 }
 
 void ath6kl_stop_txrx(struct ath6kl *ar)
