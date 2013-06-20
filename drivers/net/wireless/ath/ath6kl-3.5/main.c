@@ -1384,7 +1384,8 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 					 NONE_BSS_FILTER, 0);
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "scan complete: %d\n", status);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1, "scan complete: %d\n",
+			status);
 }
 
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
