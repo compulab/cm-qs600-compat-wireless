@@ -966,6 +966,13 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		ath6kl_ipa_enable_host_route_config (vif, true);
 #endif
+#ifdef CONFIG_ATH6KL_AUTO_PM
+		if (ath6kl_debug_quirks(vif->ar,
+			ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
+			ath6kl_wmi_set_mcc_event_mode_cmd(vif->ar->wmi,
+				MCC_STOP_EVENT);
+		}
+#endif
 		ath6kl_dbg(ATH6KL_DBG_WMI, "connect_event-sta: (MCC_ENABLED)\n");
         }
 
