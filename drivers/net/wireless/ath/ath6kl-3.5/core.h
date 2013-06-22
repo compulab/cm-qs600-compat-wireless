@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.390)
+#define __BUILD_VERSION_ (3.5.0.394)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1761,6 +1761,8 @@ struct ath6kl {
 			u8 short_GI;
 			u8 intolerance_40MHz;
 		} ht_cap_param[IEEE80211_NUM_BANDS];
+
+		u8 anistat_enable;
 	} debug;
 #endif /* CONFIG_ATH6KL_DEBUG */
 
