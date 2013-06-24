@@ -3781,18 +3781,6 @@ void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg)
 
 		tx = re_tx = 0;
 		if (ath6kl_check_can_send(mcc_flowctrl, i)) {
-			if(is_ch_chg) {
-				struct ath6kl_vif *vif = fw_conn->vif;
-
-				spin_lock_bh(&vif->if_lock);
-				if(test_bit(NETQ_STOPPED, &vif->flags)) {
-					clear_bit(NETQ_STOPPED, &vif->flags);
-					/* should there be a threshold check? */
-					netif_wake_queue(vif->ndev);
-				}
-				spin_unlock_bh(&vif->if_lock);
-			}
-
 			if (!list_empty(&fw_conn->re_queue)) {
 				list_for_each_entry_safe(packet, tmp_pkt,
 						&fw_conn->re_queue, list) {
