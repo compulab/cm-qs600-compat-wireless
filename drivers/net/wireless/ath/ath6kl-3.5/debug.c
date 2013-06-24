@@ -2654,9 +2654,44 @@ static ssize_t ath6kl_debug_mask_read(struct file *file,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
+static ssize_t ath6kl_debug_mask_ext_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	int ret;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &debug_mask_ext);
+
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t ath6kl_debug_mask_ext_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	char buf[32];
+	int len;
+
+	len = snprintf(buf, sizeof(buf), "debug_mask_ext: 0x%x\n",
+				debug_mask_ext);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
 static const struct file_operations fops_debug_mask = {
 	.read = ath6kl_debug_mask_read,
 	.write = ath6kl_debug_mask_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_debug_mask_ext = {
+	.read = ath6kl_debug_mask_ext_read,
+	.write = ath6kl_debug_mask_ext_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -5532,11 +5567,44 @@ static const struct file_operations fops_ap_admc = {
 };
 
 /* File operation for P2P RecommendChannel */
+static ssize_t ath6kl_p2p_rc_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	u32 tmp;
+	int type = 0;
+	u16 freq = 0;
+	char buf[8];
+	ssize_t len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou32(buf, 0, &tmp))
+		return -EINVAL;
+
+	if (tmp == P2P_RC_USER_BLACK_CHAN)
+		type = P2P_RC_USER_BLACK_CHAN;
+	else if (tmp == P2P_RC_USER_WHITE_CHAN)
+		type = P2P_RC_USER_WHITE_CHAN;
+	else if ((tmp >= 2412) && (tmp <= 5825))
+		freq = (u16)tmp;
+	else
+		return -EINVAL;
+
+	ath6kl_p2p_rc_config(ar, freq, (freq ? -1 : type));
+
+	return count;
+}
+
 static ssize_t ath6kl_p2p_rc_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-#define _BUF_SIZE	(1500)
+#define _BUF_SIZE	(2048)
 	struct ath6kl *ar = file->private_data;
 	u8 *buf;
 	unsigned int len = 0;
@@ -5559,6 +5627,7 @@ static ssize_t ath6kl_p2p_rc_read(struct file *file,
 /* debug fs for P2P RecommendChannel. */
 static const struct file_operations fops_p2p_rc = {
 	.read = ath6kl_p2p_rc_read,
+	.write = ath6kl_p2p_rc_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -5699,6 +5768,36 @@ static const struct file_operations fops_dtim_ext = {
 	.llseek = default_llseek,
 };
 
+/* File operation functions for Regulatory-Country */
+static ssize_t ath6kl_reg_country_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	char buf[8], alpha2[2];
+	unsigned int len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	alpha2[0] = buf[0];
+	alpha2[1] = buf[1];
+
+	if (ath6kl_reg_set_country(ar, alpha2))
+		return -EIO;
+
+	return count;
+}
+
+/* debug fs for Regulatory-Country */
+static const struct file_operations fops_reg_country_write = {
+	.write = ath6kl_reg_country_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -5807,6 +5906,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("debug_mask", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_debug_mask);
+
+	debugfs_create_file("debug_mask_ext", S_IRUSR | S_IWUSR,
+			    ar->debugfs_phy, ar, &fops_debug_mask_ext);
 
 	debugfs_create_file("tx_amsdu", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_tx_amsdu);
@@ -5917,7 +6019,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR,
 				ar->debugfs_phy, ar, &fops_pattern_gen);
 
-	debugfs_create_file("p2p_rc", S_IRUSR,
+	debugfs_create_file("p2p_rc", S_IRUSR | S_IWUSR,
 				ar->debugfs_phy, ar, &fops_p2p_rc);
 
 	debugfs_create_file("hif_rxq_threshold", S_IWUSR,
@@ -5931,6 +6033,10 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("wow_pattern", S_IRUSR | S_IWUSR,
 			    ar->debugfs_phy, ar, &fops_wowpattern_gen);
+
+	debugfs_create_file("reg_country", S_IWUSR,
+				ar->debugfs_phy, ar, &fops_reg_country_write);
+
 	return 0;
 }
 
