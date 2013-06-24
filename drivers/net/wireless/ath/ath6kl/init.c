@@ -1880,10 +1880,11 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 		ath6kl_err("unable to set the host app area\n");
 
 	    for (i = 0; i < ar->vif_max; i++) {
-		ret = ath6kl_target_config_wlan_params(ar, i);
-		if (ret)
-		    goto err_htc_stop;
+		    ret = ath6kl_target_config_wlan_params(ar, i);
+		    if (ret)
+			    goto err_htc_stop;
 	    }
+
 	} else {
 	    if (test_and_clear_bit(FIRST_BOOT, &ar->flag)) {
 		ath6kl_info("%s %s fw %s%s\n",
