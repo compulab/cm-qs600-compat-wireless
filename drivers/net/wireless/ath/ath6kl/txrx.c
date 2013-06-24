@@ -222,9 +222,10 @@ end:
 EXPORT_SYMBOL(ath6kl_ipa_add_flt_rule);
 
 #define ATH6KL_IPA_IP_MAX_TX_PROP		8
+#define ATH6KL_IPA_TOS_MASK			0xE0
 
 static struct {
-	uint8_t tos_tc;
+	uint8_t tos_value;
 	enum ipa_client_type dst_pipe;
 } tx_prop_map [] = {
 	/* BK */
@@ -288,10 +289,20 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 	   TOS Value: 6, 7 - > Maps to VO pipe [HSIC4_CONS]
 	 */
 
+	/*
+	   IP-TOS - 8bits
+	   : DSCP(6-bits) ECN(2-bits)
+	   : DSCP - P2 P1 P0 X X X
+	   where (P2 P1 P0) form 802.1D
+	   So shifting tos_value by 5 bits before passing to IPA. Also IPA
+	   required mask to be set for 3 MSB bits.
+	 */
+
 	for (i = 0; i < ATH6KL_IPA_IP_MAX_TX_PROP; i++) {
 		tx_prop[i].ip = IPA_IP_v4;
-		tx_prop[i].attrib.attrib_mask = IPA_FLT_TOS;
-		tx_prop[i].attrib.u.v4.tos = tx_prop_map[i].tos_tc;
+		tx_prop[i].attrib.attrib_mask = IPA_FLT_TOS_MASKED;
+		tx_prop[i].attrib.tos_value = tx_prop_map[i].tos_value << 5;
+		tx_prop[i].attrib.tos_mask = ATH6KL_IPA_TOS_MASK;
 		tx_prop[i].dst_pipe = tx_prop_map[i].dst_pipe;
 		strlcpy(tx_prop[i].hdr_name, ipv4_hdr_name,
 				IPA_RESOURCE_NAME_MAX);
@@ -305,8 +316,9 @@ int ath6kl_ipa_register_interface(struct ath6kl *ar, u8 sta_ap,
 		j = i + ATH6KL_IPA_IP_MAX_TX_PROP;
 
 		tx_prop[j].ip = IPA_IP_v6;
-		tx_prop[j].attrib.attrib_mask = IPA_FLT_TC;
-		tx_prop[j].attrib.u.v6.tc = tx_prop_map[i].tos_tc;
+		tx_prop[j].attrib.attrib_mask = IPA_FLT_TOS_MASKED;
+		tx_prop[j].attrib.tos_value = tx_prop_map[i].tos_value << 5;
+		tx_prop[j].attrib.tos_mask = ATH6KL_IPA_TOS_MASK;
 		tx_prop[j].dst_pipe = tx_prop_map[i].dst_pipe;
 		strlcpy(tx_prop[j].hdr_name, ipv6_hdr_name,
 				IPA_RESOURCE_NAME_MAX);
