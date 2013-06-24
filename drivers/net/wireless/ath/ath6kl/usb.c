@@ -1168,6 +1168,14 @@ cleanup_recv_urb:
 	ath6kl_usb_cleanup_urb_context(urb_context);
 
 	if (status == 0 || urb->status == -EPROTO) {
+		/* No need to check the RxQ Thold for Event Pipe */
+		if ((pipe->logical_pipe_num == ATH6KL_USB_PIPE_RX_DATA2) &&
+			(pipe->urb_cnt >= pipe->urb_cnt_thresh)) {
+			ath6kl_usb_post_recv_transfers(pipe,
+					ATH6KL_USB_RX_BUFFER_SIZE);
+			return;
+		}
+
 		if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
 				skb_queue_len(&pipe->rx_io_comp_queue) <
 				pipe->ar_usb->rxq_threshold) {
@@ -1268,6 +1276,14 @@ static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
 				"ath6kl usb recv callback buf:0x%p\n", skb);
 		ath6kl_core_rx_complete(ar_usb->ar, skb,
 				pipe->logical_pipe_num);
+	}
+
+	/* No need to check the RxQ Thold for Event Pipe */
+	if ((pipe->logical_pipe_num == ATH6KL_USB_PIPE_RX_DATA2) &&
+			(pipe->urb_cnt >= pipe->urb_cnt_thresh)) {
+		ath6kl_usb_post_recv_transfers(pipe,
+				ATH6KL_USB_RX_BUFFER_SIZE);
+		return;
 	}
 
 	if (pipe->urb_cnt >= pipe->urb_cnt_thresh &&
