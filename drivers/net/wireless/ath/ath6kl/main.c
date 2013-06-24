@@ -269,7 +269,7 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_vif *vif, struct ath6kl
 	cookie->arc_list_next = ar->cookie_list;
 	ar->cookie_list = cookie;
 	ar->cookie_count++;
-	if(vif != NULL)
+	if ((vif != NULL) && (vif->cookie_used))
 		vif->cookie_used--;
 }
 
