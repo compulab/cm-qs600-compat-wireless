@@ -3270,8 +3270,9 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 			aggr_conn = vif->aggr_cntxt->aggr_conn;
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
-		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM))
-		{
+		if (ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_BAM2BAM) &&
+			!ath6kl_debug_quirks(vif->ar,
+					     ATH6KL_MODULE_BAM_RX_SW_PATH)) {
 			if (!is_out_of_order && is_amsdu) {
 				aggr_process_amsdu_bam2bam(aggr_conn, tid,
 						 skb);
@@ -3347,9 +3348,10 @@ static void aggr_timeout(unsigned long arg)
 				 ATH6KL_MAX_SEQ_NO));
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		if (ath6kl_debug_quirks(aggr_conn->vif->ar,
-					ATH6KL_MODULE_BAM2BAM)) {
+						ATH6KL_MODULE_BAM2BAM) &&
+			!ath6kl_debug_quirks(aggr_conn->vif->ar,
+					      ATH6KL_MODULE_BAM_RX_SW_PATH))
 			aggr_deque_frms_bam2bam(aggr_conn, i, 0, 0);
-		}
 		else {
 			/* This path for non BAM2BAM path during run time */
 			aggr_deque_frms(aggr_conn, i, 0, 0);
@@ -3401,9 +3403,11 @@ static void aggr_delete_tid_state(struct aggr_info_conn *aggr_conn, u8 tid)
 	{
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		if (ath6kl_debug_quirks(aggr_conn->vif->ar,
-					ATH6KL_MODULE_BAM2BAM)) {
-			aggr_deque_frms_bam2bam(aggr_conn, tid, 0, 0);
-		} else
+					ATH6KL_MODULE_BAM2BAM) &&
+			!ath6kl_debug_quirks(aggr_conn->vif->ar,
+					ATH6KL_MODULE_BAM_RX_SW_PATH))
+				aggr_deque_frms_bam2bam(aggr_conn, tid, 0, 0);
+		else
 		{
 			/* This path for non BAM2BAM path during run time */
 			aggr_deque_frms(aggr_conn, tid, 0, 0);
