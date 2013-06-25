@@ -238,7 +238,6 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
 		   __func__, ndev->name, ndev, ar);
 
-
 	return ret;
 
 err_rxbuf_cleanup:
