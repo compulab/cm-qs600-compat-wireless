@@ -1200,8 +1200,8 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 								u8 *mac_addr);
 
 /* IPA SYSBAM configuration related APIs */
-void ath6kl_disconnect_sysbam_pipes(void);
-int ath6kl_usb_create_sysbam_pipes(void);
+void ath6kl_disconnect_sysbam_pipes(struct ath6kl *ar);
+int ath6kl_usb_create_sysbam_pipes(struct ath6kl *ar);
 
 /* Out of order processing APIs */
 void ath6kl_aggr_deque_bam2bam(struct ath6kl_vif *vif, u16 seq_no,u8 tid,
