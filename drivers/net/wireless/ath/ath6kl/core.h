@@ -81,7 +81,7 @@
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      ((MAX_DEF_COOKIE_NUM / WMM_NUM_AC) - NETIF_WAKE_THOLD)
 
-#define MAX_OFFCH_HOLD_COOKIE_NUM         (MAX_DEF_COOKIE_NUM/3)
+#define MAX_OFFCH_HOLD_COOKIE_NUM         60
 
 #define DISCON_TIMER_INTVAL               10000  /* in msec */
 
