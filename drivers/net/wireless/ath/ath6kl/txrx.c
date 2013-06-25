@@ -1934,6 +1934,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif = NULL;
+	u16 tag;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -1955,7 +1956,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 		skb = ath6kl_cookie->skb;
 		eid = packet->endpoint;
 		map_no = ath6kl_cookie->map_no;
-
+                tag = packet->info.tx.tag;
 		if (!skb || !skb->data)
 			goto fatal;
 
@@ -2040,7 +2041,7 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
 
-		if (eid == ar->ctrl_ep)
+		if (eid == ar->ctrl_ep || tag == ATH6KL_CONTROL_PKT_TAG)
 			vif = ath6kl_get_vif_by_index(ar, 0);
 		ath6kl_free_cookie(ar, vif, ath6kl_cookie);
 
