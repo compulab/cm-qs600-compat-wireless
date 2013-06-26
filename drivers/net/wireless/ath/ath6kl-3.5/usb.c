@@ -2035,14 +2035,9 @@ static int ath6kl_usb_bmi_write(struct ath6kl *ar, u8 *buf, u32 len)
 
 static int ath6kl_usb_power_on(struct ath6kl *ar)
 {
-	if (test_bit(USB_REMOTE_WKUP, &ar->flag) ||
-	    BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+	if (test_bit(USB_REMOTE_WKUP, &ar->flag)) {
 		struct ath6kl_usb *ar_usb = (struct ath6kl_usb *)ar->hif_priv;
-
-#ifdef CONFIG_ANDROID
-		if (!machine_is_apq8064_dma() && !machine_is_apq8064_bueller())
-#endif
-			usb_reset_device(ar_usb->udev);
+		usb_reset_device(ar_usb->udev);
 	}
 
 	hif_start(ar);
@@ -2448,6 +2443,12 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		ath6kl_dbg(ATH6KL_DBG_USB, "USB 1.1 Host\n");
 
 	ar_usb = ath6kl_usb_create(interface);
+
+#ifdef CONFIG_ANDROID
+	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0) {
+		usb_reset_device(ar_usb->udev);
+	}
+#endif
 
 	if (ar_usb == NULL) {
 		ath6kl_err("Failed to create USB interface\n");

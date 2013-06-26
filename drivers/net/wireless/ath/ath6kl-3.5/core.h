@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.399)
+#define __BUILD_VERSION_ (3.5.0.402)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -2058,5 +2058,9 @@ extern unsigned int htc_bundle_send_timer;
 extern unsigned int htc_bundle_send_th;
 #ifdef CE_SUPPORT
 extern unsigned int ath6kl_ce_flags;
+#endif
+
+#ifdef CONFIG_ANDROID
+extern unsigned int ath6kl_bt_on;
 #endif
 #endif /* CORE_H */

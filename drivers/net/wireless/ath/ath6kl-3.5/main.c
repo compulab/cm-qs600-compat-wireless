@@ -1411,8 +1411,13 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
 				ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT);
 		} else {
+#ifdef CE_SUPPORT
+			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
+				0);
+#else
 			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
 				ATH6KL_DISCONNECT_TIMEOUT);
+#endif
 		}
 		ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
 					      ar->listen_intvl_t,
@@ -2328,6 +2333,12 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 						(android_cmd.used_len - 4));
 				else if (strstr(user_cmd, "SET_AP_WPS_P2P_IE"))
 					ret = 0; /* To avoid AP/GO up stuck. */
+#ifdef CONFIG_ANDROID
+				else if (strstr(user_cmd, "SET_BT_ON ")) {
+					ath6kl_bt_on = (user_cmd[10] == '1') ? 1 : 0;
+					ret = 0;
+				}
+#endif
 				else {
 					ath6kl_dbg(ATH6KL_DBG_TRC,
 						"not yet support \"%s\"\n",
