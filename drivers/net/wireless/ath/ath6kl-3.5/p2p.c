@@ -1447,13 +1447,16 @@ void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif)
 	/* Assume only one scan behavior between all VIFs at the same time. */
 
 	/* Only full-scan is valid. */
-	if ((vif->scan_req) &&
+	if (test_bit(SCANNING, &vif->flags) &&
 	    (vif->scanband_type == SCANBAND_TYPE_ALL)) {
 		/* Reset the channel record. */
 		_p2p_rc_reset_chan_record(p2p_rc);
 
-		if ((vif->scan_req->n_channels == 0) ||
-		    (vif->scan_req->n_channels == p2p_rc->chan_record_cnt)) {
+		WARN_ON(!vif->scan_req);
+
+		if ((vif->scan_req) &&
+			((vif->scan_req->n_channels == 0) ||
+		    (vif->scan_req->n_channels == p2p_rc->chan_record_cnt))) {
 			p2p_rc->flags |= ATH6KL_RC_FLAGS_NEED_UPDATED;
 			p2p_rc->last_update = jiffies;
 		}

@@ -4134,7 +4134,7 @@ static ssize_t ath6kl_wowpattern_write(struct file *file,
 
 	if (ret)
 		return -EINVAL;
-
+#ifndef CONFIG_ANDROID
 	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
 					ATH6KL_WOW_MODE_ENABLE,
 					WOW_FILTER_OPTION_PATTERNS,
@@ -4144,7 +4144,7 @@ static ssize_t ath6kl_wowpattern_write(struct file *file,
 		return -EINVAL;
 
 	set_bit(WLAN_WOW_ENABLE, &vif->flags);
-
+#endif
 	ar->get_wow_pattern = true;
 
 	return count;
