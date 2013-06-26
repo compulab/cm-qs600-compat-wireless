@@ -2472,8 +2472,16 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		/* FIXME:
 		 *  - adjust the size of wow ext param
 		 *  - configure gpio trigger in runtime, '0' is disabled
+		 *  - bit25: remote-resume would use out-of-band signal
 		 */
 		param = 0x80000000|(ath6kl_wow_gpio<<18);
+
+#ifdef CONFIG_ANDROID
+		if (machine_is_apq8064_dma() ||
+			machine_is_apq8064_bueller())
+			param |= (1<<25);
+#endif
+
 		status = ath6kl_bmi_write(ar,
 				     ath6kl_get_hi_item_addr(ar,
 				     HI_ITEM(hi_wow_ext_config)),

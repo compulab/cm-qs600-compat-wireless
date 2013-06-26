@@ -27,6 +27,7 @@
 
 /* constants */
 #define TX_URB_COUNT            10
+#define TX_URB_COUNT_LARGE        40
 #define RX_URB_COUNT            32
 
 #define ATH6KL_USB_RX_BUFFER_SIZE  2048
@@ -2495,6 +2496,20 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	if (ret) {
 		ath6kl_err("Failed to init ath6kl core: %d\n", ret);
 		goto err_core_free;
+	}
+
+	if (ar->version.target_ver == AR6004_HW_1_3_VERSION)
+	{
+		/* Reset TX URB count for Mck1.3.
+		    TX_URB_COUNT less than 22 will degrade TX throughput*/
+
+		ath6kl_usb_free_pipe_resources(&ar_usb->pipes[ATH6KL_USB_PIPE_TX_DATA_LP]);
+		if (ath6kl_usb_alloc_pipe_resources(&ar_usb->pipes[ATH6KL_USB_PIPE_TX_DATA_LP], TX_URB_COUNT_LARGE) != 0) {
+			ath6kl_usb_destroy(ar_usb);
+			ar_usb = NULL;
+			ret = -ENOMEM;
+			goto err_usb_put;
+		}
 	}
 
 #ifdef ATH6KL_HSIC_RECOVER
