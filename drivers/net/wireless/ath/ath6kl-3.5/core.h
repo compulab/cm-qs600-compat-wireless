@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.402)
+#define __BUILD_VERSION_ (3.5.0.405)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -106,6 +106,7 @@
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	ATH6KL_MODULES_ANI_ENABLE |			\
 	 0)
 #endif

@@ -3982,11 +3982,16 @@ static bool ath6kl_cfg80211_need_suspend(struct ath6kl *ar, u32 *suspend_vif)
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif) {
+			#ifdef CE_SUPPORT
+			if (vif->nw_type != AP_NETWORK)
+				*suspend_vif |= (1 << i);
+			#else
 			if (vif->nw_type == AP_NETWORK) {
 				*suspend_vif = 0;
 				return false;
 			}
 			*suspend_vif |= (1 << i);
+			#endif
 		}
 	}
 
@@ -6159,9 +6164,17 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif, *tmp_vif;
-
+#ifdef CE_SUPPORT
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		if (ar->state == ATH6KL_STATE_DEEPSLEEP) {
+			if (vif->nw_type != AP_NETWORK)
+				ath6kl_cfg80211_stop(vif);
+		}
+	}
+#else
 	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list)
 		ath6kl_cfg80211_stop(vif);
+#endif
 }
 
 static void ath6kl_change_cfg80211_ops(struct cfg80211_ops *cfg80211_ops)

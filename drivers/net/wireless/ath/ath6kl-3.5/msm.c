@@ -521,7 +521,8 @@ static int ath6kl_toggle_radio(void *data, int on)
 	int ret = 0;
 	int (*power_control)(int enable);
 
-	ath6kl_dbg(ATH6KL_DBG_BOOT, "%s toggle ratio %s\n", __func__, on?"on":"off");
+	ath6kl_dbg(ATH6KL_DBG_BOOT, "%s toggle ratio %s\n",
+					__func__, on ? "on" : "off");
 
 	power_control = data;
 	if (previous != on)
@@ -562,8 +563,8 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 	int ret = 0;
 
 	if (machine_is_apq8064_dma()) {
-		ath6kl_dbg(ATH6KL_DBG_BOOT, "%s \n", __func__);
-		previous=0;
+		ath6kl_dbg(ATH6KL_DBG_BOOT, "%s\n", __func__);
+		previous = 0;
 		ath6kl_toggle_radio(pdev->dev.platform_data, 1);
 	} else {
 

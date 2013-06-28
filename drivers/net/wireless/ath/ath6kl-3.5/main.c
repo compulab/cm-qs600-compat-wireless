@@ -2335,7 +2335,8 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					ret = 0; /* To avoid AP/GO up stuck. */
 #ifdef CONFIG_ANDROID
 				else if (strstr(user_cmd, "SET_BT_ON ")) {
-					ath6kl_bt_on = (user_cmd[10] == '1') ? 1 : 0;
+					ath6kl_bt_on =
+						(user_cmd[10] == '1') ? 1 : 0;
 					ret = 0;
 				}
 #endif

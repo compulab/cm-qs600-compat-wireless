@@ -24,8 +24,8 @@
 #define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000)
 
 /* Do some fine tune to overwrite the config in P2P cases. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_SCC		(4)		/* 1 min. */
-#define ATH6KL_AP_KA_RECLAIM_CYCLE_MCC		(12)		/* 3 min. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_SCC		(16)		/* 4 min. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE_MCC		(19)		/* 4.75 min. */
 
 /* At least WMI_TIMEOUT */
 #define ATH6KL_AP_KA_PRELOAD_LEADTIME		(2 * 1000)
