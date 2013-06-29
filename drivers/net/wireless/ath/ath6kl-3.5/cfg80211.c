@@ -38,8 +38,6 @@ unsigned int debug_quirks = ATH6KL_MODULE_DEF_DEBUG_QUIRKS;
 
 module_param(debug_quirks, uint, 0644);
 
-
-
 #define RATETAB_ENT(_rate, _rateid, _flags) {   \
 	.bitrate    = (_rate),                  \
 	.flags      = (_flags),                 \
@@ -1555,8 +1553,8 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int ret;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: reason=%u\n", __func__,
-		   reason_code);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1, "%s: reason=%u\n",
+			__func__, reason_code);
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -1617,7 +1615,8 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 {
 	struct ath6kl *ar = vif->ar;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: reason=%u, proto_reason %u\n",
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1,
+		"%s: reason=%u, proto_reason %u\n",
 		__func__, reason, proto_reason);
 
 	if (vif->scan_req) {
@@ -6426,6 +6425,11 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
 
+#ifdef CONFIG_ANDROID
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
+		ath6kl_roam_mode = ATH6KL_MODULEROAM_DISABLE;
+#endif
+
 	ar->roam_mode = ath6kl_roam_mode;
 
 	if (ar->sche_scan &&
@@ -6628,7 +6632,8 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 	ath6kl_setup_android_resource(ar);
 #endif
 
-	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+	if (test_bit(INTERNAL_REGDB, &ar->flag) ||
+	    test_bit(CFG80211_REGDB, &ar->flag)) {
 #ifdef CFG80211_VOID_REG_NOTIFIER
 		wiphy->reg_notifier = ath6kl_reg_notifier2;
 #else
@@ -6830,6 +6835,9 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	struct net_device *ndev;
 	struct ath6kl_vif *vif;
 	int i;
+#ifdef ATH6KL_HSIC_RECOVER
+	u8 zero_mac[ETH_ALEN] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+#endif
 
 	ndev = alloc_netdev(sizeof(*vif), name, ether_setup);
 	if (!ndev)
@@ -6847,6 +6855,15 @@ struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 	vif->nw_type = vif->next_mode = nw_type;
 
 	memcpy(ndev->dev_addr, ar->mac_addr, ETH_ALEN);
+
+#ifdef ATH6KL_HSIC_RECOVER
+	/* If we don't get the mac address just in time */
+	if (memcmp(ar->mac_addr, zero_mac, ETH_ALEN)  == 0 &&
+		cached_mac_valid == true) {
+		memcpy(ndev->dev_addr, cached_mac, ETH_ALEN);
+	}
+#endif
+
 	if (fw_vif_idx != 0)
 		ndev->dev_addr[0] = (ndev->dev_addr[0] ^ (1 << fw_vif_idx)) |
 				     0x2;

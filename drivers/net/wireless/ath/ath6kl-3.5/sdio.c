@@ -841,7 +841,9 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 	flags = sdio_get_host_pm_caps(func);
 
-	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "sdio suspend pm_caps 0x%x\n", flags);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_INFO1,
+			"sdio suspend pm_caps 0x%x\n",
+			flags);
 
 	if (!(flags & MMC_PM_KEEP_POWER) ||
 	    (ar->conf_flags & ATH6KL_CONF_SUSPEND_CUTPOWER)) {
@@ -883,6 +885,8 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 static int ath6kl_sdio_resume(struct ath6kl *ar)
 {
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "sdio resume: state %d\n", ar->state);
+
 	switch (ar->state) {
 	case ATH6KL_STATE_OFF:
 	case ATH6KL_STATE_CUTPOWER:
