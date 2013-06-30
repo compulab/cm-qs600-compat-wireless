@@ -1833,6 +1833,16 @@ void ath6kl_debug_init(struct ath6kl *ar)
 	 * value from the firmware.
 	 */
 	ar->debug.fwlog_mask = 0;
+
+	/*
+	 * MSB is for AutoPM stats and each LSB bits are for corresponding
+	 * logical pipe number
+	 */
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ar->debug.hif_stats_mask = 0x800000DF;
+#else
+	ar->debug.hif_stats_mask = 0x80000043;
+#endif
 }
 
 
@@ -1914,7 +1924,7 @@ static ssize_t ath6kl_hif_stats_read(struct file *file,
 		char __user *user_buf,
 		size_t count, loff_t *ppos)
 {
-#define _BUF_SIZE	(4096)
+#define _BUF_SIZE	(8192)
 	struct ath6kl *ar = file->private_data;
 	u8 *buf;
 	unsigned int len;
@@ -1924,7 +1934,8 @@ static ssize_t ath6kl_hif_stats_read(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
-	len = ath6kl_hif_get_stats(ar, buf, _BUF_SIZE);
+	len = ath6kl_hif_get_stats(ar, buf, _BUF_SIZE,
+			ar->debug.hif_stats_mask);
 
 	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 
@@ -1948,6 +1959,8 @@ static ssize_t ath6kl_hif_stats_write(struct file *file,
 
 	if (val == 0)
 		ath6kl_hif_clear_stats(ar);
+	else
+		ar->debug.hif_stats_mask = val;
 
 	return count;
 }
