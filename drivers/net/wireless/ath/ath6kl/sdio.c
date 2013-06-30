@@ -1259,7 +1259,8 @@ static void ath6kl_sdio_stop(struct ath6kl *ar)
 	WARN_ON(get_queue_depth(&ar_sdio->scat_req) != 4);
 }
 
-static int ath6kl_sdio_get_stats(struct ath6kl *ar, u8 *buf, int buf_len)
+static int ath6kl_sdio_get_stats(struct ath6kl *ar, u8 *buf, int buf_len,
+		u32 stats_mask)
 {
 	/* TBD */
 

@@ -263,7 +263,8 @@ struct ath6kl_hif_ops {
 				u8 *pipe_dl);
 	u16 (*pipe_get_free_queue_number)(struct ath6kl *ar, u8 pipe);
 	int (*pipe_set_rxq_threshold)(struct ath6kl *ar, u32 rxq_threshold);
-	int (*get_stats)(struct ath6kl *ar, u8 *buf, int buf_len);
+	int (*get_stats)(struct ath6kl *ar, u8 *buf, int buf_len,
+			u32 stats_mask);
 	int (*clear_stats)(struct ath6kl *ar);
 };
 
