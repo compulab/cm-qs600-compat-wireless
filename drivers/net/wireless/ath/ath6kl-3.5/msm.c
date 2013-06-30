@@ -498,6 +498,21 @@ chip_pwd_fail:
 	return rc;
 }
 
+#ifdef ATH6KL_HSIC_RECOVER
+void ath6kl_hsic_rediscovery(void)
+{
+#ifdef ATH6KL_BUS_VOTE
+	mdelay(100);
+	ath6kl_hsic_bind(0);
+
+	/* delay a while */
+	mdelay(1000);
+	ath6kl_hsic_bind(1);
+#endif
+}
+
+#endif
+
 #ifdef ATH6KL_BUS_VOTE
 int ath6kl_hsic_bind(int bind)
 {
@@ -681,6 +696,20 @@ static int ath6kl_sdio_probe(struct platform_device *pdev)
 		goto err;
 	}
 
+	if (ath6kl_dt_parse_vreg_info(dev, &pdata->wifi_vddpa,
+					"qca,wifi-vddpa") != 0) {
+					ath6kl_err("%s: parse vreg info for %s error\n",
+					"vddpa", __func__);
+					goto err;
+	}
+
+	if (ath6kl_dt_parse_vreg_info(dev, &pdata->wifi_vddio,
+					"qca,wifi-vddio") != 0) {
+					ath6kl_err("%s: parse vreg info for %s error\n",
+					"vddio", __func__);
+					goto err;
+	}
+
 	pdata->pdev = pdev;
 	platform_set_drvdata(pdev, pdata);
 	gpdata = pdata;
@@ -723,6 +752,15 @@ static int ath6kl_sdio_remove(struct platform_device *pdev)
 
 		ath6kl_platform_power(pdata, 0);
 		regulator_put(pdata->wifi_chip_pwd->reg);
+
+		if (pdata->wifi_vddpa != NULL &&
+			pdata->wifi_vddpa->reg)
+			regulator_put(pdata->wifi_vddpa->reg);
+
+		if (pdata->wifi_vddio != NULL &&
+			pdata->wifi_vddio->reg)
+			regulator_put(pdata->wifi_vddio->reg);
+
 		mdelay(50);
 		length = snprintf(buf, sizeof(buf), "%d\n", 1 ? 1 : 0);
 		android_readwrite_file("/sys/devices/msm_sdcc.3/polling",
@@ -732,6 +770,8 @@ static int ath6kl_sdio_remove(struct platform_device *pdev)
 			NULL, buf, length);
 		mdelay(500);
 	}
+
+
 
 	up(&wifi_control_sem);
 	return 0;
