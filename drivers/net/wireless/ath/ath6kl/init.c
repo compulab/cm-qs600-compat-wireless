@@ -2011,8 +2011,7 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 
 	clear_bit(WMI_READY, &ar->flag);
 
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM))
-		del_timer(&mcc_flowctrl->mcc_event_ctrl_timer);
+	del_timer(&mcc_flowctrl->mcc_event_ctrl_timer);
 
 	/*
 	 * After wmi_shudown all WMI events will be dropped. We
