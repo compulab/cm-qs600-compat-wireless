@@ -2648,7 +2648,7 @@ static int ath6kl_set_htcap(struct ath6kl_vif *vif, enum ieee80211_band band,
 					band, htcap);
 }
 
-static int ath6kl_restore_htcap(struct ath6kl_vif *vif)
+int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 {
 	struct wiphy *wiphy = vif->ar->wiphy;
 	int band, ret = 0;
