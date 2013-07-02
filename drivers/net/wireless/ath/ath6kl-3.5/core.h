@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.405)
+#define __BUILD_VERSION_ (3.5.0.409)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1256,6 +1256,7 @@ enum ath6kl_vif_state {
 	PORT_STATUS_PEND,
 	WLAN_WOW_ENABLE,
 	SCANNING,
+	SCANNING_WAIT,
 	DORMANT,
 	PS_STICK,
 #ifdef ATHTST_SUPPORT
@@ -1437,6 +1438,8 @@ struct ath6kl_vif {
 
 	struct bss_post_proc *bss_post_proc_ctx;
 	u32 data_cookie_count;
+
+	struct ap_rc_info ap_rc_info_ctx;
 };
 
 #define WOW_LIST_ID		0

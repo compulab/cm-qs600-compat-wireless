@@ -2159,12 +2159,10 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				int len)
 {
 	char result[20];
-	u16 rc_2g, rc_5g, rc_all;
+	struct ath6kl_rc_report rc_report;
 	int ret = 0;
 
 	/* GET::P2P_BEST_CHANNEL */
-
-	rc_2g = rc_5g = rc_all = 0;
 
 	if ((strlen(buf) > 16) &&
 		strstr(buf, "0"))
@@ -2174,28 +2172,17 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 	 * Current wpa_supplicant only uses best channel for P2P purpose.
 	 * Hence, here just get P2P channels.
 	 */
-	ret = ath6kl_p2p_rc_get(vif->ar,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				&rc_2g,
-				&rc_5g,
-				&rc_all,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				NULL);
+	memset(&rc_report, 0, sizeof(struct ath6kl_rc_report));
+	ret = ath6kl_p2p_rc_get(vif->ar, &rc_report);
 
 done:
 	if (ret == 0) {
 		memset(result, 0, 20);
 		snprintf(result, 20,
 			"%d %d %d",
-			rc_2g,
-			rc_5g,
-			rc_all);
+			rc_report.rc_p2p_2g,
+			rc_report.rc_p2p_5g,
+			rc_report.rc_p2p_all);
 		result[strlen(result)] = '\0';
 		if (copy_to_user(buf, result, strlen(result)))
 			ret = -EFAULT;

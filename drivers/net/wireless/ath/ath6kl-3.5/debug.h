@@ -166,6 +166,7 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_ACL		= BIT(8),     /* access control list */
 	ATH6KL_DBG_ADMC		= ATH6KL_DBG_ACL,     /* admission control */
 	ATH6KL_DBG_RC		= BIT(9),     /* P2P recommend channel */
+	ATH6KL_DBG_AP_RC	= ATH6KL_DBG_RC,      /* AP recommend channel */
 	ATH6KL_DBG_WMI          = BIT(10),    /* wmi tracing */
 	ATH6KL_DBG_TRC	        = BIT(11),    /* generic func tracing */
 	ATH6KL_DBG_SCATTER	= BIT(12),    /* hif scatter tracing */

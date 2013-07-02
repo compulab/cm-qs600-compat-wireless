@@ -2188,7 +2188,7 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	kfree(channels);
 
 	ath6kl_bss_post_proc_bss_scan_start(vif);
-	ath6kl_p2p_rc_scan_start(vif);
+	ath6kl_p2p_rc_scan_start(vif, false);
 
 	up(&ar->sem);
 
@@ -2241,6 +2241,11 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 
 #endif
 	del_timer(&vif->vifscan_timer);
+
+	if (test_bit(SCANNING_WAIT, &vif->flags)) {
+		clear_bit(SCANNING_WAIT, &vif->flags);
+		wake_up(&ar->event_wq);
+	}
 
 	if (!vif->scan_req)
 		return;
@@ -4612,6 +4617,9 @@ static u16 _ath6kl_ap_get_channel(struct ath6kl_vif *vif,
 		chan |= (chan_type << WMI_CONNECT_AP_CHAN_SELECT_OFFSET);
 	}
 
+	/* Overwrite the channel if AP recommand channel turns on */
+	chan = ath6kl_ap_rc_get(vif, chan);
+
 	return chan;
 }
 
@@ -6756,6 +6764,8 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		ath6kl_err("failed to initialize ap_admc\n");
 		return -ENOMEM;
 	}
+
+	ath6kl_ap_rc_init(vif);
 
 	setup_timer(&vif->disconnect_timer, disconnect_timer_handler,
 		    (unsigned long) vif->ndev);

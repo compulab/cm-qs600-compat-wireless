@@ -2448,9 +2448,11 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	ar_usb = ath6kl_usb_create(interface);
 
+#ifdef ATH6KL_BUS_VOTE
 #ifdef CONFIG_ANDROID
 	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0)
 		usb_reset_device(ar_usb->udev);
+#endif
 #endif
 
 	if (ar_usb == NULL) {
