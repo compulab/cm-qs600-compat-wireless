@@ -69,6 +69,11 @@ char *ath6kl_wifi_mac;
    to avoid the problem that create softap mode will fail. */
 char *fwpath = "android_fw_path_compatible_str";
 
+#ifdef CONFIG_ANDROID
+/* status for bt on/off */
+unsigned int ath6kl_bt_on;
+#endif
+
 module_param(debug_mask, uint, 0644);
 module_param(debug_mask_ext, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
@@ -95,6 +100,10 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 module_param(reg_domain, ushort, 0644);
+
+#ifdef CONFIG_ANDROID
+module_param(ath6kl_bt_on, uint, 0644);
+#endif
 
 #ifdef ATH6KL_HSIC_RECOVER
 u8 cached_mac[ETH_ALEN];

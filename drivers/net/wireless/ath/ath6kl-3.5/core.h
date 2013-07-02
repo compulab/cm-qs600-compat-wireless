@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.394)
+#define __BUILD_VERSION_ (3.5.0.409)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -106,6 +106,7 @@
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	ATH6KL_MODULES_ANI_ENABLE |			\
 	 0)
 #endif
@@ -1255,6 +1256,7 @@ enum ath6kl_vif_state {
 	PORT_STATUS_PEND,
 	WLAN_WOW_ENABLE,
 	SCANNING,
+	SCANNING_WAIT,
 	DORMANT,
 	PS_STICK,
 #ifdef ATHTST_SUPPORT
@@ -1436,6 +1438,8 @@ struct ath6kl_vif {
 
 	struct bss_post_proc *bss_post_proc_ctx;
 	u32 data_cookie_count;
+
+	struct ap_rc_info ap_rc_info_ctx;
 };
 
 #define WOW_LIST_ID		0
@@ -2058,5 +2062,9 @@ extern unsigned int htc_bundle_send_timer;
 extern unsigned int htc_bundle_send_th;
 #ifdef CE_SUPPORT
 extern unsigned int ath6kl_ce_flags;
+#endif
+
+#ifdef CONFIG_ANDROID
+extern unsigned int ath6kl_bt_on;
 #endif
 #endif /* CORE_H */
