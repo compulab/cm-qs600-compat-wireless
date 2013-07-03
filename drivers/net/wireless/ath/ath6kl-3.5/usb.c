@@ -1157,8 +1157,14 @@ static int ath6kl_usb_reboot(struct notifier_block *nb, unsigned long val,
 		return NOTIFY_DONE;
 
 	ar = (struct ath6kl *) ar_usb->ar;
+#ifdef CE_SUPPORT
+	if ((ar != NULL) && (ar->state == ATH6KL_STATE_ON))
+#else
 	if (ar != NULL)
-		ath6kl_reset_device(ar, ar->target_type, true, true);
+#endif
+		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode) == 0)
+			ath6kl_reset_device(ar, ar->target_type, true, true);
+
 
 	return NOTIFY_DONE;
 }
@@ -1489,10 +1495,7 @@ void usb_auto_pm_turnon(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
-#ifdef CONFIG_ANDROID
-		if (!machine_is_apq8064_dma() || !machine_is_apq8064_bueller())
-#endif
-			usb_enable_autosuspend(device->udev);
+		usb_enable_autosuspend(device->udev);
 }
 
 
@@ -1672,7 +1675,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 		p_pmskb->ar = ar;
 		p_pmskb->skb = buf;
 
-		list_add(&(p_pmskb->list), &(p_usb_pm_skb_queue->list));
+		list_add_tail(&(p_pmskb->list), &(p_usb_pm_skb_queue->list));
 		qlen = get_queue_depth(&(p_usb_pm_skb_queue->list));
 		ath6kl_dbg(ATH6KL_DBG_USB, "qlen = %d\n", qlen);
 
@@ -2036,14 +2039,9 @@ static int ath6kl_usb_bmi_write(struct ath6kl *ar, u8 *buf, u32 len)
 
 static int ath6kl_usb_power_on(struct ath6kl *ar)
 {
-	if (test_bit(USB_REMOTE_WKUP, &ar->flag) ||
-	    BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+	if (test_bit(USB_REMOTE_WKUP, &ar->flag)) {
 		struct ath6kl_usb *ar_usb = (struct ath6kl_usb *)ar->hif_priv;
-
-#ifdef CONFIG_ANDROID
-		if (!machine_is_apq8064_dma() || !machine_is_apq8064_bueller())
-#endif
-			usb_reset_device(ar_usb->udev);
+		usb_reset_device(ar_usb->udev);
 	}
 
 	hif_start(ar);
@@ -2450,6 +2448,13 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	ar_usb = ath6kl_usb_create(interface);
 
+#ifdef ATH6KL_BUS_VOTE
+#ifdef CONFIG_ANDROID
+	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0)
+		usb_reset_device(ar_usb->udev);
+#endif
+#endif
+
 	if (ar_usb == NULL) {
 		ath6kl_err("Failed to create USB interface\n");
 		ret = -ENOMEM;
@@ -2482,11 +2487,6 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM) &&
 		!(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_ENABLE) ||
 		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING))) {
-#ifdef CONFIG_ANDROID
-		if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
-			usb_disable_autosuspend(ar_usb->udev);
-		else
-#endif
 			usb_enable_autosuspend(dev);
 	}
 	ar->auto_pm_cnt = 0;
@@ -2498,13 +2498,15 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		goto err_core_free;
 	}
 
-	if (ar->version.target_ver == AR6004_HW_1_3_VERSION)
-	{
+	if (ar->version.target_ver == AR6004_HW_1_3_VERSION) {
 		/* Reset TX URB count for Mck1.3.
 		    TX_URB_COUNT less than 22 will degrade TX throughput*/
 
-		ath6kl_usb_free_pipe_resources(&ar_usb->pipes[ATH6KL_USB_PIPE_TX_DATA_LP]);
-		if (ath6kl_usb_alloc_pipe_resources(&ar_usb->pipes[ATH6KL_USB_PIPE_TX_DATA_LP], TX_URB_COUNT_LARGE) != 0) {
+		ath6kl_usb_free_pipe_resources(
+				&ar_usb->pipes[ATH6KL_USB_PIPE_TX_DATA_LP]);
+		if (ath6kl_usb_alloc_pipe_resources(
+				&ar_usb->pipes[ATH6KL_USB_PIPE_TX_DATA_LP],
+				TX_URB_COUNT_LARGE) != 0) {
 			ath6kl_usb_destroy(ar_usb);
 			ar_usb = NULL;
 			ret = -ENOMEM;

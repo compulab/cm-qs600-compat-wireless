@@ -196,6 +196,7 @@ enum p2p_rc_type {
 	P2P_RC_TYPE_OVERALLNODFS, /* the best in all channels w/o DFS */
 	P2P_RC_TYPE_2GNOLTE,	/* the best in 2G channels w/o LTE */
 	P2P_RC_TYPE_OVERALLNOLTE, /* the best in all channels w/o LTE */
+	P2P_RC_TYPE_OVERALLNOLTEDFS, /* the best in all channels w/o LTE/DFS */
 	P2P_RC_TYPE_USER_CHAN,	/* the best in user's channels */
 
 	P2P_RC_TYPE_MAX,	/* keep last */
@@ -232,6 +233,22 @@ struct ath6kl_p2p_rc_info {
 
 	/* Keep the latest result. */
 	struct p2p_rc_chan_record *last_p2p_rc[P2P_RC_TYPE_MAX];
+};
+
+struct ath6kl_rc_report {
+	u16 rc_2g;
+	u16 rc_5g;
+	u16 rc_all;
+	u16 rc_p2p_so;
+	u16 rc_p2p_2g;
+	u16 rc_p2p_5g;
+	u16 rc_p2p_all;
+	u16 rc_5g_nodfs;
+	u16 rc_all_nodfs;
+	u16 rc_2g_nolte;
+	u16 rc_all_nolte;
+	u16 rc_user_chan;
+	u16 rc_all_noltedfs;
 };
 
 struct p2p_oper_chan {
@@ -318,21 +335,9 @@ void ath6kl_p2p_rc_fetch_chan(struct ath6kl *ar);
 void ath6kl_p2p_rc_bss_info(struct ath6kl_vif *vif,
 			    u8 snr,
 			    struct ieee80211_channel *channel);
-void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif);
+void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif, bool local_scan);
 int ath6kl_p2p_rc_scan_complete_event(struct ath6kl_vif *vif, bool aborted);
-int ath6kl_p2p_rc_get(struct ath6kl *ar,
-			u16 *rc_2g,
-			u16 *rc_5g,
-			u16 *rc_all,
-			u16 *rc_p2p_social,
-			u16 *rc_p2p_2g,
-			u16 *rc_p2p_5g,
-			u16 *rc_p2p_all,
-			u16 *rc_5g_nodfs,
-			u16 *rc_all_nodfs,
-			u16 *rc_2g_nolte,
-			u16 *rc_all_nolte,
-			u16 *rc_user_chan);
+int ath6kl_p2p_rc_get(struct ath6kl *ar, struct ath6kl_rc_report *rc_report);
 int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len);
 void ath6kl_p2p_rc_config(struct ath6kl *ar, u16 freq, int type);
 

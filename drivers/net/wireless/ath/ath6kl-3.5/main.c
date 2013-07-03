@@ -1411,8 +1411,13 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
 				ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT);
 		} else {
+#ifdef CE_SUPPORT
+			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
+				0);
+#else
 			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
 				ATH6KL_DISCONNECT_TIMEOUT);
+#endif
 		}
 		ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
 					      ar->listen_intvl_t,
@@ -2154,12 +2159,10 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				int len)
 {
 	char result[20];
-	u16 rc_2g, rc_5g, rc_all;
+	struct ath6kl_rc_report rc_report;
 	int ret = 0;
 
 	/* GET::P2P_BEST_CHANNEL */
-
-	rc_2g = rc_5g = rc_all = 0;
 
 	if ((strlen(buf) > 16) &&
 		strstr(buf, "0"))
@@ -2169,28 +2172,17 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 	 * Current wpa_supplicant only uses best channel for P2P purpose.
 	 * Hence, here just get P2P channels.
 	 */
-	ret = ath6kl_p2p_rc_get(vif->ar,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				&rc_2g,
-				&rc_5g,
-				&rc_all,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				NULL);
+	memset(&rc_report, 0, sizeof(struct ath6kl_rc_report));
+	ret = ath6kl_p2p_rc_get(vif->ar, &rc_report);
 
 done:
 	if (ret == 0) {
 		memset(result, 0, 20);
 		snprintf(result, 20,
 			"%d %d %d",
-			rc_2g,
-			rc_5g,
-			rc_all);
+			rc_report.rc_p2p_2g,
+			rc_report.rc_p2p_5g,
+			rc_report.rc_p2p_all);
 		result[strlen(result)] = '\0';
 		if (copy_to_user(buf, result, strlen(result)))
 			ret = -EFAULT;
@@ -2328,6 +2320,13 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 						(android_cmd.used_len - 4));
 				else if (strstr(user_cmd, "SET_AP_WPS_P2P_IE"))
 					ret = 0; /* To avoid AP/GO up stuck. */
+#ifdef CONFIG_ANDROID
+				else if (strstr(user_cmd, "SET_BT_ON ")) {
+					ath6kl_bt_on =
+						(user_cmd[10] == '1') ? 1 : 0;
+					ret = 0;
+				}
+#endif
 				else {
 					ath6kl_dbg(ATH6KL_DBG_TRC,
 						"not yet support \"%s\"\n",
