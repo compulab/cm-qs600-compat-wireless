@@ -2856,7 +2856,9 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	memset(&rate, 0, sizeof(struct wmi_fix_rates_cmd));
-	vif->intra_bss = !(info->ap_isolate);
+
+	if (info->ap_isolate >= 0)
+		vif->intra_bss = !(info->ap_isolate);
 
 	if (info->ht_2040_mode) {
 		rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK;
