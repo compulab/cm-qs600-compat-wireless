@@ -1235,6 +1235,9 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
+			vif->max_num_sta = 0;
+			vif->prwise_crypto = NONE_CRYPT;
+			ath6kl_restore_htcap(vif);
 		}
 		return;
 	} else if (vif->nw_type == INFRA_NETWORK) {
