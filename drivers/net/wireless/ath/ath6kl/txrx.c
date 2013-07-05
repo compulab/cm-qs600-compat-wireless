@@ -2146,6 +2146,12 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 					skb = NULL;
 				}
 			}
+		} else if (!is_broadcast_ether_addr(datap->h_dest) &&
+				!is_multicast_ether_addr(datap->h_dest) &&
+				(NULL != ath6kl_find_sta(vif, datap->h_dest,
+				true))) {
+			dev_kfree_skb(skb);
+			skb = NULL;
 		}
 
 		if (skb1 && conn) {
@@ -2212,6 +2218,12 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 					skb = NULL;
 				}
 			}
+		} else if (!is_broadcast_ether_addr(datap->h_dest) &&
+				!is_multicast_ether_addr(datap->h_dest) &&
+				(NULL != ath6kl_find_sta(vif, datap->h_dest,
+					true))) {
+			dev_kfree_skb(skb);
+			skb = NULL;
 		}
 
 		if (skb1 && conn && conn->vif) {
