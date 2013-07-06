@@ -1108,6 +1108,7 @@ int ath6kl_diag_read(struct ath6kl *ar, u32 address, void *data, u32 length);
 int ath6kl_read_fwlogs(struct ath6kl *ar);
 void ath6kl_init_profile_info(struct ath6kl_vif *vif);
 void ath6kl_tx_data_cleanup(struct ath6kl *ar);
+int ath6kl_restore_htcap(struct ath6kl_vif *vif);
 
 struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar, struct ath6kl_vif *vif,
 							enum htc_endpoint_id eid);
