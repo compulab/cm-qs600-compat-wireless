@@ -2313,7 +2313,13 @@ int ath6kl_wmi_cmd_send(struct wmi *wmi, u8 if_idx, struct sk_buff *skb,
 		dev_kfree_skb(skb);
 		return -EINVAL;
 	}
-
+#ifdef CE_SUPPORT
+	if ((wmi->parent_dev->state == ATH6KL_STATE_WOW) ||
+	    (wmi->parent_dev->state == ATH6KL_STATE_DEEPSLEEP)) {
+		printk("suspend mode,skip wmi cmd\n\r");
+		return -EINVAL;
+	}
+#endif
 	ath6kl_dbg(ATH6KL_DBG_WMI, "wmi tx id %d len %d flag %d\n",
 		   cmd_id, skb->len, sync_flag);
 	ath6kl_dbg_dump(ATH6KL_DBG_WMI_DUMP, NULL, "wmi tx ",
