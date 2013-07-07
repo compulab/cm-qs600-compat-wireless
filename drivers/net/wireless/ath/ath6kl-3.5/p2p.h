@@ -367,5 +367,8 @@ void ath6kl_p2p_pending_disconnect_event(struct ath6kl_vif *vif,
 bool ath6kl_p2p_ie_append(struct ath6kl_vif *vif, u8 mgmt_frame_type);
 bool ath6kl_p2p_is_p2p_channel(u32 freq);
 bool ath6kl_p2p_is_social_channel(u32 freq);
+int ath6kl_p2p_build_scan_chan(struct ath6kl_vif *vif,
+				u32 req_chan_num,
+				u16 *chan_list);
 #endif
 

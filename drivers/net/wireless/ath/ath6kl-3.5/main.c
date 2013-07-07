@@ -112,9 +112,12 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 	sta->apsd_info = apsd_info;
 	sta->phymode = phymode;
 	sta->vif = vif;
-	init_timer(&sta->psq_age_timer);
-	sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
-	sta->psq_age_timer.data = (unsigned long)sta;
+	if (!sta->psq_age_active) {
+		init_timer(&sta->psq_age_timer);
+		sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
+		sta->psq_age_timer.data = (unsigned long)sta;
+		sta->psq_age_active = 1;
+	}
 	aggr_reset_state(sta->aggr_conn_cntxt);
 	sta->last_txrx_time_tgt = 0;
 	sta->last_txrx_time = 0;
@@ -138,8 +141,10 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 	struct list_head container;
 	int reclaim = 0, j;
 
-	del_timer_sync(&sta->psq_age_timer);
-
+	if (sta->psq_age_active) {
+		del_timer_sync(&sta->psq_age_timer);
+		sta->psq_age_active = 0;
+	}
 	if (p2p_flowctrl &&
 		p2p_flowctrl->sche_type == P2P_FLOWCTRL_SCHE_TYPE_CONNECTION) {
 
@@ -512,8 +517,9 @@ void ath6kl_ps_queue_age_handler(unsigned long ptr)
 			vif->fw_vif_idx, conn->aid, 0);
 	spin_unlock_bh(&conn->lock);
 
-	mod_timer(&conn->psq_age_timer, jiffies +
-		msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
+	if (conn->psq_age_active)
+		mod_timer(&conn->psq_age_timer, jiffies +
+			msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
 
 	return;
 }
@@ -525,8 +531,9 @@ void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn)
 			conn,
 			conn->aid);
 
-	mod_timer(&conn->psq_age_timer, jiffies +
-		msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
+	if (conn->psq_age_active)
+		mod_timer(&conn->psq_age_timer, jiffies +
+			msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
 
 	return;
 }
@@ -538,7 +545,8 @@ void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn)
 			conn,
 			conn->aid);
 
-	del_timer_sync(&conn->psq_age_timer);
+	if (conn->psq_age_active)
+		del_timer_sync(&conn->psq_age_timer);
 
 	return;
 }
