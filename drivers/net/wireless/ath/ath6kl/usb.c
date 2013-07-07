@@ -69,6 +69,32 @@ struct ath6kl_usb_bam_pipe {
 };
 #endif
 
+struct ath6kl_usb_pipe_stats {
+	u32 num_tx;
+	u32 num_tx_err;
+	u32 num_tx_err_others;
+
+	u32 num_tx_comp;
+	u32 num_tx_comp_err;
+	u32 num_tx_io_comp;
+	u32 num_tx_wq_sched;
+	u32 num_max_tx;
+
+	u32 num_rx_comp;
+	u32 num_rx_comp_err;
+	u32 num_rx_io_comp;
+	u32 num_rx_wq_sched;
+	u32 num_max_rx;
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	u32 num_ipa_tx;
+	u32 num_ipa_tx_err;
+	u32 num_ipa_tx_comp;
+
+	u32 num_ipa_rx;
+#endif /* CONFIG_ATH6KL_BAM2BAM */
+};
+
 struct ath6kl_usb_pipe {
 	struct list_head urb_list_head;
 	struct usb_anchor urb_submitted;
@@ -86,6 +112,7 @@ struct ath6kl_usb_pipe {
 	struct sk_buff_head tx_io_comp_queue;
 	struct sk_buff_head rx_io_comp_queue;
 	struct usb_endpoint_descriptor *ep_desc;
+	struct ath6kl_usb_pipe_stats stats;
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	struct ath6kl_usb_bam_pipe bam_pipe;
@@ -321,6 +348,7 @@ static void ath6kl_ipa_data_callback(void *priv, enum ipa_dp_evt_type evt,
 			"BAM-CM: %s: pipe: %d, Received skb from IPA module\n",
 		       	__func__, pipe->logical_pipe_num);
 		skb_queue_tail(&pipe->rx_io_comp_queue, skb);
+		pipe->stats.num_ipa_rx++;
 		queue_work(ar_usb->ar->ath6kl_wq_rx, &pipe->rx_io_complete_work);
 		break;
 
@@ -1122,6 +1150,7 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct sk_buff *skb = NULL;
 	int status = 0;
+	struct ath6kl_usb_pipe_stats *pipe_stats = &pipe->stats;
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 		"%s: recv pipe: %d, stat:%d, len:%d urb:0x%p\n", __func__,
@@ -1141,6 +1170,7 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 			status = -ECANCELED;
 			break;
 		default:
+			pipe_stats->num_rx_comp_err++;
 			ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 				"%s recv pipe: %d (ep:0x%2.2X), failed:%d\n",
 				__func__, pipe->logical_pipe_num,
@@ -1163,6 +1193,7 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->rx_io_comp_queue, skb);
+	pipe_stats->num_rx_comp++;
 	queue_work(pipe->ar_usb->ar->ath6kl_wq_rx, &pipe->rx_io_complete_work);
 
 cleanup_recv_urb:
@@ -1192,6 +1223,7 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 	struct ath6kl_urb_context *urb_context = urb->context;
 	struct ath6kl_usb_pipe *pipe = urb_context->pipe;
 	struct sk_buff *skb;
+	struct ath6kl_usb_pipe_stats *pipe_stats = &pipe->stats;
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 			"%s: pipe: %d, stat:%d, len:%d\n",
@@ -1199,6 +1231,7 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 			urb->actual_length);
 
 	if (urb->status != 0) {
+		pipe_stats->num_tx_comp_err++;
 		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 				"%s:  pipe: %d, failed:%d\n",
 				__func__, pipe->logical_pipe_num, urb->status);
@@ -1219,6 +1252,7 @@ static void ath6kl_usb_usb_transmit_complete(struct urb *urb)
 
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->tx_io_comp_queue, skb);
+	pipe_stats->num_tx_comp++;
 	queue_work(pipe->ar_usb->ar->ath6kl_wq_tx, &pipe->tx_io_complete_work);
 }
 
@@ -1245,6 +1279,7 @@ void ath6kl_usb_bam_transmit_complete(struct ath6kl_urb_context *urb_context)
 
 	/* note: queue implements a lock */
 	skb_queue_tail(&pipe->tx_io_comp_queue, skb);
+	pipe->stats.num_ipa_tx_comp++;
 	queue_work(pipe->ar_usb->ar->ath6kl_wq_tx, &pipe->tx_io_complete_work);
 }
 #endif
@@ -1255,12 +1290,23 @@ static void ath6kl_usb_io_comp_work_tx(struct work_struct *work)
 			struct ath6kl_usb_pipe, tx_io_complete_work);
 	struct ath6kl_usb *ar_usb;
 	struct sk_buff *skb;
+	struct ath6kl_usb_pipe_stats *pipe_stats = &pipe->stats;
+	u32 tx = 0;
+
 	ar_usb = pipe->ar_usb;
+
+	pipe_stats->num_tx_wq_sched++;
+
 	while ((skb = skb_dequeue(&pipe->tx_io_comp_queue))) {
 		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 				"ath6kl usb xmit callback buf:0x%p\n", skb);
 		ath6kl_core_tx_complete(ar_usb->ar, skb);
+		tx++;
 	}
+
+	pipe_stats->num_tx_io_comp += tx;
+	if (tx > pipe_stats->num_max_tx)
+		pipe_stats->num_max_tx = tx;
 }
 
 static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
@@ -1269,12 +1315,17 @@ static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
 			struct ath6kl_usb_pipe, rx_io_complete_work);
 	struct ath6kl_usb *ar_usb;
 	struct sk_buff *skb;
+	struct ath6kl_usb_pipe_stats *pipe_stats = &pipe->stats;
+	u32 rx = 0;
 
 	ar_usb = pipe->ar_usb;
+
+	pipe_stats->num_rx_wq_sched++;
 
 	while ((skb = skb_dequeue(&pipe->rx_io_comp_queue))) {
 		ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 				"ath6kl usb recv callback buf:0x%p\n", skb);
+		rx++;
 		ath6kl_core_rx_complete(ar_usb->ar, skb,
 				pipe->logical_pipe_num);
 	}
@@ -1293,6 +1344,10 @@ static void ath6kl_usb_io_comp_work_rx(struct work_struct *work)
 		/* our free urbs are piling up, post more transfers */
 		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 	}
+
+	pipe_stats->num_rx_io_comp += rx;
+	if (rx > pipe_stats->num_max_rx)
+		pipe_stats->num_max_rx = rx;
 }
 
 #define ATH6KL_USB_MAX_DIAG_CMD (sizeof(struct ath6kl_usb_ctrl_diag_cmd_write))
@@ -1432,6 +1487,7 @@ static int ath6kl_usb_submit_urb(struct ath6kl *ar,
 	u8 *data = skb->data;
 	u32 len = skb->len;
 	int usb_status, status = 0;
+	struct ath6kl_usb_pipe_stats *pipe_stats = &pipe->stats;
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	if (ath6kl_is_bam_pipe(pipe)) {
@@ -1440,9 +1496,12 @@ static int ath6kl_usb_submit_urb(struct ath6kl *ar,
 		status = ipa_tx_dp(pipe->bam_pipe.ipa_params.client, skb, NULL);
 
 		if (status) {
+			pipe_stats->num_ipa_tx_err++;
 			ath6kl_err("ath6kl usb : usb bam transmit failed %d\n",
 					status);
 		}
+
+		pipe_stats->num_ipa_tx++;
 
 		return status;
 	}
@@ -1451,6 +1510,7 @@ static int ath6kl_usb_submit_urb(struct ath6kl *ar,
 	urb = usb_alloc_urb(0, GFP_ATOMIC);
 	if (urb == NULL) {
 		status = -ENOMEM;
+		pipe_stats->num_tx_err_others++;
 		goto fail;
 	}
 
@@ -1479,9 +1539,11 @@ static int ath6kl_usb_submit_urb(struct ath6kl *ar,
 			   "ath6kl usb : usb bulk transmit failed %d\n",
 			   usb_status);
 		usb_unanchor_urb(urb);
+		pipe_stats->num_tx_err++;
 		status = -EINVAL;
 	}
 	usb_free_urb(urb);
+	pipe_stats->num_tx++;
 
 fail:
 	return status;
@@ -1553,6 +1615,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 pipe_id,
 			   "%s pipe:%d no urbs left. URB Cnt : %d\n",
 			   __func__, pipe_id, pipe->urb_cnt);
 		status = -ENOMEM;
+		pipe->stats.num_tx_err_others++;
 		goto fail_hif_send;
 	}
 
@@ -1963,24 +2026,102 @@ static int ath6kl_usb_resume(struct ath6kl *ar)
 /* FIXME: It would be good to have it in debug.c but all the HIF data structures
  * are not exposed through header file to access in debug.c
  */
-static int ath6kl_usb_get_stats(struct ath6kl *ar, u8 *buf, int buf_len)
+static int ath6kl_usb_get_stats(struct ath6kl *ar, u8 *buf, int buf_len,
+		u32 stats_mask)
 {
 	int len = 0;
-#ifdef CONFIG_ATH6KL_AUTO_PM
 	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+	struct ath6kl_usb_pipe *pipe;
+	int i;
+#ifdef CONFIG_ATH6KL_AUTO_PM
 	char *autopm_state[] = {"ON", "INPROGRESS", "SUSPENDED"};
+#endif
+
+#define USB_PIPESTAT(_pipe, _buf, _len, _name) \
+	snprintf(_buf, _len, "%10d : %s\n", _pipe->stats._name, #_name)
+
+	/* Skip if pipe stats are not requested */
+	if (!(stats_mask & ~BIT(31)))
+		goto skip_pipe_stats;
+
+	len += snprintf(buf + len, buf_len - len,
+			"\n<--------------- USB PIPE STATS --------------->\n");
+	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
+		pipe = &ar_usb->pipes[i];
+
+		if (pipe->ar_usb == NULL)
+			continue;
+
+		/* Dump only if requested */
+		if (!(stats_mask & BIT(pipe->logical_pipe_num)))
+			continue;
+
+		len += snprintf(buf + len, buf_len - len, "\npipe: %d, "
+				"ep: 0x%x, urb_alloc: %d, urb_cnt: %d, "
+				"tx_q_len: %d, rx_q_len: %d\n",
+				pipe->logical_pipe_num, pipe->ep_address,
+				pipe->urb_alloc, pipe->urb_cnt,
+				skb_queue_len(&pipe->tx_io_comp_queue),
+				skb_queue_len(&pipe->rx_io_comp_queue));
+
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx_err);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx_err_others);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx_comp);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx_comp_err);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx_io_comp);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_tx_wq_sched);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_max_tx);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_rx_comp);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_rx_comp_err);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_rx_io_comp);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_rx_wq_sched);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_max_rx);
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_ipa_tx);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_ipa_tx_err);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_ipa_tx_comp);
+		len += USB_PIPESTAT(pipe, buf + len, buf_len - len,
+				num_ipa_rx);
+#endif /* CONFIG_ATH6KL_BAM2BAM */
+
+	}
+
+skip_pipe_stats:
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	/* Check if AutoPM stats is requested */
+	if (!(stats_mask & BIT(31)))
+		return len;
 
 	len += snprintf(buf + len, buf_len - len,
 			"\n<--------------- AUTO PM STATS --------------->\n");
 
-	len += snprintf(buf +len, buf_len - len, " Auto PM state\t\t: %s\n",
+	len += snprintf(buf +len, buf_len - len, "%10s : Auto PM state\n",
 			autopm_state[atomic_read(&ar_usb->autopm_state)]);
 
-	len += snprintf(buf +len, buf_len - len, " PM Usage count\t\t: %d\n",
+	len += snprintf(buf +len, buf_len - len, "%10d : PM Usage count\n",
 			atomic_read(&ar_usb->interface->pm_usage_cnt));
 
 #define USB_PMSTAT(_ar_usb, _buf, _len, _name) \
-	snprintf(_buf, _len, " %s\t\t: %d\n", #_name, _ar_usb->pm_stats._name)
+	snprintf(_buf, _len, "%10d : %s\n", _ar_usb->pm_stats._name, #_name)
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, suspended);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, suspend_err);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, resumed);
@@ -1992,15 +2133,27 @@ static int ath6kl_usb_get_stats(struct ath6kl *ar, u8 *buf, int buf_len)
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, bam_inactivity);
 #undef USB_PMSTAT
 #endif /* CONFIG_ATH6KL_AUTO_PM */
+#undef USB_PIPESTAT
 
 	return len;
 }
 
 static int ath6kl_usb_clear_stats(struct ath6kl *ar)
 {
-#ifdef CONFIG_ATH6KL_AUTO_PM
 	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+	struct ath6kl_usb_pipe *pipe;
+	int i;
 
+	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
+		pipe = &ar_usb->pipes[i];
+
+		if (pipe->ar_usb == NULL)
+			continue;
+
+		memset(&pipe->stats, 0, sizeof(pipe->stats));
+	}
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
 	memset(&ar_usb->pm_stats, 0, sizeof(ar_usb->pm_stats));
 #endif
 
