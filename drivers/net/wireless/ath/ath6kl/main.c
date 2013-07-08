@@ -57,11 +57,14 @@ int _string_to_mac(char *string, int len, u8 *macaddr)
 }
 
 struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr,
-		bool inter_bss)
+				   bool inter_bss)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_sta *conn = NULL;
 	u8 i, max_conn;
+
+	if (is_zero_ether_addr(node_addr))
+		return NULL;
 
 	max_conn = (vif->nw_type == AP_NETWORK) ? NUM_CONN : 0;
 
