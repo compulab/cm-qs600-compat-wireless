@@ -864,7 +864,8 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	struct ath6kl_vif *vif_tmp;
 
 	if (vif->scan_req) {
-		cfg80211_scan_done(vif->scan_req, true);
+		if(vif->scan_req->wiphy)
+			cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
 	}
@@ -1148,7 +1149,8 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	}
 
 out:
-	cfg80211_scan_done(vif->scan_req, aborted);
+	if(vif->scan_req->wiphy)
+		cfg80211_scan_done(vif->scan_req, aborted);
 	vif->scan_req = NULL;
 	clear_bit(SCANNING, &vif->flags);
 }
