@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.409)
+#define __BUILD_VERSION_ (3.5.0.415)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1046,6 +1046,7 @@ struct ath6kl_sta {
 	struct ath6kl_ps_buf_head psq_data;
 	struct ath6kl_ps_buf_head psq_mgmt;
 	struct timer_list psq_age_timer;
+	u8 psq_age_active;
 	u8 apsd_info;
 
 	/* TX/RX-AMSDU */
@@ -1440,6 +1441,8 @@ struct ath6kl_vif {
 	u32 data_cookie_count;
 
 	struct ap_rc_info ap_rc_info_ctx;
+
+	int p2p_wise_full_scan;		/* Counter to trigger full P2P scan. */
 };
 
 #define WOW_LIST_ID		0

@@ -717,10 +717,10 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 #if defined(CE_SUPPORT) || defined(CE_2_SUPPORT)
 	/* avoid association reject by AP not found */
 	vif->sc_params.maxact_chdwell_time = 60;
-	vif->sc_params.maxact_scan_per_ssid = 2;
 #else
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
 #endif
+	vif->sc_params.maxact_scan_per_ssid = 2;
 
 	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 		vif->sc_params.pas_chdwell_time =
