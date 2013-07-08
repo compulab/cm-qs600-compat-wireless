@@ -961,6 +961,8 @@ struct ath6kl {
 		u8 disc_timeout;
 
 		struct sk_buff_head cdlog_queue;
+
+		u32 hif_stats_mask;
 	} debug;
 #endif /* CONFIG_ATH6KL_DEBUG */
 	struct ath6kl_mcc_flowctrl *mcc_flowctrl_ctx;
