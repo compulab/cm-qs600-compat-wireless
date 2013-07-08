@@ -662,6 +662,7 @@ enum ath6kl_vif_state {
 	HOST_SLEEP_MODE_CMD_PROCESSED,
 	NETDEV_MCAST_ALL_ON,
 	NETDEV_MCAST_ALL_OFF,
+	SCANNING,
 };
 
 struct ath6kl_vif {
