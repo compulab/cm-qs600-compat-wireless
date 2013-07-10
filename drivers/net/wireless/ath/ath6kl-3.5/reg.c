@@ -933,6 +933,22 @@ bool ath6kl_reg_is_dfs_channel(struct ath6kl *ar, u32 freq)
 	return false;
 }
 
+bool ath6kl_reg_is_lte_channel(struct ath6kl *ar, u32 freq)
+{
+#define _LTE_BAND7_START_FREQ	(2457)	/* Not used after Ch10 */
+
+	/*
+	 * FDD LTE band 7 uplink (2500Mhz ~ 2570MHz)
+	 * TDD LTE band 40 (2300Mhz ~ 2400MHz)
+	 */
+
+	if (freq >= _LTE_BAND7_START_FREQ)
+		return true;
+	else
+		return false;
+#undef _LTE_BAND7_START_FREQ
+}
+
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
 				bool cfgRegdb,
