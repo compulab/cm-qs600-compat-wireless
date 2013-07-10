@@ -3657,13 +3657,9 @@ ath6kl_mcc_flowctrl *ath6kl_mcc_flowctrl_conn_list_init(struct ath6kl *ar)
 	mcc_flowctrl->ar = ar;
 	spin_lock_init(&mcc_flowctrl->mcc_flowctrl_lock);
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
-		mcc_flowctrl->mcc_events_resumed = 0;
-		setup_timer(&mcc_flowctrl->mcc_event_ctrl_timer,
-			 ath6kl_mcc_event_ctrl_timer_handler, (unsigned long) ar);
-	}
-#endif
+	mcc_flowctrl->mcc_events_resumed = 0;
+	setup_timer(&mcc_flowctrl->mcc_event_ctrl_timer,
+		ath6kl_mcc_event_ctrl_timer_handler, (unsigned long) ar);
 
 	for (i = 0; i < NUM_CONN; i++) {
 		fw_conn = &mcc_flowctrl->fw_conn_list[i];
@@ -3687,11 +3683,7 @@ void ath6kl_mcc_flowctrl_conn_list_deinit(struct ath6kl *ar)
 {
 	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
-		del_timer(&mcc_flowctrl->mcc_event_ctrl_timer);
-	}
-#endif
+	del_timer(&mcc_flowctrl->mcc_event_ctrl_timer);
 
 	if (mcc_flowctrl) {
 		/*
@@ -3775,13 +3767,9 @@ static bool ath6kl_check_can_send(struct ath6kl_mcc_flowctrl *mcc_flowctrl,
 		if (fw_conn->ocs)
 			break;
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
-		if (ath6kl_debug_quirks(mcc_flowctrl->ar,
-				 ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
-			if (!mcc_flowctrl->mcc_events_resumed)
+		if (!mcc_flowctrl->mcc_events_resumed)
 				break;
-		}
-#endif
+
 		can_send = true;
 	} while(false);
 
@@ -3874,18 +3862,15 @@ enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar
 		return HTC_SEND_QUEUE_SENT;
 	}
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
-		mod_timer(&mcc_flowctrl->mcc_event_ctrl_timer,
-			jiffies + msecs_to_jiffies(MCC_STOP_EVENT_TIMER_INTVL));
+	mod_timer(&mcc_flowctrl->mcc_event_ctrl_timer,
+		jiffies + msecs_to_jiffies(MCC_STOP_EVENT_TIMER_INTVL));
 
-		if (!mcc_flowctrl->mcc_events_resumed) {
-			ath6kl_wmi_set_mcc_event_mode_cmd(ar->wmi,
-					MCC_START_EVENT);
-			mcc_flowctrl->mcc_events_resumed = 1;
-		}
+	if (!mcc_flowctrl->mcc_events_resumed) {
+		ath6kl_wmi_set_mcc_event_mode_cmd(ar->wmi,
+				MCC_START_EVENT);
+		mcc_flowctrl->mcc_events_resumed = 1;
 	}
-#endif
+
 	fw_conn = &mcc_flowctrl->fw_conn_list[conn_id];
 	vif = fw_conn->vif;
 
@@ -4370,7 +4355,6 @@ void ath6kl_allow_packet_drop(struct ath6kl_vif *vif, u8 enable_drop)
 }
 #endif
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
 static void ath6kl_mcc_event_ctrl_timer_handler(unsigned long ptr)
 {
 	struct ath6kl *ar = (struct ath6kl *)ptr;
@@ -4380,5 +4364,4 @@ static void ath6kl_mcc_event_ctrl_timer_handler(unsigned long ptr)
 	mcc_flowctrl->mcc_events_resumed = 0;
 	return;
 }
-#endif
 

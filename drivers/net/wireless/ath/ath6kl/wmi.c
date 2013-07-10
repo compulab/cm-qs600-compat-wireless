@@ -876,14 +876,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				ath6kl_ipa_enable_host_route_config (vif, true);
 #endif
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
-			if (ath6kl_debug_quirks(vif->ar,
-				ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
-
 				ath6kl_wmi_set_mcc_event_mode_cmd(vif->ar->wmi,
 						MCC_STOP_EVENT);
-			}
-#endif
 
 				ath6kl_dbg(ATH6KL_DBG_WMI,
 					"connect_event-ap_nw: (MCC_ENABLED)\n");
@@ -966,13 +960,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 #ifdef CONFIG_ATH6KL_BAM2BAM
 		ath6kl_ipa_enable_host_route_config (vif, true);
 #endif
-#ifdef CONFIG_ATH6KL_AUTO_PM
-		if (ath6kl_debug_quirks(vif->ar,
-			ATH6KL_MODULE_ENABLE_USB_AUTO_PM)) {
-			ath6kl_wmi_set_mcc_event_mode_cmd(vif->ar->wmi,
+		ath6kl_wmi_set_mcc_event_mode_cmd(vif->ar->wmi,
 				MCC_STOP_EVENT);
-		}
-#endif
 		ath6kl_dbg(ATH6KL_DBG_WMI, "connect_event-sta: (MCC_ENABLED)\n");
         }
 
@@ -4105,7 +4094,6 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
                                   NO_SYNC_WMIFLAG);
 }
 
-#ifdef CONFIG_ATH6KL_AUTO_PM
 void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 mcc_event_mode)
 {
 	struct sk_buff *skb;
@@ -4121,7 +4109,6 @@ void ath6kl_wmi_set_mcc_event_mode_cmd(struct wmi *wmi, u8 mcc_event_mode)
 	ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_MCC_EVENT_MODE_CMDID,
 				NO_SYNC_WMIFLAG);
 }
-#endif
 
 static int ath6kl_wmi_control_rx_xtnd(struct wmi *wmi, struct sk_buff *skb)
 {
