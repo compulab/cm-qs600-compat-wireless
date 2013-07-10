@@ -1978,6 +1978,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 void ath6kl_stop_txrx(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif, *tmp_vif;
+	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
 	int i;
 
 	set_bit(DESTROY_IN_PROGRESS, &ar->flag);
@@ -2008,6 +2009,9 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	spin_unlock_bh(&ar->list_lock);
 
 	clear_bit(WMI_READY, &ar->flag);
+
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_ENABLE_USB_AUTO_PM))
+		del_timer(&mcc_flowctrl->mcc_event_ctrl_timer);
 
 	/*
 	 * After wmi_shudown all WMI events will be dropped. We
