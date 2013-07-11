@@ -1890,6 +1890,17 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_P2PCHAN:
+		num_chan = ath6kl_p2p_build_scan_chan(vif,
+							n_channels,
+							channels);
+		if (num_chan) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"Only P2P channels scan, full scan instead\n");
+
+			break;
+		} else
+			num_chan = n_channels;
+
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"Only P2P channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
@@ -1906,6 +1917,17 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_2_P2PCHAN:
+		num_chan = ath6kl_p2p_build_scan_chan(vif,
+							n_channels,
+							channels);
+		if (num_chan) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"x2 P2P channels scan, full scan instead\n");
+
+			break;
+		} else
+			num_chan = n_channels;
+
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"x2 P2P channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
@@ -6806,6 +6828,10 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 #endif
 
 	for (ctr = 0; ctr < AP_MAX_NUM_STA ; ctr++) {
+		if (vif->sta_list[ctr].psq_age_active) {
+			del_timer_sync(&vif->sta_list[ctr].psq_age_timer);
+			vif->sta_list[ctr].psq_age_active = 0;
+		}
 		if (!ath6kl_ps_queue_empty(&vif->sta_list[ctr].psq_data))
 			ath6kl_ps_queue_purge(&vif->sta_list[ctr].psq_data);
 

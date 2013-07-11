@@ -1275,7 +1275,8 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	}
 #ifdef ATH6KL_BUS_VOTE
 	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller() ||
-		ath6kl_platform_has_vreg == 0)
+		ath6kl_platform_has_vreg == 0 ||
+		(ath6kl_platform_has_vreg == 1 && ath6kl_bt_on == 0))
 #endif
 		usb_auto_pm_turnoff(ar);
 #endif

@@ -2581,3 +2581,64 @@ bool ath6kl_p2p_is_social_channel(u32 freq)
 	return false;
 }
 
+static int _p2p_build_scan_chan(struct ath6kl *ar, u16 *chan_list)
+{
+	struct wiphy *wiphy = ar->wiphy;
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_channel *chan;
+	int i, num_chan = 0;
+
+	sband = wiphy->bands[NL80211_BAND_2GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (!(chan->flags & IEEE80211_CHAN_DISABLED) &&
+		    ath6kl_p2p_is_p2p_channel(chan->center_freq))
+			chan_list[num_chan++] = chan->center_freq;
+	}
+
+	sband = wiphy->bands[NL80211_BAND_5GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (!(chan->flags & IEEE80211_CHAN_DISABLED) &&
+		    ath6kl_p2p_is_p2p_channel(chan->center_freq))
+			chan_list[num_chan++] = chan->center_freq;
+	}
+
+	return num_chan;
+}
+
+int ath6kl_p2p_build_scan_chan(struct ath6kl_vif *vif,
+				u32 req_chan_num,
+				u16 *chan_list)
+{
+#define _P2P_WISE_FULL_SCAN_CNT	(15)
+	struct ath6kl *ar = vif->ar;
+	bool full_chan_scan = false;
+
+	/*
+	 * If this's P2P-Device's scan w/ only P2P-Social channel and assume
+	 * the user is in P2P searching state and will insert a full channel
+	 * scan every _P2P_WISE_FULL_SCAN_CNT time.
+	 */
+	if (ar->p2p_wise_scan) {
+		if (ar->p2p_dedicate &&
+		    (vif->fw_vif_idx == (ar->vif_max - 1))) {
+			if (req_chan_num > 3)
+				vif->p2p_wise_full_scan = 0;
+			else if (req_chan_num == 3)
+				vif->p2p_wise_full_scan++;
+
+			if (vif->p2p_wise_full_scan > _P2P_WISE_FULL_SCAN_CNT) {
+				full_chan_scan = true;
+				vif->p2p_wise_full_scan = 0;
+			}
+
+			if (full_chan_scan)
+				return _p2p_build_scan_chan(ar, chan_list);
+		}
+	}
+
+	return 0;
+#undef _P2P_WISE_FULL_SCAN_CNT
+}
+
