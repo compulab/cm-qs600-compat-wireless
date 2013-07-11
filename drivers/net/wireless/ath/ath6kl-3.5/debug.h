@@ -154,6 +154,7 @@ enum ATH6KL_MODULE_ROAM {
 	ATH6KL_MODULEROAM_DISABLE		= BIT(4),
 };
 
+/* debug_mask */
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
 	ATH6KL_DBG_REGDB	= BIT(1),
@@ -196,8 +197,17 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_ANY		= 0xffffffff  /* enable all logs */
 };
 
-/* Extended tracing */
-#define	ATH6KL_DBG_EXT_INFO1    0x100000000ULL
+/* debug_mask_ext */
+#define BIT_OFFSET32(nr)	(1ULL << ((nr) + 32))
+
+enum ATH6K_DEBUG_MASK_EXT {
+	ATH6KL_DBG_EXT_INFO1	= BIT_OFFSET32(0),
+	ATH6KL_DBG_EXT_ROC	= BIT_OFFSET32(1),	/* Remain-on-Channel */
+	ATH6KL_DBG_EXT_SCAN	= BIT_OFFSET32(2),	/* Scan */
+	ATH6KL_DBG_EXT_BSS_PROC	= BIT_OFFSET32(3),	/* BSS post-proc */
+
+	ATH6KL_DBG_EXT_ANY	= 0xffffffff00000000ULL  /* enable all logs */
+};
 
 extern unsigned int debug_mask;
 extern unsigned int debug_mask_ext;

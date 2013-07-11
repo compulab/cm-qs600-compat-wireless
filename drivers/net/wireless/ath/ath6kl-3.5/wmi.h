@@ -758,6 +758,9 @@ enum wmi_cmd_id {
 	WMI_SET_MCC_EVENT_MODE_CMDID,
 	WMI_GET_CTL,
 
+	WMI_SET_OCB_FLAG_CMDID,
+	WMI_SET_OCB_CHANNEL_CMDID,
+
 /* merge from olca mainline for align command id - end
  * private commands shall grow back from 0xFFFE
  */
@@ -3271,6 +3274,15 @@ struct wmi_set_dtim_ext_cmd {
 	u8 dtim_ext;
 } __packed;
 
+/* 802.11p */
+struct wmi_set_ocb_flag_cmd {
+	u8 ocb_flag;
+} __packed;
+
+struct wmi_set_ocb_channel_cmd {
+	u16 channel;
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
@@ -3552,7 +3564,7 @@ int ath6kl_wmi_allow_aggr_cmd(struct wmi *wmi, u8 if_idx,
 	u16 tx_tid_mask, u16 rx_tid_mask);
 int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
 	u8 restore, u16 threshold);
-int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
+int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 if_idx, u8 *ip_addrs);
 int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile);
 int ath6kl_wmi_set_seamless_mcc_scc_switch_freq_cmd(struct wmi *wmi, u32 freq);
 
@@ -3583,4 +3595,8 @@ int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon);
 int ath6kl_wmi_set_scan_chan_plan(struct wmi *wmi, u8 if_idx,
 					u8 type, u8 numChan, u16 *chanList);
 int ath6kl_wmi_set_dtim_ext(struct wmi *wmi, u8 dtim_ext);
+
+/* 802.11p */
+int ath6kl_wmi_set_ocb_flag(struct wmi *wmi, u8 if_idx, bool ocb_flag);
+int ath6kl_wmi_set_ocb_channel(struct wmi *wmi, u8 if_idx, u16 channel);
 #endif /* WMI_H */

@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.416)
+#define __BUILD_VERSION_ (3.5.0.418)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1307,15 +1307,21 @@ struct bss_info_entry {
 	struct ieee80211_channel *channel;
 	struct ieee80211_mgmt *mgmt;
 	size_t len;
+	unsigned long shoot_time;
 };
 
 #define ATH6KL_BSS_POST_PROC_SCAN_ONGOING	(1 << 0)
+#define ATH6KL_BSS_POST_PROC_CACHED_BSS		(1 << 1)
 
 struct bss_post_proc {
 	struct ath6kl_vif *vif;
 	u32 flags;
 	spinlock_t bss_info_lock;
 	struct list_head bss_info_list;
+
+#define ATH6KL_BSS_POST_PROC_AGING_TIME		(15 * HZ)	/* second */
+#define ATH6KL_BSS_POST_PROC_AGING_TIME_MIN	ATH6KL_SCAN_TIMEOUT_SHORT
+	int aging_time;
 };
 
 struct ath6kl_vif {
@@ -1443,6 +1449,7 @@ struct ath6kl_vif {
 	struct ap_rc_info ap_rc_info_ctx;
 
 	int p2p_wise_full_scan;		/* Counter to trigger full P2P scan. */
+	u16 next_conn_status;		/* CR508988 */
 };
 
 #define WOW_LIST_ID		0
@@ -2026,6 +2033,9 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				int len,
 				s32 snr,
 				struct ieee80211_channel *channel);
+void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
+				bool cache_bss,
+				int aging_time);
 
 #ifdef CONFIG_ANDROID
 void ath6kl_sdio_init_msm(void);
