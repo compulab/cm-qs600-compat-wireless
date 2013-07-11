@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.402)
+#define __BUILD_VERSION_ (3.5.0.416)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -106,6 +106,7 @@
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	ATH6KL_MODULES_ANI_ENABLE |			\
 	 0)
 #endif
@@ -1045,6 +1046,7 @@ struct ath6kl_sta {
 	struct ath6kl_ps_buf_head psq_data;
 	struct ath6kl_ps_buf_head psq_mgmt;
 	struct timer_list psq_age_timer;
+	u8 psq_age_active;
 	u8 apsd_info;
 
 	/* TX/RX-AMSDU */
@@ -1255,6 +1257,7 @@ enum ath6kl_vif_state {
 	PORT_STATUS_PEND,
 	WLAN_WOW_ENABLE,
 	SCANNING,
+	SCANNING_WAIT,
 	DORMANT,
 	PS_STICK,
 #ifdef ATHTST_SUPPORT
@@ -1436,6 +1439,10 @@ struct ath6kl_vif {
 
 	struct bss_post_proc *bss_post_proc_ctx;
 	u32 data_cookie_count;
+
+	struct ap_rc_info ap_rc_info_ctx;
+
+	int p2p_wise_full_scan;		/* Counter to trigger full P2P scan. */
 };
 
 #define WOW_LIST_ID		0

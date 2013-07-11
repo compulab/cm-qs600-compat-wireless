@@ -180,6 +180,23 @@ u8 fe_antenna_type(struct ath6kl *ar)
 			fe_antenna =
 				ar->fw_board[BDATA_ANTCONF_OFFSET];
 	}
+	switch (fe_antenna) {
+	case WMI_BTCOEX_FE_ANT_SINGLE:
+		ath6kl_info("antenna config = single antenna\n");
+		break;
+	case WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO:
+		ath6kl_info("antenna config = daul ant. low isolation\n");
+		break;
+	case WMI_BTCOEX_FE_ANT_DUAL_SH_BT_HIGH_ISO:
+		ath6kl_info("antenna config = dual ant. high isolation\n");
+		break;
+	case WMI_BTCOEX_FE_ANT_TRIPLE:
+		ath6kl_info("antenna config = triple antenna\n");
+		break;
+	default:
+		ath6kl_info("antenna config = invalid config!\n");
+		break;
+	}
 
 	return fe_antenna;
 }

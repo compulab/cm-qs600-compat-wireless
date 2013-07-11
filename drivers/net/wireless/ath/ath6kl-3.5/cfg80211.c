@@ -1890,6 +1890,17 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_P2PCHAN:
+		num_chan = ath6kl_p2p_build_scan_chan(vif,
+							n_channels,
+							channels);
+		if (num_chan) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"Only P2P channels scan, full scan instead\n");
+
+			break;
+		} else
+			num_chan = n_channels;
+
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"Only P2P channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
@@ -1906,6 +1917,17 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_2_P2PCHAN:
+		num_chan = ath6kl_p2p_build_scan_chan(vif,
+							n_channels,
+							channels);
+		if (num_chan) {
+			ath6kl_dbg(ATH6KL_DBG_INFO,
+				"x2 P2P channels scan, full scan instead\n");
+
+			break;
+		} else
+			num_chan = n_channels;
+
 		ath6kl_dbg(ATH6KL_DBG_INFO,
 			"x2 P2P channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
@@ -2188,7 +2210,7 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	kfree(channels);
 
 	ath6kl_bss_post_proc_bss_scan_start(vif);
-	ath6kl_p2p_rc_scan_start(vif);
+	ath6kl_p2p_rc_scan_start(vif, false);
 
 	up(&ar->sem);
 
@@ -2241,6 +2263,11 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 
 #endif
 	del_timer(&vif->vifscan_timer);
+
+	if (test_bit(SCANNING_WAIT, &vif->flags)) {
+		clear_bit(SCANNING_WAIT, &vif->flags);
+		wake_up(&ar->event_wq);
+	}
 
 	if (!vif->scan_req)
 		return;
@@ -3982,11 +4009,16 @@ static bool ath6kl_cfg80211_need_suspend(struct ath6kl *ar, u32 *suspend_vif)
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif) {
+			#ifdef CE_SUPPORT
+			if (vif->nw_type != AP_NETWORK)
+				*suspend_vif |= (1 << i);
+			#else
 			if (vif->nw_type == AP_NETWORK) {
 				*suspend_vif = 0;
 				return false;
 			}
 			*suspend_vif |= (1 << i);
+			#endif
 		}
 	}
 
@@ -4606,6 +4638,9 @@ static u16 _ath6kl_ap_get_channel(struct ath6kl_vif *vif,
 
 		chan |= (chan_type << WMI_CONNECT_AP_CHAN_SELECT_OFFSET);
 	}
+
+	/* Overwrite the channel if AP recommand channel turns on */
+	chan = ath6kl_ap_rc_get(vif, chan);
 
 	return chan;
 }
@@ -6159,9 +6194,17 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif, *tmp_vif;
-
+#ifdef CE_SUPPORT
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		if (ar->state == ATH6KL_STATE_DEEPSLEEP) {
+			if (vif->nw_type != AP_NETWORK)
+				ath6kl_cfg80211_stop(vif);
+		}
+	}
+#else
 	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list)
 		ath6kl_cfg80211_stop(vif);
+#endif
 }
 
 static void ath6kl_change_cfg80211_ops(struct cfg80211_ops *cfg80211_ops)
@@ -6744,6 +6787,8 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+	ath6kl_ap_rc_init(vif);
+
 	setup_timer(&vif->disconnect_timer, disconnect_timer_handler,
 		    (unsigned long) vif->ndev);
 	set_bit(WMM_ENABLED, &vif->flags);
@@ -6783,6 +6828,10 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 #endif
 
 	for (ctr = 0; ctr < AP_MAX_NUM_STA ; ctr++) {
+		if (vif->sta_list[ctr].psq_age_active) {
+			del_timer_sync(&vif->sta_list[ctr].psq_age_timer);
+			vif->sta_list[ctr].psq_age_active = 0;
+		}
 		if (!ath6kl_ps_queue_empty(&vif->sta_list[ctr].psq_data))
 			ath6kl_ps_queue_purge(&vif->sta_list[ctr].psq_data);
 

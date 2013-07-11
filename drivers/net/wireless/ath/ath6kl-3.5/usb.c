@@ -1157,10 +1157,14 @@ static int ath6kl_usb_reboot(struct notifier_block *nb, unsigned long val,
 		return NOTIFY_DONE;
 
 	ar = (struct ath6kl *) ar_usb->ar;
-	if (ar != NULL) {
+#ifdef CE_SUPPORT
+	if ((ar != NULL) && (ar->state == ATH6KL_STATE_ON))
+#else
+	if (ar != NULL)
+#endif
 		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode) == 0)
 			ath6kl_reset_device(ar, ar->target_type, true, true);
-	}
+
 
 	return NOTIFY_DONE;
 }
@@ -1271,7 +1275,8 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	}
 #ifdef ATH6KL_BUS_VOTE
 	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller() ||
-		ath6kl_platform_has_vreg == 0)
+		ath6kl_platform_has_vreg == 0 ||
+		(ath6kl_platform_has_vreg == 1 && ath6kl_bt_on == 0))
 #endif
 		usb_auto_pm_turnoff(ar);
 #endif
@@ -2444,10 +2449,11 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	ar_usb = ath6kl_usb_create(interface);
 
+#ifdef ATH6KL_BUS_VOTE
 #ifdef CONFIG_ANDROID
-	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0) {
+	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0)
 		usb_reset_device(ar_usb->udev);
-	}
+#endif
 #endif
 
 	if (ar_usb == NULL) {
