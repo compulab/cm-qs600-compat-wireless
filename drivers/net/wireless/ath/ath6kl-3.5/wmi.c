@@ -1380,23 +1380,29 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				   ev->u.ap_sta.keymgmt,
 				   le16_to_cpu(ev->u.ap_sta.cipher),
 				   ev->u.ap_sta.apsd_info);
-			ath6kl_p2p_flowctrl_set_conn_id(vif,
-							ev->u.ap_sta.mac_addr,
-							ev->u.ap_sta.aid);
 			ath6kl_ap_admc_assoc_req_fetch(vif,
 							ev,
 							&assoc_req,
 							&assoc_req_len);
-			ath6kl_connect_ap_mode_sta(
-				vif, ev->u.ap_sta.aid, ev->u.ap_sta.mac_addr,
-				ev->u.ap_sta.keymgmt,
-				le16_to_cpu(ev->u.ap_sta.cipher),
-				ev->u.ap_sta.auth, assoc_req_len,
-				assoc_req,
-				ev->u.ap_sta.apsd_info,
-				ev->u.ap_sta.phymode);
-			ath6kl_ap_admc_assoc_req_release(vif,
-							assoc_req);
+			/* 
+			 * check if we could get assoc_req firstly to prevent 
+			 * race condition between ath6kl_cfg80211_del_iface.
+			 */
+			if (assoc_req) {
+				ath6kl_p2p_flowctrl_set_conn_id(vif,
+								ev->u.ap_sta.mac_addr,
+								ev->u.ap_sta.aid);
+				ath6kl_connect_ap_mode_sta(
+					vif, ev->u.ap_sta.aid, ev->u.ap_sta.mac_addr,
+					ev->u.ap_sta.keymgmt,
+					le16_to_cpu(ev->u.ap_sta.cipher),
+					ev->u.ap_sta.auth, assoc_req_len,
+					assoc_req,
+					ev->u.ap_sta.apsd_info,
+					ev->u.ap_sta.phymode);
+				ath6kl_ap_admc_assoc_req_release(vif,
+								assoc_req);
+			}
 		}
 
 		ath6kl_ap_ht_update_ies(vif);
