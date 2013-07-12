@@ -191,7 +191,6 @@ static u8 ath6kl_remove_sta(struct ath6kl_vif *vif, u8 *mac, u16 reason)
 						ar->sta_list[i].aid, reason);
 				ath6kl_sta_cleanup(vif, i);
 			}
-
 			if (memcmp(ar->mcc_flowctrl_ctx->fw_conn_list[i].mac_addr,
 						mac, ETH_ALEN) == 0) {
 				ath6kl_mcc_flowctrl_set_conn_id(vif, NULL,
@@ -1227,7 +1226,12 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 						       MCAST_AID, 0);
 		}
 
-		if (!is_broadcast_ether_addr(bssid)) {
+		/* dont send the event to hostapd if connected
+		 * client sends AUTH request again protocol
+		 * reason will be LOST_LINK
+		 */
+		if (!is_broadcast_ether_addr(bssid) &&
+			(prot_reason_status != LOST_LINK)) {
 			/* send event to application */
 			cfg80211_del_sta(vif->ndev, bssid, GFP_KERNEL);
 		}
