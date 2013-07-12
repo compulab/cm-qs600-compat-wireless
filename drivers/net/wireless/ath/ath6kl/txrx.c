@@ -736,8 +736,8 @@ void ath6kl_disconnect_sysbam_pipes(struct ath6kl *ar)
 {
 	int status,i;
 
-	if (!ath6kl_debug_quirks(ar,
-			ATH6KL_MODULE_BAM_RX_SW_PATH))
+	/* If Rx SW path, then no need to create/delete sysbam pipe */
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
 		return;
 
 	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
@@ -754,8 +754,8 @@ int ath6kl_usb_create_sysbam_pipes(struct ath6kl *ar)
 {
 	int status,i;
 
-	/* Create sysbam pipe only for Rx HW path */
-	if (!ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+	/* If Rx SW path, then no need to create/delete sysbam pipe */
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
 		return 0;
 
 	/* The config is similar to the RX Bam pipe configuration */
@@ -931,8 +931,8 @@ void ath6kl_remove_filter_rule(enum ipa_ip_type ip_type, uint32_t hdl)
 
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar)
 {
-	if (!ath6kl_debug_quirks(ar,
-				ATH6KL_MODULE_BAM_RX_SW_PATH))
+	/* In Rx SW path, no need to create/delete the exception filter */
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
 		return;
 
 	/* Remove the filters */
