@@ -112,9 +112,12 @@ static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 	sta->apsd_info = apsd_info;
 	sta->phymode = phymode;
 	sta->vif = vif;
-	init_timer(&sta->psq_age_timer);
-	sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
-	sta->psq_age_timer.data = (unsigned long)sta;
+	if (!sta->psq_age_active) {
+		init_timer(&sta->psq_age_timer);
+		sta->psq_age_timer.function = ath6kl_ps_queue_age_handler;
+		sta->psq_age_timer.data = (unsigned long)sta;
+		sta->psq_age_active = 1;
+	}
 	aggr_reset_state(sta->aggr_conn_cntxt);
 	sta->last_txrx_time_tgt = 0;
 	sta->last_txrx_time = 0;
@@ -138,8 +141,10 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 	struct list_head container;
 	int reclaim = 0, j;
 
-	del_timer_sync(&sta->psq_age_timer);
-
+	if (sta->psq_age_active) {
+		del_timer_sync(&sta->psq_age_timer);
+		sta->psq_age_active = 0;
+	}
 	if (p2p_flowctrl &&
 		p2p_flowctrl->sche_type == P2P_FLOWCTRL_SCHE_TYPE_CONNECTION) {
 
@@ -512,8 +517,9 @@ void ath6kl_ps_queue_age_handler(unsigned long ptr)
 			vif->fw_vif_idx, conn->aid, 0);
 	spin_unlock_bh(&conn->lock);
 
-	mod_timer(&conn->psq_age_timer, jiffies +
-		msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
+	if (conn->psq_age_active)
+		mod_timer(&conn->psq_age_timer, jiffies +
+			msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
 
 	return;
 }
@@ -525,8 +531,9 @@ void ath6kl_ps_queue_age_start(struct ath6kl_sta *conn)
 			conn,
 			conn->aid);
 
-	mod_timer(&conn->psq_age_timer, jiffies +
-		msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
+	if (conn->psq_age_active)
+		mod_timer(&conn->psq_age_timer, jiffies +
+			msecs_to_jiffies(ATH6KL_PS_QUEUE_CHECK_AGE));
 
 	return;
 }
@@ -538,7 +545,8 @@ void ath6kl_ps_queue_age_stop(struct ath6kl_sta *conn)
 			conn,
 			conn->aid);
 
-	del_timer_sync(&conn->psq_age_timer);
+	if (conn->psq_age_active)
+		del_timer_sync(&conn->psq_age_timer);
 
 	return;
 }
@@ -2159,12 +2167,10 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				int len)
 {
 	char result[20];
-	u16 rc_2g, rc_5g, rc_all;
+	struct ath6kl_rc_report rc_report;
 	int ret = 0;
 
 	/* GET::P2P_BEST_CHANNEL */
-
-	rc_2g = rc_5g = rc_all = 0;
 
 	if ((strlen(buf) > 16) &&
 		strstr(buf, "0"))
@@ -2174,28 +2180,17 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 	 * Current wpa_supplicant only uses best channel for P2P purpose.
 	 * Hence, here just get P2P channels.
 	 */
-	ret = ath6kl_p2p_rc_get(vif->ar,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				&rc_2g,
-				&rc_5g,
-				&rc_all,
-				NULL,
-				NULL,
-				NULL,
-				NULL,
-				NULL);
+	memset(&rc_report, 0, sizeof(struct ath6kl_rc_report));
+	ret = ath6kl_p2p_rc_get(vif->ar, &rc_report);
 
 done:
 	if (ret == 0) {
 		memset(result, 0, 20);
 		snprintf(result, 20,
 			"%d %d %d",
-			rc_2g,
-			rc_5g,
-			rc_all);
+			rc_report.rc_p2p_2g,
+			rc_report.rc_p2p_5g,
+			rc_report.rc_p2p_all);
 		result[strlen(result)] = '\0';
 		if (copy_to_user(buf, result, strlen(result)))
 			ret = -EFAULT;
@@ -2335,7 +2330,8 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					ret = 0; /* To avoid AP/GO up stuck. */
 #ifdef CONFIG_ANDROID
 				else if (strstr(user_cmd, "SET_BT_ON ")) {
-					ath6kl_bt_on = (user_cmd[10] == '1') ? 1 : 0;
+					ath6kl_bt_on =
+						(user_cmd[10] == '1') ? 1 : 0;
 					ret = 0;
 				}
 #endif
