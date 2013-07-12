@@ -563,32 +563,52 @@ struct bss_post_proc *ath6kl_bss_post_proc_init(struct ath6kl_vif *vif)
 
 	post_proc->vif = vif;
 	post_proc->flags = 0;
+	post_proc->aging_time = ATH6KL_BSS_POST_PROC_AGING_TIME;
 	spin_lock_init(&post_proc->bss_info_lock);
 	INIT_LIST_HEAD(&post_proc->bss_info_list);
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 		   "bss_proc init (vif %d)\n",
 		   vif->fw_vif_idx);
 
 	return post_proc;
 }
 
-static void bss_proc_post_flush(struct bss_post_proc *post_proc)
+static void bss_proc_post_flush(struct bss_post_proc *post_proc, bool force)
 {
 	struct bss_info_entry *bss_info, *tmp;
+	bool aging;
+	int aging_cnt, bss_cnt;
 
 	spin_lock(&post_proc->bss_info_lock);
 
+	aging_cnt = bss_cnt = 0;
 	list_for_each_entry_safe(bss_info,
 				tmp,
 				&post_proc->bss_info_list,
 				list) {
-		list_del(&bss_info->list);
-		kfree(bss_info->mgmt);
-		kfree(bss_info);
+		bss_cnt++;
+		if (time_after(jiffies,
+				bss_info->shoot_time + post_proc->aging_time))
+			aging = true;
+		else
+			aging = false;
+
+		if ((force) || (aging)) {
+			aging_cnt++;
+			list_del(&bss_info->list);
+			kfree(bss_info->mgmt);
+			kfree(bss_info);
+		}
 	}
 
 	spin_unlock(&post_proc->bss_info_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
+		   "bss_proc flush %s, %d/%d\n",
+		   (force ? "force" : "aging"),
+		   aging_cnt,
+		   bss_cnt);
 
 	return;
 }
@@ -598,14 +618,14 @@ void ath6kl_bss_post_proc_deinit(struct ath6kl_vif *vif)
 	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
 
 	if (post_proc) {
-		bss_proc_post_flush(post_proc);
+		bss_proc_post_flush(post_proc, true);
 
 		kfree(post_proc);
 	}
 
 	vif->bss_post_proc_ctx = NULL;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 		   "bss_proc deinit (vif %d)\n",
 		   vif->fw_vif_idx);
 
@@ -620,10 +640,13 @@ void ath6kl_bss_post_proc_bss_scan_start(struct ath6kl_vif *vif)
 		return;
 
 	/* Always flush old bss_info before start a new scan. */
-	bss_proc_post_flush(post_proc);
+	if (post_proc->flags & ATH6KL_BSS_POST_PROC_CACHED_BSS)
+		bss_proc_post_flush(post_proc, false);
+	else
+		bss_proc_post_flush(post_proc, true);
 	post_proc->flags |= ATH6KL_BSS_POST_PROC_SCAN_ONGOING;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 			"bss_proc scan_start\n");
 
 	return;
@@ -656,9 +679,12 @@ int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
 			ath6kl_bss_put(vif->ar, bss);
 	}
 
-	bss_proc_post_flush(post_proc);
+	if (post_proc->flags & ATH6KL_BSS_POST_PROC_CACHED_BSS)
+		bss_proc_post_flush(post_proc, false);
+	else
+		bss_proc_post_flush(post_proc, true);
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 			"bss_proc scan_comp, cnt %d\n", cnt);
 
 	return 0;
@@ -679,7 +705,7 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 	if (!(post_proc->flags & ATH6KL_BSS_POST_PROC_SCAN_ONGOING))
 		return;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 		   "bss_proc bssinfo (vif %d) BSSID "
 		   "%02x:%02x:%02x:%02x:%02x:%02x FC %04x\n",
 		   vif->fw_vif_idx,
@@ -705,11 +731,45 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 	bss_info->signal = snr;
 	memcpy((u8 *)(bss_info->mgmt), (u8 *)mgmt, len);
 	bss_info->len = len;
+	bss_info->shoot_time = jiffies;
 
 	spin_lock(&post_proc->bss_info_lock);
 	list_add_tail(&bss_info->list, &post_proc->bss_info_list);
 	spin_unlock(&post_proc->bss_info_lock);
 
+
+	return;
+}
+
+void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
+				bool cache_bss,
+				int aging_time)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+
+	if (!post_proc)
+		return;
+
+	if (cache_bss) {
+		post_proc->flags |= ATH6KL_BSS_POST_PROC_CACHED_BSS;
+
+		aging_time = msecs_to_jiffies(aging_time);
+		if (aging_time < ATH6KL_BSS_POST_PROC_AGING_TIME_MIN)
+			post_proc->aging_time =
+					ATH6KL_BSS_POST_PROC_AGING_TIME_MIN;
+		else
+			post_proc->aging_time = aging_time;
+
+	} else {
+		post_proc->flags &= ~ATH6KL_BSS_POST_PROC_CACHED_BSS;
+		post_proc->aging_time = ATH6KL_BSS_POST_PROC_AGING_TIME;
+	}
+
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
+			"bss_proc config, cache BSS %s aging time %d ms.",
+			(cache_bss ? "ON" : "OFF"),
+			jiffies_to_msecs(post_proc->aging_time));
 
 	return;
 }
@@ -1392,8 +1452,11 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 					 NONE_BSS_FILTER, 0);
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1, "scan complete: %d\n",
-			status);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+		   ATH6KL_DBG_EXT_INFO1 |
+		   ATH6KL_DBG_EXT_SCAN,
+		"scan complete: %d\n",
+		status);
 }
 
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
