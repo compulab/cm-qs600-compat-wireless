@@ -282,6 +282,7 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar->p2p = !!ath6kl_p2p;
 	ar->dev = dev;
 	ar->vif_max = 1;
+	ar->num_vif = 0;
 	ar->inter_bss = true;
 	ar->max_norm_iface = 1;
 
