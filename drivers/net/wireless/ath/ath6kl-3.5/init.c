@@ -35,6 +35,7 @@
 #include "pm.h"
 
 unsigned int debug_mask;
+unsigned int debug_mask_ext;
 unsigned int htc_bundle_recv;
 unsigned int htc_bundle_send;
 unsigned int htc_bundle_send_timer;
@@ -52,12 +53,8 @@ unsigned int ath6kl_ath0_name;
 #ifdef CE_SUPPORT
 unsigned int ath6kl_ce_flags = 1;
 #endif
-unsigned int ath6kl_regdb = 1;
-
-#ifdef CONFIG_QC_INTERNAL
-unsigned short reg_domain = 0xffff;
-module_param(reg_domain, ushort, 0644);
-#endif
+unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
+unsigned short reg_domain = NULL_REG_CODE;
 
 #ifdef ATH6KL_DIAGNOSTIC
 unsigned int diag_local_test;
@@ -73,6 +70,7 @@ char *ath6kl_wifi_mac;
 char *fwpath = "android_fw_path_compatible_str";
 
 module_param(debug_mask, uint, 0644);
+module_param(debug_mask_ext, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
 module_param(htc_bundle_send, uint, 0644);
 module_param(htc_bundle_send_timer, uint, 0644);
@@ -96,6 +94,12 @@ module_param(fwdatapath, charp, 0644);
 #endif
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
+module_param(reg_domain, ushort, 0644);
+
+#ifdef ATH6KL_HSIC_RECOVER
+u8 cached_mac[ETH_ALEN];
+bool cached_mac_valid;
+#endif
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -561,16 +565,12 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	connect.ep_cb.rx_refill = ath6kl_rx_refill;
 	connect.ep_cb.tx_full = ath6kl_tx_queue_full;
 
-	/*
-	 * Set the max queue depth so that our ath6kl_tx_queue_full handler
-	 * gets called.
-	*/
-	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH;
 	connect.ep_cb.rx_refill_thresh = ATH6KL_MAX_RX_BUFFERS / 4;
 	if (!connect.ep_cb.rx_refill_thresh)
 		connect.ep_cb.rx_refill_thresh++;
 
 	/* connect to control service */
+	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL;
 	connect.svc_id = WMI_CONTROL_SVC;
 	if (ath6kl_connectservice(ar, &connect, "WMI CONTROL"))
 		return -EIO;
@@ -600,6 +600,11 @@ static int ath6kl_init_service_ep(struct ath6kl *ar)
 	connect.conn_flags &= ~HTC_CONN_FLGS_THRESH_MASK;
 	connect.conn_flags |= HTC_CONN_FLGS_THRESH_LVL_HALF;
 
+	/*
+	 * Set the max queue depth so that our ath6kl_tx_queue_full handler
+	 * gets called.
+	 */
+	connect.max_txq_depth = MAX_DEFAULT_SEND_QUEUE_DEPTH;
 	connect.svc_id = WMI_DATA_BE_SVC;
 
 	if (ath6kl_connectservice(ar, &connect, "WMI DATA BE"))
@@ -725,6 +730,8 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
 	vif->scan_plan.numChan = 0;
+	vif->data_cookie_count = 0;
+
 }
 
 /*
@@ -1019,6 +1026,10 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	param |= HI_OPTION_ENABLE_WLAN_HB;
 #endif
 
+	/* Enable single chain in wow */
+	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN))
+		param |= HI_OPTION_WOW_SINGLE_CHAIN;
+
 	/* Set firmware to support MCC */
 	if (ar->p2p_concurrent)
 		param |= HI_OPTION_MCC_ENABLE ;
@@ -1240,7 +1251,7 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 
 	fp = openFile(full_patch, O_RDONLY, 0);
 	if (fp != NULL) {
-		temp_buf = kmalloc(total_len, GFP_KERNEL);
+		temp_buf = vmalloc(total_len);
 		if (temp_buf != NULL) {
 			memset(buf, 0, MAX_BUFFER_SIZE);
 			ret = readFile(fp, buf, MAX_BUFFER_SIZE);
@@ -1262,13 +1273,16 @@ static int ath6kl_get_fw(struct ath6kl *ar, const char *filename,
 	if (status == 0) {
 		if (temp_buf != NULL) {
 			*fw_len = total_len;
-			*fw = kmemdup(temp_buf, total_len, GFP_KERNEL);
+			*fw = vmalloc(total_len);
+
 			if (*fw == NULL)
 				status = -ENOMEM;
+			else
+				memcpy(*fw, temp_buf, total_len);
 		}
 	}
 	if (temp_buf != NULL)
-		kfree(temp_buf);
+		vfree(temp_buf);
 fail:
 	set_fs(oldfs);
 #undef MAX_BUFFER_SIZE
@@ -2458,8 +2472,16 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		/* FIXME:
 		 *  - adjust the size of wow ext param
 		 *  - configure gpio trigger in runtime, '0' is disabled
+		 *  - bit25: remote-resume would use out-of-band signal
 		 */
 		param = 0x80000000|(ath6kl_wow_gpio<<18);
+
+#ifdef CONFIG_ANDROID
+		if (machine_is_apq8064_dma() ||
+			machine_is_apq8064_bueller())
+			param |= (1<<25);
+#endif
+
 		status = ath6kl_bmi_write(ar,
 				     ath6kl_get_hi_item_addr(ar,
 				     HI_ITEM(hi_wow_ext_config)),
@@ -2713,13 +2735,12 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 	if (ret)
 		goto err_power_off;
 
-#ifdef CONFIG_QC_INTERNAL
-	if (reg_domain != 0xffff) {
-		ret = ath6kl_set_rd(ar);
+	/* Overwrite the default rd code */
+	if (reg_domain != NULL_REG_CODE) {
+		ret = ath6kl_reg_set_rdcode(ar, reg_domain);
 		if (ret)
 			goto err_power_off;
 	}
-#endif
 
 	/* Do we need to finish the BMI phase */
 	/* FIXME: return error from ath6kl_bmi_done() */
@@ -3042,9 +3063,14 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	}
 
-	/* Always use internal-regdb by default. */
-	if (ath6kl_regdb)
+	/*
+	 * Always use internal-regdb by default.
+	 * The INTERNAL_REGDB & CFG80211_REGDB is exclusive.
+	 */
+	if (ath6kl_regdb == ATH6KL_REG_INTERNAL_REGDB)
 		set_bit(INTERNAL_REGDB, &ar->flag);
+	else if (ath6kl_regdb == ATH6KL_REG_CFG80211_REGDB)
+		set_bit(CFG80211_REGDB, &ar->flag);
 
 	ret = ath6kl_register_ieee80211_hw(ar);
 	if (ret)
@@ -3145,14 +3171,24 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-	if (test_bit(INTERNAL_REGDB, &ar->flag)) {
+	if (test_bit(INTERNAL_REGDB, &ar->flag) ||
+	    test_bit(CFG80211_REGDB, &ar->flag)) {
 		/* Disable P2P-in-passive-chan channels by default. */
-		ar->reg_ctx = ath6kl_reg_init(ar, true, ar->p2p_in_pasv_chan);
+		if (test_bit(INTERNAL_REGDB, &ar->flag))
+			ar->reg_ctx = ath6kl_reg_init(ar,
+							true,
+							false,
+							ar->p2p_in_pasv_chan);
+		else	/* TODO: support P2P-in-passive-chan */
+			ar->reg_ctx = ath6kl_reg_init(ar,
+							false,
+							true,
+							false);
 
-		/* P2P recommend channel works only internal regdb turns on. */
+		/* P2P recommend channel works only ath6kl regdb turns on. */
 		ar->p2p_rc_info_ctx = ath6kl_p2p_rc_init(ar);
 	} else
-		ar->reg_ctx = ath6kl_reg_init(ar, false, false);
+		ar->reg_ctx = ath6kl_reg_init(ar, false, false, false);
 
 	set_bit(FIRST_BOOT, &ar->flag);
 
@@ -3220,6 +3256,22 @@ int ath6kl_core_init(struct ath6kl *ar)
 		}
 	}
 
+#ifdef CE_SUPPORT
+	/* set power saving off as default for wlan0
+	 * (target side default is PS on)
+	*/
+	{
+		struct ath6kl_vif *vif_first;
+		vif_first = ath6kl_vif_first(ar);
+		u8 pwr_mode;
+		pwr_mode = MAX_PERF_POWER;
+		if (ath6kl_wmi_powermode_cmd(ar->wmi, vif_first->fw_vif_idx,
+			pwr_mode) != 0)
+			vif_first->wdev.ps = NL80211_PS_ENABLED;
+		else
+			vif_first->wdev.ps = NL80211_PS_DISABLED;
+	}
+#endif
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY)) {
 		ath6kl_info("Enable Firmware crash notiry.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
@@ -3307,6 +3359,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
 	}
+	vif->data_cookie_count = 0;
 }
 
 void ath6kl_stop_txrx(struct ath6kl *ar)

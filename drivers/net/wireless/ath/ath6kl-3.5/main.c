@@ -136,7 +136,7 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	struct list_head container;
-	int reclaim = 0;
+	int reclaim = 0, j;
 
 	del_timer_sync(&sta->psq_age_timer);
 
@@ -147,7 +147,7 @@ static void ath6kl_sta_cleanup(struct ath6kl_vif *vif, u8 i)
 
 		spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 		fw_conn = &p2p_flowctrl->fw_conn_list[0];
-		for (i = 0; i < NUM_CONN; i++, fw_conn++) {
+		for (j = 0; j < NUM_CONN; j++, fw_conn++) {
 			if (fw_conn->connId == ATH6KL_P2P_FLOWCTRL_NULL_CONNID)
 				continue;
 
@@ -1094,6 +1094,10 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 	ath6kl_info("notify firmware crash to user %p\n", ar);
 
 	/* TODO */
+#ifdef ATH6KL_HSIC_RECOVER
+	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
+		ath6kl_hif_sw_recover(ar);
+#endif
 
 	return;
 }
@@ -1345,6 +1349,11 @@ void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver)
 		 (ar->version.wlan_ver & 0x00ff0000) >> 16,
 		 (ar->version.wlan_ver & 0x0000ffff));
 
+#ifdef ATH6KL_HSIC_RECOVER
+	memcpy(cached_mac, ar->mac_addr, ETH_ALEN);
+	cached_mac_valid = true;
+#endif
+
 	/* indicate to the waiting thread that the ready event was received */
 	set_bit(WMI_READY, &ar->flag);
 	wake_up(&ar->event_wq);
@@ -1375,7 +1384,8 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 					 NONE_BSS_FILTER, 0);
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "scan complete: %d\n", status);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1, "scan complete: %d\n",
+			status);
 }
 
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
@@ -1578,6 +1588,7 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	stats->wow_evt_discarded +=
 		le16_to_cpu(tgt_stats->wow_stats.wow_evt_discarded);
 
+	do_gettimeofday(&stats->update_time);
 }
 
 static void ath6kl_add_le32(__le32 *var, __le32 val)
@@ -2027,12 +2038,13 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 				int len)
 {
 	int ret = 0, scanband_type = 0;
+	int i, f = 0;
 	u8 not_allow_ch;
 
 	/* SET::SETBAND {band} */
 	if (len > 1) {
 		ret = 0;
-		sscanf(user_cmd, "%d", &scanband_type);
+		sscanf(user_cmd, "%d %d", &scanband_type, &f);
 
 		if (scanband_type == ANDROID_SETBAND_ALL)
 			vif->scanband_type = SCANBAND_TYPE_ALL;
@@ -2042,7 +2054,24 @@ static int ath6kl_ioctl_setband(struct ath6kl_vif *vif,
 			vif->scanband_type = SCANBAND_TYPE_2G;
 		else if (scanband_type == ANDROID_SETBAND_NO_DFS)
 			vif->scanband_type = SCANBAND_TYPE_IGNORE_DFS;
-		else if ((scanband_type >= 2412) && (scanband_type <= 5825)) {
+		else if (scanband_type == ANDROID_SETBAND_NO_CH) {
+			vif->scanband_type = SCANBAND_TYPE_IGNORE_CH;
+			if (f == 1) {	/* reset */
+				memset(vif->scanband_ignore_chan,
+					0,
+					sizeof(u16) * 64);
+			} else {
+				for (i = 0; i < 64; i++) {
+					if (vif->scanband_ignore_chan[i] == f)
+						break;
+					else if (!vif->scanband_ignore_chan[i])
+						break;
+				}
+
+				if (i < 64)
+					vif->scanband_ignore_chan[i] = f;
+			}
+		} else if ((scanband_type >= 2412) && (scanband_type <= 5825)) {
 			vif->scanband_type = SCANBAND_TYPE_CHAN_ONLY;
 			vif->scanband_chan = scanband_type;
 		} else
@@ -2147,7 +2176,12 @@ static int ath6kl_ioctl_p2p_best_chan(struct ath6kl_vif *vif,
 				NULL,
 				&rc_2g,
 				&rc_5g,
-				&rc_all);
+				&rc_all,
+				NULL,
+				NULL,
+				NULL,
+				NULL,
+				NULL);
 
 done:
 	if (ret == 0) {
@@ -2221,6 +2255,20 @@ static int ath6kl_ioctl_ap_acl(struct ath6kl_vif *vif,
 		ret = -EFAULT;
 
 	return ret;
+}
+
+bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
+{
+	struct ath6kl *ar = vif->ar;
+	if (!test_bit(WMI_READY, &ar->flag)) {
+		ath6kl_err("wmi is not ready\n");
+		return false;
+	}
+	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
+		ath6kl_err("wlan disabled\n");
+		return false;
+	}
+	return true;
 }
 
 static int ath6kl_ioctl_standard(struct net_device *dev,
@@ -2338,8 +2386,18 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					btcoex_cmd.cmd_len))
 				ret = -EIO;
 			else {
+				if (!ath6kl_ioctl_ready(vif))
+					return -EIO;
+
+				if (down_interruptible(&vif->ar->sem)) {
+					ath6kl_err("busy, couldn't get access\n");
+					return -ERESTARTSYS;
+				}
+
 				ret = ath6kl_wmi_send_btcoex_cmd(vif->ar,
 					(u8 *)user_cmd, btcoex_cmd.cmd_len);
+
+				up(&vif->ar->sem);
 			}
 			kfree(user_cmd);
 		}
