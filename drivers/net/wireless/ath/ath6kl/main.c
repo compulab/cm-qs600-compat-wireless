@@ -689,6 +689,12 @@ void ath6kl_ap_restart_timer(unsigned long ptr)
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int res;
 
+	if ((vif->ap_hold_conn) && (ar->acs_in_prog)) {
+		mod_timer(&vif->ap_restart_timer,
+		jiffies + msecs_to_jiffies(1 * AP_RESTART_TIMER_INVAL));
+		return;
+	}
+
 	if(vif->ap_hold_conn) {
 		vif->ap_hold_conn = 0;
 		res = ath6kl_wmi_ap_profile_commit(ar->wmi,
