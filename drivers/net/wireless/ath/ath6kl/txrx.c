@@ -84,15 +84,17 @@ int ath6kl_ipa_enable_host_route_config (struct ath6kl_vif *vif, bool enable)
 			ath6kl_dbg(ATH6KL_DBG_IPA_MSG, "MCC: IPA_EN SW ROUTING\n");
 			status = ath6kl_send_msg_ipa(vif1, SW_ROUTING_ENABLE,
 					vif1->ndev->dev_addr);
-			if (status < 0)
-				ath6kl_err("Failed to send MCC enable msg to IPA\n");
+			if (status)
+				ath6kl_err("Failed to send MCC enable msg to"
+						" IPA, status: %d\n", status);
 		} else {
 			/* Disable software routing in IPA */
 			ath6kl_dbg(ATH6KL_DBG_IPA_MSG, "MCC: IPA_DIS SW ROUTING\n");
 			status = ath6kl_send_msg_ipa(vif1, SW_ROUTING_DISABLE,
 					vif1->ndev->dev_addr);
-			if (status < 0)
-				ath6kl_err("Failed to send MCC disable msg to IPA\n");
+			if (status)
+				ath6kl_err("Failed to send MCC disable msg to"
+						" IPA, status: %d\n", status);
 		}
 		spin_lock_bh(&ar->list_lock);
 	}
@@ -148,7 +150,7 @@ int ath6kl_ipa_add_flt_rule(struct ath6kl *ar, enum ipa_client_type client)
 
 	if (ret) {
 		ath6kl_err("IPA-CM: Geting RT table failed for IPV4 :"
-				"client : %d\n", client);
+				"client : %d, ret: %d\n", client, ret);
 		goto end;
 	}
 
@@ -200,8 +202,8 @@ int ath6kl_ipa_add_flt_rule(struct ath6kl *ar, enum ipa_client_type client)
 		ret = ipa_add_flt_rule(flt);
 
 		if (ret || flt->rules[0].status < 0) {
-			ath6kl_err("IPA-CM: Error in adding Flt for IPV6 client: "
-					"%d ret: %d, status: %d\n",
+			ath6kl_err("IPA-CM: Error in adding Flt for IPV6"
+					" client: %d ret: %d, status: %d\n",
 					client, ret, flt->rules[0].status);
 			goto end;
 		}
@@ -461,8 +463,8 @@ int ath6kl_ipa_add_header_info(struct ath6kl *ar, u8 ap_sta, u8 device_id,
 	ret = ipa_add_hdr(ipahdr);
 
 	if(ret) {
-		ath6kl_err("IPA-CM: Failed adding hdr for interface %s\n",
-				interface_name);
+		ath6kl_err("IPA-CM: Failed adding IPv4 hdr for interface %s,"
+				" ret: %d\n", interface_name, ret);
 		goto end;
 	}
 
@@ -482,8 +484,9 @@ int ath6kl_ipa_add_header_info(struct ath6kl *ar, u8 ap_sta, u8 device_id,
 
 		ret = ipa_add_hdr(ipahdr);
 		if(ret) {
-			ath6kl_err("IPA-CM: Failed adding hdr for iface %s\n",
-				interface_name);
+			ath6kl_err("IPA-CM: Failed adding IPv6 hdr for"
+					" interface %s, ret: %d\n",
+					interface_name, ret);
 			goto end;
 		}
 
@@ -507,27 +510,6 @@ end:
 }
 EXPORT_SYMBOL(ath6kl_ipa_add_header_info);
 
-int ath6kl_ipa_get_header_hdl(char *hdr_name, uint32_t *hdl)
-{
-	struct ipa_ioc_get_hdr hdrlookup;
-	int ret = 0;
-
-	memset(&hdrlookup,0,sizeof(hdrlookup));
-	strcpy(hdrlookup.name, hdr_name);
-
-	ret = ipa_get_hdr(&hdrlookup);
-
-	if (ret) {
-		ath6kl_err("IPA-CM: Error in getting the hdr Handle for : %s\n",
-				hdr_name);
-		return ret;
-	}
-
-	*hdl = hdrlookup.hdl;
-
-	return 0;
-}
-
 int ath6kl_ipa_put_header_hdl(char *hdr_name, uint32_t *hdl)
 {
 	int status;
@@ -537,7 +519,7 @@ int ath6kl_ipa_put_header_hdl(char *hdr_name, uint32_t *hdl)
 
 	if (status) {
 		ath6kl_err("IPA-CM: Error in put the hdr Handle %x for hdr : "
-				"%s\n", *hdl, hdr_name);
+				"%s, status: %d\n", *hdl, hdr_name, status);
 	}
 
 	return status;
@@ -676,7 +658,8 @@ int ath6kl_data_ipa_ampdu_tx_complete_cb(enum ath6kl_bam_tx_evt_type evt_type,
 		dev_kfree_skb(skb);
 		break;
 	default:
-		ath6kl_err("ooo: Unknown event from sysbam tx_complete\n");
+		ath6kl_err("ooo: Unknown event from sysbam tx_complete: %d\n",
+				evt_type);
 		break;
 	}
 
@@ -742,8 +725,9 @@ void ath6kl_disconnect_sysbam_pipes(struct ath6kl *ar)
 
 	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
 		status = ipa_teardown_sys_pipe(sysbam_pipe[i].clnt_hdl);
-		if (status != 0)
-			ath6kl_err("BAM-CM:Error in disconnect SYSBAM pipe \n");
+		if (status)
+			ath6kl_err("BAM-CM:Error in disconnect SYSBAM pipe"
+					" status: %d\n", status);
 	}
 
 }
@@ -818,9 +802,10 @@ int ath6kl_usb_data_send_to_sysbam_pipe(struct ath6kl *ar, struct sk_buff *skb)
 		skb->data[11] &= 0xfe; /* Reset the D0 bit */
 
 		status = ipa_tx_dp(IPA_CLIENT_A5_WLAN_AMPDU_PROD, skb, NULL);
-		if (status != 0)
-			ath6kl_err("BAM-CM: Failed to send data over sysbam :%d \n",
-					IPA_CLIENT_A5_WLAN_AMPDU_PROD);
+		if (status)
+			ath6kl_err("BAM-CM: Failed to send data over sysbam :%d"
+				       "status: %d\n",
+				       IPA_CLIENT_A5_WLAN_AMPDU_PROD, status);
 		return status;
 	}
 
@@ -870,23 +855,25 @@ void ath6kl_delete_ipa_header(uint32_t hdl)
 }
 void ath6kl_remove_ipa_header(char *name)
 {
-	int status;
-	uint32_t hdl;
+	struct ipa_ioc_get_hdr hdrlookup;
+	int ret = 0;
 
-	/* Remove the headers */
-	status = ath6kl_ipa_get_header_hdl(name, &hdl);
+	memset(&hdrlookup, 0, sizeof(hdrlookup));
+	strlcpy(hdrlookup.name, name, sizeof(hdrlookup.name));
 
-	if (status != 0) {
-		ath6kl_err("IPA-CM: Get header handle Failed for header : %s\n",
-				name);
+	ret = ipa_get_hdr(&hdrlookup);
+
+	if (ret) {
+		ath6kl_info("IPA-CM: Header may have already been deleted for:"
+				" %s, ret: %d\n", name, ret);
 		return;
 	}
 
-	ath6kl_delete_ipa_header(hdl);
+	ath6kl_delete_ipa_header(hdrlookup.hdl);
 
 	ath6kl_dbg(ATH6KL_DBG_IPA_MSG,
 			"IPA-CM: Successfully removed the hdr:%s handle:%x\n",
-			name, hdl);
+			name, hdrlookup.hdl);
 	return;
 }
 
@@ -918,9 +905,10 @@ void ath6kl_remove_filter_rule(enum ipa_ip_type ip_type, uint32_t hdl)
 	fltdel->hdl[0].status = -1;
 
 	status = ipa_del_flt_rule(fltdel);
-	if (status < 0 || fltdel->hdl[0].status != 0) {
+	if (status || fltdel->hdl[0].status != 0) {
 		ath6kl_err("IPA-CM: Failed to delete exception filter for "
-				"Handle : %x\n", hdl);
+				"Handle : %x status: %d, %d\n", hdl, status,
+				fltdel->hdl[0].status);
 		kfree(fltdel);
 		return;
 	}
@@ -965,9 +953,9 @@ void ath6kl_clean_ipa_headers(struct ath6kl *ar, char *name)
 
 	/* unregister the interface with IPA */
 	status = ipa_deregister_intf(name);
-	if (status != 0)
-		ath6kl_err("IPA-CM: Interface %s : deregister failed...\n",
-				name);
+	if (status)
+		ath6kl_err("IPA-CM: Interface %s : deregister failed,"
+				" status: %d\n", name, status);
 }
 EXPORT_SYMBOL(ath6kl_clean_ipa_headers);
 
@@ -1024,8 +1012,8 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 		return -EINVAL;
 	}
 
-	if (is_zero_ether_addr(mac_addr))
-		return 0;
+	if (WARN_ON(is_zero_ether_addr(mac_addr)))
+		return -EINVAL;
 
 	strlcpy(iface_name, vif->ndev->name, sizeof(iface_name));
 
@@ -1099,8 +1087,9 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 
 	status = ipa_send_msg(&meta, buff, ath6kl_ipa_msg_free_fn);
 
-	if(status != 0) {
-		ath6kl_err ("IPA-CM: Failed to send msg for type: %d\n", type);
+	if(status) {
+		ath6kl_err ("IPA-CM: Failed to send msg for type: %d,"
+				" status: %d\n", type, status);
 		kfree(buff);
 		return status;
 	}
@@ -1457,7 +1446,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	return 0;
 
 fail_ctrl_tx:
-	ath6kl_err("ath6kl_control_tx failed !");
+	ath6kl_err("ath6kl_control_tx failed !: %d", status);
 	dev_kfree_skb(skb);
 	return status;
 }
