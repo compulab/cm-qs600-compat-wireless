@@ -2226,7 +2226,7 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 			skb = NULL;
 		}
 
-		if (skb1 && conn) {
+		if (skb1 && conn && conn->vif) {
 			if (vif->intra_bss_data_cnt < vif->cookie_used)
 				vif->intra_bss_data_cnt++;
 			ath6kl_data_tx(skb1, conn->vif->ndev);
