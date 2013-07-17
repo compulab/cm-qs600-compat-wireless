@@ -3130,11 +3130,15 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	/* In MCC Case when other vif is present adjcent to this vif
 	 * then mcc switching causes desense in both channels. Hence
 	 * fallback to SCC if adj channel spacing is less than default 20Mhz
+	 * The change is applicable only to 2G band
 	 */
 	if (band == IEEE80211_BAND_2GHZ) {
 		list_for_each_entry(tmp_vif, &ar->vif_list, list)
 		if (test_bit(CONNECTED, &tmp_vif->flags) && tmp_vif != vif) {
-			adj_vif_ch = tmp_vif->bss_ch;
+			tmp_channel = ieee80211_get_channel(ar->wiphy,
+								tmp_vif->bss_ch);
+			if (tmp_channel && (tmp_channel->band == band))
+				adj_vif_ch = tmp_vif->bss_ch;
 			break;
 		}
 	}
