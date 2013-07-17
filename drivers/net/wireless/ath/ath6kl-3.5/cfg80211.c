@@ -925,12 +925,63 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
+	/* Update HIF queue policy */
+	ath6kl_hif_pipe_set_max_queue_number(ar, mcc);
+
 	/* Reconfigurate the PS mode case by case. */
 	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect);
 
 #ifdef USB_AUTO_SUSPEND
 	ath6kl_check_autopm_onoff(ar);
 #endif /* USB_AUTO_SUSPEND */
+}
+
+static inline void _change_sta_scan_plan(struct ath6kl_vif *vif)
+{
+	if (vif->ssid_len) {
+		int i, chan_num;
+		u16 chan_list[64];	/* WMI_MAX_CHANNELS */
+
+		memset(chan_list, 0, sizeof(u16) * 64);
+		chan_num = ath6kl_bss_post_proc_candidate_bss(vif,
+								vif->ssid,
+								vif->ssid_len,
+								chan_list);
+
+		if (chan_num) {
+			vif->scan_plan.type = ATH6KL_SCAN_PLAN_HOST_ORDER;
+
+			/* For STA, prefer to use 5G APs. */
+			if (chan_num <= 21) {	/* (64 / 3) */
+				vif->scan_plan.numChan = chan_num * 3;
+
+				for (i = 0; i < chan_num; i++)
+					vif->scan_plan.chanList[i * 3] =
+					vif->scan_plan.chanList[i * 3 + 1] =
+					vif->scan_plan.chanList[i * 3 + 2] =
+						chan_list[chan_num - 1 - i];
+			} else {
+				vif->scan_plan.numChan = chan_num;
+
+				for (i = 0; i < chan_num; i++)
+					vif->scan_plan.chanList[i] =
+						chan_list[chan_num - 1 - i];
+			}
+
+			/*
+			 * If only one channel need to try and 1s' disconnection
+			 * timeout is enough.
+			 */
+			if (chan_num == 1)
+				ath6kl_wmi_disctimeout_cmd(vif->ar->wmi,
+							vif->fw_vif_idx,
+							1);
+		} else
+			vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
+	} else
+		vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
+
+	return;
 }
 
 static inline void _change_p2p_scan_plan(struct ath6kl_vif *vif)
@@ -974,7 +1025,7 @@ void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
 	struct ath6kl *ar = vif->ar;
 
 	/* Default */
-	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
+	vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
 	vif->scan_plan.numChan = 0;
 
 	if (!reset) {
@@ -985,10 +1036,9 @@ void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
 		if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 			goto done;
 
-		if (vif->wdev.iftype == NL80211_IFTYPE_STATION) {
-			/* For STA, prefer to use 5G APs. */
-			vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
-		} else if ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) &&
+		if (vif->wdev.iftype == NL80211_IFTYPE_STATION)
+			_change_sta_scan_plan(vif);
+		else if ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) &&
 			   (vif->ssid_len)) {
 			struct cfg80211_bss *bss;
 
@@ -1396,8 +1446,7 @@ void ath6kl_cfg80211_connect_result(struct ath6kl_vif *vif,
 {
 	bool need_pending;
 
-	if (status != WLAN_STATUS_SUCCESS)
-		ath6kl_change_scan_plan(vif, true);
+	ath6kl_change_scan_plan(vif, true);
 
 	need_pending = ath6kl_p2p_pending_connect_event(vif,
 							bssid,
@@ -2018,6 +2067,12 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -EIO;
 	}
 
+	if (vif->sme_state == SME_CONNECTING) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+			"Connection on-going, reject scan\n");
+		return -EBUSY;
+	}
+
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
@@ -2219,8 +2274,10 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
 #ifdef USB_AUTO_SUSPEND
-		set_bit(SCANNING, &ar->usb_autopm_scan);
-		ath6kl_hif_auto_pm_disable(ar);
+		if (test_bit(SCANNING, &ar->usb_autopm_scan) == 0) {
+			set_bit(SCANNING, &ar->usb_autopm_scan);
+			ath6kl_hif_auto_pm_disable(ar);
+		}
 #endif
 	}
 
@@ -6122,92 +6179,6 @@ static int ath6kl_cfg80211_ap_acl(struct wiphy *wiphy, struct net_device *dev,
 }
 #endif
 
-#ifdef CONFIG_80211P
-/* 802.11p: Function to set the OCB flag */
-int ath6kl_set_ocb(struct wiphy *wiphy, struct net_device *dev, bool state)
-{
-	struct ath6kl *ar = ath6kl_priv(dev);
-	struct ath6kl_vif *vif = netdev_priv(dev);
-	int ret = 0;
-
-	if (!ath6kl_cfg80211_ready(vif))
-		return -EIO;
-
-	if (down_interruptible(&ar->sem)) {
-		ath6kl_err("busy, couldn't get access\n");
-		return -ERESTARTSYS;
-	}
-
-	if (state) {
-		/* Open the interface */
-		netif_wake_queue(vif->ndev);
-		spin_lock_bh(&vif->if_lock);
-		set_bit(CONNECTED, &vif->flags);
-		netif_carrier_on(vif->ndev);
-		spin_unlock_bh(&vif->if_lock);
-	} else {
-		/* Close the interface */
-		spin_lock_bh(&vif->if_lock);
-		clear_bit(CONNECTED, &vif->flags);
-		netif_carrier_off(vif->ndev);
-		spin_unlock_bh(&vif->if_lock);
-	}
-
-	ret = ath6kl_wmi_set_ocb_flag(ar->wmi, vif->fw_vif_idx, state);
-
-	up(&ar->sem);
-
-	return ret;
-}
-
-/* 802.11p: Function to set the OCB channel */
-int ath6kl_set_ocb_channel(struct wiphy *wiphy, struct net_device *dev,
-	u16 channel)
-{
-	struct ath6kl *ar = ath6kl_priv(dev);
-	struct ath6kl_vif *vif = netdev_priv(dev);
-	int i;
-	int num_channels;
-	int chan_supported;
-	u16 chan_freq;
-	int ret = 0;
-
-	/* Check if specified channel is supported */
-	chan_supported = 0;
-	num_channels = wiphy->bands[IEEE80211_BAND_DSRC]->n_channels;
-	for (i = 0; i < num_channels; i++) {
-		if (channel ==
-				wiphy->bands[IEEE80211_BAND_DSRC]->
-				channels[i].hw_value) {
-			chan_supported = 1;
-			break;
-		}
-	}
-
-	if (!chan_supported) {
-		ath6kl_err("Specified channel not supported: %u\n", channel);
-		return -ENOTSUPP;
-	}
-
-	if (!ath6kl_cfg80211_ready(vif))
-		return -EIO;
-
-	if (down_interruptible(&ar->sem)) {
-		ath6kl_err("busy, couldn't get access\n");
-		return -ERESTARTSYS;
-	}
-
-	/* Compute channel frequency from channel number */
-	chan_freq = (channel * 5) + 5000;
-
-	ret = ath6kl_wmi_set_ocb_channel(ar->wmi, vif->fw_vif_idx, chan_freq);
-
-	up(&ar->sem);
-
-	return ret;
-}
-#endif
-
 /* NOTE : this table may be over-wrote by ath6kl_change_cfg80211_ops() call. */
 static struct cfg80211_ops ath6kl_cfg80211_ops = {
 	.add_virtual_intf = ath6kl_cfg80211_add_iface,
@@ -6263,12 +6234,6 @@ static struct cfg80211_ops ath6kl_cfg80211_ops = {
 	.mgmt_frame_register = ath6kl_mgmt_frame_register,
 #ifdef NL80211_CMD_BTCOEX_QCA
 	.notify_btcoex = ath6kl_notify_btcoex,
-#endif
-
-#ifdef CONFIG_80211P
-	/* 802.11p: Handler to set OCB flag */
-	.set_ocb = ath6kl_set_ocb,
-	.set_ocb_channel = ath6kl_set_ocb_channel,
 #endif
 };
 
@@ -6702,6 +6667,7 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 
 		ath6kl_band_2ghz.ht_cap.cap &= ~IEEE80211_HT_CAP_TX_STBC;
 		ath6kl_band_5ghz.ht_cap.cap &= ~IEEE80211_HT_CAP_TX_STBC;
+
 	}
 
 	/* update 2G-HT40 capability. */

@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.418)
+#define __BUILD_VERSION_ (3.5.0.423)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -2033,6 +2033,10 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				int len,
 				s32 snr,
 				struct ieee80211_channel *channel);
+int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
+					char *ssid,
+					int ssid_len,
+					u16 *chan_list);
 void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
 				bool cache_bss,
 				int aging_time);

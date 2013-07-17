@@ -5940,8 +5940,10 @@ static ssize_t ath6kl_ap_rc_write(struct file *file,
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
-		if (vif)
-			ath6kl_ap_rc_config(vif, mode_or_freq);
+		if (vif) {
+			if (ath6kl_ap_rc_config(vif, mode_or_freq))
+				return -EINVAL;
+		}
 	}
 
 	/*
