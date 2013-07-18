@@ -701,6 +701,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 						 ENABLE_AUTO_CTRL_FLAGS);
 	}
 
+#if 0
 	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB) &&
 			(ar->p2p_compat) &&
 			(vif->fw_vif_idx)) {
@@ -708,6 +709,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 		ath6kl_info("Disable connect-scan, vif_idx = %d\n",
 				vif->fw_vif_idx);
 	}
+#endif	
 
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE &&
 		(vif->wdev.iftype == NL80211_IFTYPE_STATION ||

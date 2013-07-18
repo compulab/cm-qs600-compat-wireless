@@ -5105,7 +5105,8 @@ static ssize_t ath6kl_arp_offload_ipaddrs_write(struct file *file,
 	if (ret)
 		return ret;
 
-	if (ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi, ip_addrs))
+	if (ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi,
+			vif->fw_vif_idx, ip_addrs))
 		return -EIO;
 	vif->arp_offload_ip_set = 1;
 
@@ -5939,8 +5940,10 @@ static ssize_t ath6kl_ap_rc_write(struct file *file,
 
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
-		if (vif)
-			ath6kl_ap_rc_config(vif, mode_or_freq);
+		if (vif) {
+			if (ath6kl_ap_rc_config(vif, mode_or_freq))
+				return -EINVAL;
+		}
 	}
 
 	/*
@@ -5956,6 +5959,53 @@ static ssize_t ath6kl_ap_rc_write(struct file *file,
 /* debug fs for AP RecommendChannel. */
 static const struct file_operations fops_ap_rc = {
 	.write = ath6kl_ap_rc_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+/* File operation for BSS Post-Proc */
+static ssize_t ath6kl_bss_proc_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	char *p;
+	int bss_cache, aging_time;
+	char buf[32];
+	ssize_t len;
+	int i;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	p = buf;
+
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &bss_cache);
+
+	SEEK_SPACE;
+	SKIP_SPACE;
+
+	sscanf(p, "%d", &aging_time);
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if (vif)
+			ath6kl_bss_post_proc_bss_config(vif,
+						(bss_cache ? true : false),
+						(int)aging_time);
+	}
+
+	return count;
+}
+
+/* debug fs for BSS Post-Proc. */
+static const struct file_operations fops_bss_proc = {
+	.write = ath6kl_bss_proc_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -6205,6 +6255,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("ap_rc", S_IWUSR,
 				ar->debugfs_phy, ar, &fops_ap_rc);
+
+	debugfs_create_file("bss_proc", S_IWUSR,
+				ar->debugfs_phy, ar, &fops_bss_proc);
 
 	return 0;
 }
