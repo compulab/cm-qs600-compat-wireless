@@ -264,6 +264,24 @@ static void get_htc_packet(struct htc_target *target,
 
 }
 
+static void ath6kl_htc_tx_buf_align(struct htc_packet *packet)
+{
+	struct sk_buff *skb;
+
+	if (packet) {
+		skb = packet->skb;
+		if (skb) {
+			if (!IS_ALIGNED((unsigned long) skb->data, 4)) {
+				u8 *align_addr;
+				align_addr = PTR_ALIGN(skb->data - 4, 4);
+				memmove(align_addr, skb->data, skb->len);
+				skb->data = align_addr;
+				packet->buf = skb->data;
+			}
+		}
+	}
+}
+
 static int htc_issue_packets(struct htc_target *target,
 			     struct htc_endpoint *ep,
 			     struct list_head *pkt_queue)
@@ -378,6 +396,9 @@ static int htc_issue_packets(struct htc_target *target,
 			htc_hdr->eid = (u8) packet->endpoint;
 			htc_hdr->ctrl[0] = 0;
 			htc_hdr->ctrl[1] = (u8) packet->info.tx.seqno;
+
+			/* align skb->data */
+			ath6kl_htc_tx_buf_align(packet);
 
 			spin_lock_bh(&target->tx_lock);
 			/* store in look up queue to match completions */

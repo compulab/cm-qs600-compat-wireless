@@ -278,6 +278,7 @@ struct ath6kl_hif_ops {
 	int (*pipe_send_bundle)(struct ath6kl *ar, u8 pid,
 		struct sk_buff **msg_bundle, int num_msgs);
 	u16 (*pipe_get_max_queue_number)(struct ath6kl *ar, u8 pipe);
+	void (*pipe_set_max_queue_number)(struct ath6kl *ar, bool mccEnable);
 	int (*pipe_set_max_sche)(struct ath6kl *ar, u32 max_sche_tx,
 		u32 max_sche_rx);
 	int (*diag_warm_reset)(struct ath6kl *ar);

@@ -3552,7 +3552,7 @@ int ath6kl_wmi_allow_aggr_cmd(struct wmi *wmi, u8 if_idx,
 	u16 tx_tid_mask, u16 rx_tid_mask);
 int ath6kl_wmi_set_credit_bypass(struct wmi *wmi, u8 if_idx, u8 eid,
 	u8 restore, u16 threshold);
-int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 *ip_addrs);
+int ath6kl_wmi_set_arp_offload_ip_cmd(struct wmi *wmi, u8 if_idx, u8 *ip_addrs);
 int ath6kl_wmi_set_mcc_profile_cmd(struct wmi *wmi, u32 mcc_profile);
 int ath6kl_wmi_set_seamless_mcc_scc_switch_freq_cmd(struct wmi *wmi, u32 freq);
 
