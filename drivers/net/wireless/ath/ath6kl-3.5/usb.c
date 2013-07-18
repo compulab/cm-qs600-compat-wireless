@@ -2817,8 +2817,8 @@ finish:
 #endif
 
 #ifdef ATH6KL_BUS_VOTE
-	if ( (machine_is_apq8064_dma() || machine_is_apq8064_bueller()) &&
-		ath6kl_bt_on==0 ) 
+	if ((machine_is_apq8064_dma() || machine_is_apq8064_bueller()) &&
+		(ath6kl_bt_on == 0))
 		ath6kl_hsic_bind(0);
 #endif
 

@@ -1723,7 +1723,8 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	 */
 
 	if (reason != DISCONNECT_CMD) {
-		if (reason == AUTH_FAILED)
+		if ((reason == AUTH_FAILED) &&
+		    (vif->dot11_auth_mode & SHARED_AUTH))
 			vif->next_conn_status = WLAN_STATUS_CHALLENGE_FAIL;
 		else
 			vif->next_conn_status = WLAN_STATUS_UNSPECIFIED_FAILURE;
@@ -1837,7 +1838,9 @@ static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
 			connected_count++;
-			if (connected_count > 1)
+			if (connected_count == 1)
+				return ATH6KL_SCAN_TIMEOUT_ONE_CON;
+			else if (connected_count > 1)
 				return ATH6KL_SCAN_TIMEOUT_LONG;
 		}
 	}
@@ -3348,18 +3351,24 @@ static bool is_rate_legacy(s32 rate)
 static bool is_rate_ht20(s32 rate, u8 *mcs, bool *sgi)
 {
 	static const s32 ht20[] = { 6500, 13000, 19500, 26000, 39000,
-		52000, 58500, 65000, 72200
+		52000, 58500, 65000
+	};
+	static const s32 ht20_sgi[] = { 7200, 14400, 21700, 28900, 43300,
+		57800, 65000, 72200
 	};
 	u8 i;
 
 	for (i = 0; i < ARRAY_SIZE(ht20); i++) {
 		if (rate == ht20[i]) {
-			if (i == ARRAY_SIZE(ht20) - 1)
-				/* last rate uses sgi */
-				*sgi = true;
-			else
-				*sgi = false;
+			*sgi = false;
+			*mcs = i;
+			return true;
+		}
+	}
 
+	for (i = 0; i < ARRAY_SIZE(ht20_sgi); i++) {
+		if (rate == ht20_sgi[i]) {
+			*sgi = true;
 			*mcs = i;
 			return true;
 		}
@@ -3370,19 +3379,24 @@ static bool is_rate_ht20(s32 rate, u8 *mcs, bool *sgi)
 static bool is_rate_ht40(s32 rate, u8 *mcs, bool *sgi)
 {
 	static const s32 ht40[] = { 13500, 27000, 40500, 54000,
-		81000, 108000, 121500, 135000,
-		150000
+		81000, 108000, 121500, 135000
+	};
+	static const s32 ht40_sgi[] = { 15000, 30000, 45000, 60000,
+		90000, 120000, 135000, 150000
 	};
 	u8 i;
 
 	for (i = 0; i < ARRAY_SIZE(ht40); i++) {
 		if (rate == ht40[i]) {
-			if (i == ARRAY_SIZE(ht40) - 1)
-				/* last rate uses sgi */
-				*sgi = true;
-			else
-				*sgi = false;
+			*sgi = false;
+			*mcs = i;
+			return true;
+		}
+	}
 
+	for (i = 0; i < ARRAY_SIZE(ht40_sgi); i++) {
+		if (rate == ht40_sgi[i]) {
+			*sgi = true;
 			*mcs = i;
 			return true;
 		}
@@ -3462,21 +3476,15 @@ static void _get_sta_info(struct ath6kl_vif *vif,
 			sinfo->txrate.legacy = rate / 100;
 			sinfo->filled |= STATION_INFO_TX_BITRATE;
 		} else if (is_rate_ht20(rate, &mcs, &sgi)) {
-			if (sgi) {
+			if (sgi)
 				sinfo->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-				sinfo->txrate.mcs = mcs - 1;
-			} else
-				sinfo->txrate.mcs = mcs;
-
+			sinfo->txrate.mcs = mcs;
 			sinfo->txrate.flags |= RATE_INFO_FLAGS_MCS;
 			sinfo->filled |= STATION_INFO_TX_BITRATE;
 		} else if (is_rate_ht40(rate, &mcs, &sgi)) {
-			if (sgi) {
+			if (sgi)
 				sinfo->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-				sinfo->txrate.mcs = mcs - 1;
-			} else
-				sinfo->txrate.mcs = mcs;
-
+			sinfo->txrate.mcs = mcs;
 			sinfo->txrate.flags |= RATE_INFO_FLAGS_40_MHZ_WIDTH;
 			sinfo->txrate.flags |= RATE_INFO_FLAGS_MCS;
 			sinfo->filled |= STATION_INFO_TX_BITRATE;
