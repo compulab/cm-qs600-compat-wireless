@@ -184,15 +184,18 @@ static inline u16 ath6kl_hif_pipe_get_free_queue_number(struct ath6kl *ar,
 	return ar->hif_ops->pipe_get_free_queue_number(ar, pipe);
 }
 
-static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
+static inline int ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
 		u32 rxq_threshold)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set RX queue threshold\n");
 
+	if (ar->hif_ops->enable_autopm == NULL)
+		return -ENOSYS;
+
 	return ar->hif_ops->pipe_set_rxq_threshold(ar, rxq_threshold);
 }
 
-static inline u16 ath6kl_hif_get_stats(struct ath6kl *ar,
+static inline int ath6kl_hif_get_stats(struct ath6kl *ar,
 		u8 *buf, int buf_len, u32 stats_mask)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe get stats: %d\n", buf_len);
@@ -200,11 +203,30 @@ static inline u16 ath6kl_hif_get_stats(struct ath6kl *ar,
 	return ar->hif_ops->get_stats(ar, buf, buf_len, stats_mask);
 }
 
-static inline u16 ath6kl_hif_clear_stats(struct ath6kl *ar)
+static inline int ath6kl_hif_clear_stats(struct ath6kl *ar)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe clear stats\n");
 
 	return ar->hif_ops->clear_stats(ar);
 }
 
+static inline int ath6kl_hif_disable_autopm(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe disable autopm\n");
+
+	if (ar->hif_ops->disable_autopm == NULL)
+		return -ENOSYS;
+
+	return ar->hif_ops->disable_autopm(ar);
+}
+
+static inline int ath6kl_hif_enable_autopm(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe enable autopm\n");
+
+	if (ar->hif_ops->enable_autopm == NULL)
+		return -ENOSYS;
+
+	return ar->hif_ops->enable_autopm(ar);
+}
 #endif
