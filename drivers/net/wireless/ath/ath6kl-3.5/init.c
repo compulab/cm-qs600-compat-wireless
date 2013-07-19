@@ -709,7 +709,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 		ath6kl_info("Disable connect-scan, vif_idx = %d\n",
 				vif->fw_vif_idx);
 	}
-#endif	
+#endif
 
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE &&
 		(vif->wdev.iftype == NL80211_IFTYPE_STATION ||
