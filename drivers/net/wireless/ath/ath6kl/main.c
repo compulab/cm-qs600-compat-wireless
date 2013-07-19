@@ -568,10 +568,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 
 	if (ar->want_ch_switch & (1 << vif->fw_vif_idx)) {
 		ar->want_ch_switch &= ~(1 << vif->fw_vif_idx);
-		mdelay(100);
 		ath6kl_cfg80211_ch_switch_notify(vif, channel,
 						 sec_ch, phymode);
-		mdelay(100);
 	}
 
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
