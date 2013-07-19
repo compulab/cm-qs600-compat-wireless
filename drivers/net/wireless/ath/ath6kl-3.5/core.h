@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.418)
+#define __BUILD_VERSION_ (3.5.0.425)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -351,7 +351,8 @@
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
 /* scan time out */
-#define ATH6KL_SCAN_TIMEOUT_LONG (8 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_LONG (9 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_ONE_CON (7 * HZ)
 #define ATH6KL_SCAN_TIMEOUT_SHORT (5 * HZ) /* in sec. */
 #define ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM (20 * HZ)  /* in sec. */
 
@@ -2033,6 +2034,10 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				int len,
 				s32 snr,
 				struct ieee80211_channel *channel);
+int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
+					char *ssid,
+					int ssid_len,
+					u16 *chan_list);
 void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
 				bool cache_bss,
 				int aging_time);

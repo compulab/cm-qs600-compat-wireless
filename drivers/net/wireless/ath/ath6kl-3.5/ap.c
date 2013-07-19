@@ -1447,6 +1447,16 @@ int ath6kl_ap_rc_config(struct ath6kl_vif *vif, int mode_or_freq)
 {
 	struct ap_rc_info *ap_rc = &vif->ap_rc_info_ctx;
 
+	/* Not yet support DFS in AP mode. */
+	if ((mode_or_freq == AP_RC_MODE_5GALL) ||
+	    (mode_or_freq == AP_RC_MODE_OVERALL) ||
+	    (mode_or_freq == AP_RC_MODE_OVERALLNOLTE)) {
+		ath6kl_err("set ap_rc error! mode_or_freq %d not yet support\n",
+				mode_or_freq);
+
+		return -EINVAL;
+	}
+
 	if (mode_or_freq >= AP_RC_MODE_DISABLE) {
 		if (mode_or_freq <= AP_RC_MODE_MAX) {
 			ap_rc->mode = mode_or_freq;

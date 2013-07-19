@@ -562,7 +562,7 @@ struct bss_post_proc *ath6kl_bss_post_proc_init(struct ath6kl_vif *vif)
 	}
 
 	post_proc->vif = vif;
-	post_proc->flags = 0;
+	post_proc->flags = ATH6KL_BSS_POST_PROC_CACHED_BSS;
 	post_proc->aging_time = ATH6KL_BSS_POST_PROC_AGING_TIME;
 	spin_lock_init(&post_proc->bss_info_lock);
 	INIT_LIST_HEAD(&post_proc->bss_info_list);
@@ -739,6 +739,97 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 
 
 	return;
+}
+
+static int bss_post_proc_candidate_chan(struct bss_info_entry *bss,
+					u16 *chan_list,
+					int chan_num)
+{
+	u16 chan = bss->channel->center_freq;
+	int i, j, slot = -1;
+	bool add = true;
+
+	for (i = 0; i < chan_num; i++) {
+		if (chan == chan_list[i]) {
+			add = false;
+			break;
+		} else if (chan < chan_list[i])
+			break;
+	}
+
+	if (add) {
+		/* Order from lower to higher channel. */
+		if (i == chan_num)
+			slot = chan_num;
+		else {
+			slot = i;
+			for (j = 0; j < (chan_num - i); j++)
+				chan_list[chan_num - j] =
+				chan_list[chan_num - j - 1];
+		}
+
+		chan_list[slot] = chan;
+		chan_num++;
+	}
+
+	BUG_ON(slot >= chan_num);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
+		   "bss_proc candidate_chan %s chan %d slot %d chan_num %d\n",
+		   (add ? "add" : "ignore"),
+		   chan,
+		   slot,
+		   chan_num);
+
+	return chan_num;
+}
+
+int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
+					char *ssid,
+					int ssid_len,
+					u16 *chan_list)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+	struct bss_info_entry *bss_info, *tmp;
+	u8 *ssid_ie;
+	int chan_num = 0;
+
+	if ((!post_proc) || (ssid_len == 0))
+		return 0;
+
+	spin_lock(&post_proc->bss_info_lock);
+
+	list_for_each_entry_safe(bss_info,
+				tmp,
+				&post_proc->bss_info_list,
+				list) {
+		if (time_after(jiffies,
+				bss_info->shoot_time + post_proc->aging_time))
+			continue;
+
+		if (bss_info->len < 24 + 4 + 2 + 2 + 2 + 1)
+			continue;
+
+		BUG_ON(!bss_info->mgmt);
+
+		/* Always assume 1st IE is SSID IE. */
+		ssid_ie = &(bss_info->mgmt->u.beacon.variable[0]);
+		if ((ssid_ie[0] == WLAN_EID_SSID) &&
+		    (ssid_ie[1] == ssid_len) &&
+		    (memcmp(ssid_ie + 2, ssid, ssid_len) == 0))
+			chan_num = bss_post_proc_candidate_chan(bss_info,
+								chan_list,
+								chan_num);
+	}
+
+	spin_unlock(&post_proc->bss_info_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
+		   "bss_proc candidate_bss ssid %s chan_num %d\n",
+		   ssid,
+		   chan_num);
+
+	return chan_num;
 }
 
 void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
