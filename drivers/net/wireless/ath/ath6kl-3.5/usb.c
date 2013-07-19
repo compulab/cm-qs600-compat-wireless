@@ -705,6 +705,22 @@ static void hif_usb_post_recv_bundle_transfers(
 	return;
 }
 
+static inline void ath6kl_usb_flush_anchor_urbs(struct usb_anchor *list)
+{
+	struct urb *fir_urb, *cur_urb;
+
+	if (list) {
+		cur_urb = usb_get_from_anchor(list);
+		fir_urb = cur_urb;
+
+		while (cur_urb) {
+			cur_urb = usb_get_from_anchor(list);
+
+			if (fir_urb == cur_urb)
+				break;
+		}
+	}
+}
 
 static void ath6kl_usb_flush_all(struct ath6kl_usb *device)
 {
@@ -714,9 +730,9 @@ static void ath6kl_usb_flush_all(struct ath6kl_usb *device)
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
 		/* flush only USB scheduled work, instead of flushing all */
 		if (device->pipes[i].ar_usb) {
-			if (&device->pipes[i].urb_submitted)
-				usb_kill_anchored_urbs(
-					&device->pipes[i].urb_submitted);
+			ath6kl_usb_flush_anchor_urbs(
+				&device->pipes[i].urb_submitted);
+
 			pipe = &device->pipes[i].ar_usb->pipes[i];
 			if (pipe)
 				flush_work(&pipe->io_complete_work);
@@ -1287,8 +1303,7 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 		kfree(entry);
 	}
 #ifdef ATH6KL_BUS_VOTE
-	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller() ||
-		ath6kl_platform_has_vreg == 0 ||
+	if (ath6kl_platform_has_vreg == 0 ||
 		(ath6kl_platform_has_vreg == 1 && ath6kl_bt_on == 0))
 #endif
 		usb_auto_pm_turnoff(ar);
