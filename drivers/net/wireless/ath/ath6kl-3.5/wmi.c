@@ -1238,7 +1238,7 @@ static int ath6kl_wmi_ready_event_rx(struct wmi *wmi, u8 *datap, int len)
  * WMI_SET_LRSSI_SCAN_PARAMS. Subtract 96 from RSSI to get the signal level
  * in dBm.
  */
-int ath6kl_wmi_set_roam_ctrl_cmd_for_lowerrssi(struct wmi *wmi,
+int ath6kl_wmi_set_roam_ctrl_cmd(struct wmi *wmi,
 	u8 fw_vif_idx,
 	u16  lowrssi_scan_period,
 	u16  lowrssi_scan_threshold,
@@ -1305,6 +1305,26 @@ int ath6kl_wmi_set_roam_mode_cmd(struct wmi *wmi, enum wmi_roam_mode mode)
 	cmd->roam_ctrl = WMI_SET_ROAM_MODE;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "set roam mode %d\n", mode);
+	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
+				   NO_SYNC_WMIFLAG);
+}
+
+int ath6kl_wmi_set_roam_5g_bias_cmd(struct wmi *wmi, u8 bias_5g)
+{
+	struct sk_buff *skb;
+	struct roam_ctrl_cmd *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct roam_ctrl_cmd *) skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info.bias5G = bias_5g;
+	cmd->roam_ctrl = WMI_SET_HOST_5G_BIAS;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "set roam 5g bias %d\n", bias_5g);
 	return ath6kl_wmi_cmd_send(wmi, 0, skb, WMI_SET_ROAM_CTRL_CMDID,
 				   NO_SYNC_WMIFLAG);
 }
@@ -1442,12 +1462,6 @@ static void ath6kl_wmi_regdomain_event(struct wmi *wmi, u8 *datap, int len)
 
 	ev = (struct ath6kl_wmi_regdomain *) datap;
 	reg_code = le32_to_cpu(ev->reg_code);
-
-#ifdef CONFIG_QC_INTERNAL
-	ath6kl_info("%s: 0x%x WWR:%d\n",
-			reg_code & BIT(31) ? "Country Code" : "Reg Domain",
-			reg_code & 0xfff, !!(reg_code & BIT(30)));
-#endif
 
 	ath6kl_reg_target_notify(ar, reg_code);
 
@@ -2552,6 +2566,29 @@ int ath6kl_wmi_bssfilter_cmd(struct wmi *wmi, u8 if_idx, u8 filter, u32 ie_mask)
 	return ret;
 }
 
+int ath6kl_wmi_go_sync_cmd(struct wmi *wmi, u8 if_idx,
+				struct wmi_set_go_sync_cmd *gsync)
+{
+	struct sk_buff *skb;
+	struct wmi_set_go_sync_cmd *gs;
+	int ret;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*gs));
+	if (!skb)
+		return -ENOMEM;
+
+	gs = (struct wmi_set_go_sync_cmd *) skb->data;
+	gs->freq = cpu_to_le16(gsync->freq);
+	memcpy(gs->addr, gsync->addr, ETH_ALEN);
+	gs->repeat = gsync->repeat;
+	gs->sta_dwell_time = gsync->sta_dwell_time;
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_GO_SYNC_CMDID,
+				  NO_SYNC_WMIFLAG);
+
+	return ret;
+}
+
 int ath6kl_wmi_probedssid_cmd(struct wmi *wmi, u8 if_idx, u8 index, u8 flag,
 			      u8 ssid_len, u8 *ssid)
 {
@@ -2616,6 +2653,9 @@ int ath6kl_wmi_powermode_cmd(struct wmi *wmi, u8 if_idx, u8 pwr_mode)
 	struct wmi_power_mode_cmd *cmd;
 	struct ath6kl_vif *vif;
 	int ret;
+
+	if ((pwr_mode != REC_POWER) && (pwr_mode != MAX_PERF_POWER))
+		return -EINVAL;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
 	if (!skb)
@@ -3540,6 +3580,7 @@ int ath6kl_wmi_set_regdomain_cmd(struct wmi *wmi, const char *alpha2)
 
 	cmd = (struct wmi_set_regdomain_cmd *) skb->data;
 	memcpy(cmd->iso_name, alpha2, 2);
+	cmd->length = 2;
 
 	ath6kl_dbg(ATH6KL_DBG_WMI, "%s: regdomain = %s\n", __func__, alpha2);
 
@@ -4411,6 +4452,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_READY_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_READY_EVENTID\n");
 		ret = ath6kl_wmi_ready_event_rx(wmi, datap, len);
+		mdelay(400);
 		ath6kl_send_event_to_app(skb->dev, id, skb->dev->ifindex,
 			datap, len);
 		break;
@@ -4745,6 +4787,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	case WMI_GET_ANTDIVSTAT_CMDID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_ANTDIVSTAT_CMDID\n");
 		ret =  ath6kl_wmi_antdivstate_event_rx(vif, datap, len);
+		break;
+	case WMI_GET_ANISTAT_CMDID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_ANISTAT_CMDID\n");
+		ret =  ath6kl_wmi_anistate_event_rx(vif, datap, len);
 		break;
 #ifdef CE_SUPPORT
 	case WMI_CSA_EVENTID:
@@ -5889,6 +5935,35 @@ int ath6kl_wmi_antdivstate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len)
 {
 	memcpy(&vif->ant_div_stat, datap, sizeof(struct wmi_ant_div_stat));
 	return 0;
+}
+
+int ath6kl_wmi_anistate_event_rx(struct ath6kl_vif *vif, u8 *datap, int len)
+{
+	memcpy(&vif->ani_stat, datap, sizeof(struct wmi_ani_stat));
+	return 0;
+}
+
+int ath6kl_wmi_anistate_enable(struct wmi *wmi,
+	struct wmi_config_enable_cmd *options)
+{
+	struct sk_buff *skb;
+	struct wmi_config_enable_cmd *cmd;
+	int ret = 0;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(struct wmi_config_enable_cmd));
+
+	if (skb == NULL)
+		return -ENOMEM;
+
+	cmd = (struct wmi_config_enable_cmd *)skb->data;
+	memset(cmd, 0, sizeof(struct wmi_config_enable_cmd));
+
+	memcpy(cmd, options, sizeof(struct wmi_config_enable_cmd));
+
+	ret = ath6kl_wmi_cmd_send(wmi, 0, skb,
+			WMI_GET_ANISTAT_CMDID, NO_SYNC_WMIFLAG);
+
+	return ret;
 }
 
 int ath6kl_wmi_set_bmiss_time(struct wmi *wmi, u8 if_idx, u16 numBeacon)

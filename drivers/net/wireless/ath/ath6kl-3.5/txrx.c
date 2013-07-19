@@ -36,6 +36,8 @@ static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta,
 		   struct sk_buff **skb);
 static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn);
 
+static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx);
+
 static u8 ath6kl_ibss_map_epid(struct sk_buff *skb, struct net_device *dev,
 			       u32 *map_no)
 {
@@ -604,6 +606,10 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	} else
 		goto fail_tx;
 
+	if (test_bit(CONNECTED, &vif->flags) &&
+	    (skb->protocol == cpu_to_be16(ETH_P_PAE)))
+		ath6kl_eapol_handshake_protect(vif, true);
+
 	/* TX A-MSDU */
 	if ((test_bit(AMSDU_ENABLED, &vif->flags)) &&
 		(!bypass_tx_aggr) &&
@@ -646,15 +652,25 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-	if (htc_tag == ATH6KL_DATA_PKT_TAG)
-		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
-	else
+	if (htc_tag == ATH6KL_DATA_PKT_TAG) {
+		if (test_bit(MCC_ENABLED, &ar->flag)) {
+			if (vif->data_cookie_count <= MAX_VIF_COOKIE_NUM) {
+				cookie = ath6kl_alloc_cookie(ar,
+					COOKIE_TYPE_DATA);
+			}
+		} else
+			cookie = ath6kl_alloc_cookie(ar,
+				COOKIE_TYPE_DATA);
+	} else
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
 	}
+
+	if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		vif->data_cookie_count++;
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -1066,7 +1082,12 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 			vif->net_stats.tx_errors++;
 
-			if (status != -ENOSPC && status != -ECANCELED)
+			if (status == -ETXTBSY)
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
+					"wmi/tx deepsleep syspend\n");
+			else if (status != -ENOSPC &&
+				status != -ECANCELED &&
+				status != -ENOMEM)
 				ath6kl_debug("tx complete error: %d\n", status);
 
 			ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
@@ -1085,6 +1106,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 		}
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
+		if (ath6kl_cookie->htc_pkt->info.tx.tag ==
+			ATH6KL_DATA_PKT_TAG)
+			vif->data_cookie_count--;
 
 		ath6kl_free_cookie(ar, ath6kl_cookie);
 
@@ -1278,8 +1302,8 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 
 	skb->protocol = eth_type_trans(skb, skb->dev);
 
-#ifdef CONFIG_ANDROID
 	if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
+#ifdef CONFIG_ANDROID
 		struct ath6kl *ar = vif->ar;
 
 		if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) &&
@@ -1295,38 +1319,11 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 					ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE);
 				return;
 			}
-		} else if (test_bit(CONNECTED, &vif->flags)) {
-			struct ath6kl_vif *tmp;
-			int i;
-
-			/*
-			 * To avoid scan let EAPOL frame lost or timeout and
-			 * here preempt scan for a while when receive EAPOL
-			 * frame.
-			 */
-			set_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
-			ar->eapol_shprotect_vif |= (1 << vif->fw_vif_idx);
-
-			mod_timer(&ar->eapol_shprotect_timer,
-				jiffies + ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE);
-
-			for (i = 0; i < ar->vif_max; i++) {
-				tmp = ath6kl_get_vif_by_index(ar, i);
-				if (tmp && tmp->scan_req) {
-					ath6kl_info("EAPOL on-going, vif %d\n",
-						tmp->fw_vif_idx);
-
-					del_timer(&tmp->vifscan_timer);
-					ath6kl_wmi_abort_scan_cmd(ar->wmi,
-							tmp->fw_vif_idx);
-					cfg80211_scan_done(tmp->scan_req, true);
-					tmp->scan_req = NULL;
-					clear_bit(SCANNING, &tmp->flags);
-				}
-			}
-		}
-	}
+		} else
 #endif
+		if (test_bit(CONNECTED, &vif->flags))
+			ath6kl_eapol_handshake_protect(vif, false);
+	}
 
 /*
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 2, 0)) &&	\
@@ -2733,8 +2730,8 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 
 	skb = amsdu_skb;
 	aggr_tx_reset_aggr(txtid, false, timer_stop);
-	if (!timer_stop)
-		aggr_tx_progressive(txtid, true);
+	aggr_tx_progressive(txtid, !timer_stop);
+
 	spin_unlock_bh(&txtid->lock);
 
 	spin_lock_bh(&ar->lock);
@@ -2760,6 +2757,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
 	}
+	vif->data_cookie_count++;
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -3386,3 +3384,41 @@ void ath6kl_flush_pend_skb(struct ath6kl_vif *vif)
 	spin_unlock_bh(&vif->pend_skb_lock);
 }
 
+static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx)
+{
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *tmp;
+	int i;
+
+	/*
+	 * In some system, continuous scan and connection behavior
+	 * happened at the same time. Ex, in Android, if the user
+	 * keep in WiFi site-survey page.
+	 * To avoid scan let EAPOL frame lost or timeout and
+	 * here preempt scan for a while when transmit/receive
+	 * EAPOL frame.
+	 */
+	set_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
+	ar->eapol_shprotect_vif |= (1 << vif->fw_vif_idx);
+
+	mod_timer(&ar->eapol_shprotect_timer,
+		jiffies + ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE);
+
+	for (i = 0; i < ar->vif_max; i++) {
+		tmp = ath6kl_get_vif_by_index(ar, i);
+		if (tmp && tmp->scan_req) {
+			ath6kl_info("%s EAPOL on-going, vif %d\n",
+				(tx ? "TX" : "RX"),
+				tmp->fw_vif_idx);
+
+			del_timer(&tmp->vifscan_timer);
+			ath6kl_wmi_abort_scan_cmd(ar->wmi,
+					tmp->fw_vif_idx);
+			cfg80211_scan_done(tmp->scan_req, true);
+			tmp->scan_req = NULL;
+			clear_bit(SCANNING, &tmp->flags);
+		}
+	}
+
+	return;
+}

@@ -62,7 +62,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* Disable USB Auto-suspend */
 	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13),
 
-	/* hole */
+	/* Enable single chain in wow */
+	ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN = BIT(14),
 
 	/* offload AP keep-alive to supplicant */
 	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15),
@@ -91,8 +92,7 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
 
-	/* workaround for EV119712/CR468120/CR479897 */
-	ATH6KL_MODULE_WAR_BAD_P2P_GO = BIT(24),
+	/* hole */
 
 	/* Config AP keep-alive from supplicant */
 	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP	= BIT(25),
@@ -195,7 +195,11 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_ANY		= 0xffffffff  /* enable all logs */
 };
 
+/* Extended tracing */
+#define	ATH6KL_DBG_EXT_INFO1    0x100000000ULL
+
 extern unsigned int debug_mask;
+extern unsigned int debug_mask_ext;
 extern unsigned int debug_quirks;
 extern __printf(2, 3)
 int ath6kl_printk(const char *level, const char *fmt, ...);
@@ -232,20 +236,13 @@ void ath6kl_send_genevent_to_app(struct net_device *dev,
 					u16 event_id, u8 ifid,
 					u8 *datap, int len);
 
-#ifdef CONFIG_QC_INTERNAL
-int ath6kl_set_rd(struct ath6kl *ar);
-#else
-static inline int ath6kl_set_rd(struct ath6kl *ar)
-{
-	return 0;
-}
-#endif
-
 #ifdef CONFIG_ATH6KL_DEBUG
 #define ath6kl_dbg(mask, fmt, ...)					\
 	({								\
 	 int rtn;							\
-	 if (debug_mask & mask)						\
+	 if ((debug_mask & (unsigned int)(mask)) ||	\
+		 (debug_mask_ext &	\
+		 (unsigned int)((unsigned long long)(mask)>>32)))	\
 		rtn = ath6kl_printk(KERN_DEBUG, fmt, ##__VA_ARGS__);	\
 	 else								\
 		rtn = 0;						\
@@ -279,7 +276,7 @@ int ath6kl_debug_init(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
 
 #else
-static inline int ath6kl_dbg(enum ATH6K_DEBUG_MASK dbg_mask,
+static inline int ath6kl_dbg(unsigned long long int dbg_mask,
 			     const char *fmt, ...)
 {
 	return 0;
