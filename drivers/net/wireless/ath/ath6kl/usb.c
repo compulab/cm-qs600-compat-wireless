@@ -133,6 +133,8 @@ struct ath6kl_usb_pm_stats {
 	u32 max_queue_len;
 	u32 bam_activity;
 	u32 bam_inactivity;
+	u32 disable;
+	u32 enable;
 };
 #endif
 
@@ -2131,6 +2133,8 @@ skip_pipe_stats:
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, max_queue_len);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, bam_activity);
 	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, bam_inactivity);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, disable);
+	len += USB_PMSTAT(ar_usb, buf + len, buf_len - len, enable);
 #undef USB_PMSTAT
 #endif /* CONFIG_ATH6KL_AUTO_PM */
 #undef USB_PIPESTAT
@@ -2160,6 +2164,36 @@ static int ath6kl_usb_clear_stats(struct ath6kl *ar)
 	return 0;
 }
 
+#ifdef CONFIG_ATH6KL_AUTO_PM
+static int ath6kl_usb_disable_autopm(struct ath6kl *ar)
+{
+	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+
+	usb_autopm_get_interface_async(ar_usb->interface);
+
+	ar_usb->pm_stats.disable++;
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "%s: count: %d\n", __func__,
+			ar_usb->pm_stats.disable);
+
+	return 0;
+}
+
+static int ath6kl_usb_enable_autopm(struct ath6kl *ar)
+{
+	struct ath6kl_usb *ar_usb = ath6kl_usb_priv(ar);
+
+	usb_autopm_put_interface_async(ar_usb->interface);
+
+	ar_usb->pm_stats.enable++;
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "%s: count: %d\n", __func__,
+			ar_usb->pm_stats.enable);
+
+	return 0;
+}
+#endif /* CONFIG_ATH6KL_AUTO_PM */
+
 static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.diag_read32 = ath6kl_usb_diag_read32,
 	.diag_write32 = ath6kl_usb_diag_write32,
@@ -2178,6 +2212,10 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.resume = ath6kl_usb_resume,
 	.get_stats = ath6kl_usb_get_stats,
 	.clear_stats = ath6kl_usb_clear_stats,
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	.disable_autopm  = ath6kl_usb_disable_autopm,
+	.enable_autopm  = ath6kl_usb_enable_autopm,
+#endif
 };
 
 /* ath6kl usb driver registered functions */

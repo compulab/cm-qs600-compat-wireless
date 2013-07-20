@@ -266,6 +266,9 @@ struct ath6kl_hif_ops {
 	int (*get_stats)(struct ath6kl *ar, u8 *buf, int buf_len,
 			u32 stats_mask);
 	int (*clear_stats)(struct ath6kl *ar);
+
+	int (*disable_autopm)(struct ath6kl *ar);
+	int (*enable_autopm)(struct ath6kl *ar);
 };
 
 int ath6kl_hif_setup(struct ath6kl_device *dev);

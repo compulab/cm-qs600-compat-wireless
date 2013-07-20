@@ -1976,6 +1976,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 			cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
+		ath6kl_hif_enable_autopm(vif->ar);
 	}
 
 
