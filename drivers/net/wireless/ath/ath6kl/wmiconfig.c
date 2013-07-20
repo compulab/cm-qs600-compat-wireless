@@ -405,8 +405,21 @@ static void ath6kl_lte_coex_check_acs(struct ath6kl_vif *vif,
 					ar->lte_coex->dev_ctx[vif_idx].acs_evt
 						|= ATH6KL_AP_ACS_IN_PROGRESS;
 					calc_tx_pwr = false;
-					ath6kl_wmi_ap_profile_commit(ar->wmi,
-							vif_idx, &vif->profile);
+					if (ar->acs_in_prog) {
+						vif->ap_hold_conn = 1;
+						mod_timer(
+							&vif->ap_restart_timer,
+							jiffies +
+							msecs_to_jiffies(1 *
+							AP_RESTART_TIMER_INVAL)
+							);
+					} else {
+						ar->acs_in_prog = 1;
+						ath6kl_wmi_ap_profile_commit(
+							ar->wmi, vif_idx,
+								&vif->profile);
+
+						}
 				} else {
 					ar->lte_coex->dev_ctx[vif_idx].acs_evt
 						|= ATH6KL_AP_ACS_NOT_NEEDED;
