@@ -1180,7 +1180,9 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			     u16 prot_reason_status)
 {
 	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *vif_tmp;
 	u8 removed = 0;
+	int res;
 
 	if (vif->nw_type == AP_NETWORK) {
 
@@ -1238,6 +1240,23 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			vif->max_num_sta = 0;
 			vif->prwise_crypto = NONE_CRYPT;
 			ath6kl_restore_htcap(vif);
+
+			list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+				if (vif_tmp->nw_type == AP_NETWORK) {
+					if (vif_tmp->ap_hold_conn) {
+						vif_tmp->ap_hold_conn = 0;
+						ar->acs_in_prog = 1;
+						ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+								"Apply ACS for next AP\n");
+						res = ath6kl_wmi_ap_profile_commit(ar->wmi,
+							vif_tmp->fw_vif_idx, &vif_tmp->profile);
+						if (res)
+							ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+								"Ap profile commit failure");
+					} else
+						ar->acs_in_prog = 0;
+				}
+			}
 		}
 		return;
 	} else if (vif->nw_type == INFRA_NETWORK) {
