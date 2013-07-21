@@ -868,6 +868,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 			cfg80211_scan_done(vif->scan_req, true);
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
+		ath6kl_hif_enable_autopm(ar);
 	}
 
 	if (vif->nw_type & ADHOC_NETWORK) {
@@ -1119,6 +1120,8 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		ath6kl_err("wmi_startscan_cmd failed\n");
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
+	} else {
+		ath6kl_hif_disable_autopm(ar);
 	}
 
 	kfree(channels);
@@ -1153,6 +1156,7 @@ out:
 		cfg80211_scan_done(vif->scan_req, aborted);
 	vif->scan_req = NULL;
 	clear_bit(SCANNING, &vif->flags);
+	ath6kl_hif_enable_autopm(ar);
 }
 
 void ath6kl_cfg80211_ch_switch_notify(struct ath6kl_vif *vif, int freq,
