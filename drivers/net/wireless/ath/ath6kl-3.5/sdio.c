@@ -1265,6 +1265,11 @@ int sdio_debugfs_get_pm_usage_cnt(struct ath6kl *ar)
 }
 #endif
 
+static void ath6kl_sdio_set_max_queue_number(struct ath6kl *ar, bool mccEnable)
+{
+	/* TBD */
+}
+
 static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.read_write_sync = ath6kl_sdio_read_write_sync,
 	.write_async = ath6kl_sdio_write_async,
@@ -1298,6 +1303,7 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.auto_pm_turnoff = sdio_auto_pm_turnoff,
 	.auto_pm_get_usage_cnt = sdio_debugfs_get_pm_usage_cnt,
 #endif
+	.pipe_set_max_queue_number = ath6kl_sdio_set_max_queue_number,
 };
 
 #ifdef CONFIG_PM_SLEEP
