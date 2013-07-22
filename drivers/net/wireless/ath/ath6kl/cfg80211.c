@@ -3184,7 +3184,8 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		 * other running vif's channel, deny the softap
 		 */
 		if((othervif_ch > 0 ) && (othervif_ch != p.ch)){
-			ath6kl_warn("Denied to start ap on %d channel in scc\n", p.ch);
+			ath6kl_warn("Denied to start ap on %d channel in scc\n",
+									 p.ch);
 			return -EINVAL;
 		} else if (adj_vif_ch > 0 && adj_vif_ch != p.ch) {
 			adj_ch_diff = (adj_vif_ch > p.ch ? (adj_vif_ch - p.ch) :
@@ -3194,6 +3195,12 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 								 adj_vif_ch);
 				p.ch = adj_vif_ch;
 			}
+		} else if (ar->acs_in_prog && band == IEEE80211_BAND_2GHZ) {
+			/* if ACS in prog for AP1 hold this AP since we
+			 * need to confirm MCC adj ch diff before commiting
+			 * this AP even if it has fixed channel config for 2G.
+			 */
+			vif->ap_hold_conn = 1;
 		}
 	}
 
