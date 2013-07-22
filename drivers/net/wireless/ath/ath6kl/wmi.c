@@ -2087,6 +2087,7 @@ int ath6kl_wmi_scanparams_cmd(struct wmi *wmi, u8 if_idx,
 	struct sk_buff *skb;
 	struct wmi_scan_params_cmd *sc;
 	int ret;
+	struct ath6kl *ar = wmi->parent_dev;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*sc));
 	if (!skb)
@@ -2098,7 +2099,10 @@ int ath6kl_wmi_scanparams_cmd(struct wmi *wmi, u8 if_idx,
 	sc->bg_period = cpu_to_le16(bg_sec);
 	sc->minact_chdwell_time = cpu_to_le16(minact_chdw_msec);
 	sc->maxact_chdwell_time = cpu_to_le16(maxact_chdw_msec);
-	sc->pas_chdwell_time = cpu_to_le16(pas_chdw_msec);
+	if (pas_chdw_msec <= 0)
+		sc->pas_chdwell_time = cpu_to_le16(ar->pas_chdwell_time);
+	else
+		sc->pas_chdwell_time = cpu_to_le16(pas_chdw_msec);
 	sc->short_scan_ratio = short_scan_ratio;
 	sc->scan_ctrl_flags = scan_ctrl_flag;
 	sc->max_dfsch_act_time = cpu_to_le32(max_dfsch_act_time);

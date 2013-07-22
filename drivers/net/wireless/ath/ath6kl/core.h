@@ -974,6 +974,7 @@ struct ath6kl {
 	bool acs_in_prog;
 	u16 mcc_adj_ch_spacing;
 	bool sta_bh_override;
+	u16 pas_chdwell_time;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
