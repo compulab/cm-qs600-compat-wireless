@@ -22,7 +22,7 @@
 #include "testmode.h"
 #include "../regd.h"
 #include "../regd_common.h"
-#include <ctype.h>
+#include <linux/ctype.h>
 #include "wmiconfig.h"
 
 static int ath6kl_wmi_sync_point(struct wmi *wmi, u8 if_idx);
