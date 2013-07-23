@@ -801,6 +801,10 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 	}
 
 	if (vif->sme_state == SME_CONNECTING) {
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		ath6kl_send_msg_ipa(vif, WLAN_STA_CONNECT, bssid);
+#endif
 		/* inform connect result to cfg80211 */
 		vif->sme_state = SME_CONNECTED;
 		cfg80211_connect_result(vif->ndev, bssid,
@@ -825,6 +829,9 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: reason=%u\n", __func__,
 		   reason_code);
 
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_send_msg_ipa(vif, WLAN_STA_DISCONNECT, vif->bssid);
+#endif
 	ath6kl_cfg80211_sscan_disable(vif);
 
 	if (!ath6kl_cfg80211_ready(vif))
@@ -909,6 +916,10 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 					WLAN_STATUS_UNSPECIFIED_FAILURE,
 					GFP_KERNEL);
 	} else if (vif->sme_state == SME_CONNECTED) {
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		ath6kl_send_msg_ipa(vif, WLAN_STA_DISCONNECT, vif->bssid);
+#endif
 		cfg80211_disconnected(vif->ndev, proto_reason,
 				      NULL, 0, GFP_KERNEL);
 	}
@@ -3792,6 +3803,10 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 					GFP_KERNEL);
 		break;
 	case SME_CONNECTED:
+#ifdef CONFIG_ATH6KL_BAM2BAM
+		ath6kl_send_msg_ipa(vif, WLAN_STA_DISCONNECT,
+				vif->bssid);
+#endif
 		cfg80211_disconnected(vif->ndev, 0, NULL, 0, GFP_KERNEL);
 		break;
 	}

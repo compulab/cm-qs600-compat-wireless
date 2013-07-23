@@ -1952,14 +1952,22 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	if (wmi_ready) {
 		discon_issued = test_bit(CONNECTED, &vif->flags) ||
 				test_bit(CONNECT_PEND, &vif->flags);
+
 		ath6kl_disconnect(vif);
 		del_timer(&vif->disconnect_timer);
 
-		if (discon_issued)
+		if (discon_issued) {
 			ath6kl_disconnect_event(vif, DISCONNECT_CMD,
-						(vif->nw_type & AP_NETWORK) ?
-						bcast_mac : vif->bssid,
-						0, NULL, 0);
+					(vif->nw_type & AP_NETWORK) ?
+					bcast_mac : vif->bssid,
+					0, NULL, 0);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+			if (vif->nw_type & AP_NETWORK)
+				ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT,
+						vif->ndev->dev_addr);
+#endif
+		}
+
 	}
 
 	del_timer(&vif->ap_restart_timer);
