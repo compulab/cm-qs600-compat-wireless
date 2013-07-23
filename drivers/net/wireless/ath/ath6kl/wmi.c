@@ -3209,6 +3209,10 @@ int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,
 		cmd->ht_enable |= WMI_HTCAP_TX_STBC;
 	}
 
+	if (htcap->require_ht) {
+		cmd->ht_enable |= WMI_REQUIRE_HT;
+	}
+
 	ath6kl_dbg(ATH6KL_DBG_WMI,
 		   "Set htcap: band:%d ht_enable:%d 40mhz:%d sgi_20mhz:%d sgi_40mhz:%d 40mhz_intolerant:%d ampdu_len_exp:%d\n",
 		   cmd->band, cmd->ht_enable, cmd->ht40_supported,
