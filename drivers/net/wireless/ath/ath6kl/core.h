@@ -639,6 +639,7 @@ struct ath6kl_htcap {
 	bool ht_enable;
 	u8 ampdu_factor;
 	unsigned short cap_info;
+	bool require_ht;
 };
 
 /*

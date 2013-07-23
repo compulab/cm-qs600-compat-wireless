@@ -2626,6 +2626,11 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		params.max_num_sta =
 			nla_get_u32(info->attrs[NL80211_ATTR_MAX_NUM_STA]);
 
+	if (info->attrs[NL80211_ATTR_REQUIRE_HT]) {
+		params.require_ht =
+			nla_get_u8(info->attrs[NL80211_ATTR_REQUIRE_HT]);
+	}
+
 	err = rdev->ops->start_ap(&rdev->wiphy, dev, &params);
 	if (!err) {
 		wdev->preset_chan = params.channel;
