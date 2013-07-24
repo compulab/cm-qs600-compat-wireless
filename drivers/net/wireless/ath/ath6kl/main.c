@@ -591,7 +591,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 					adj_ch_dif = (vif->bss_ch > vif_tmp_ch ?
 						(vif->bss_ch - vif_tmp_ch) :
 						(vif_tmp_ch - vif->bss_ch));
-				else if(vif->phy_mode == WMI_11G_MODE)
+				else if (vif->phy_mode != WMI_11A_MODE)
 					/*if ACS is specified still override */
 					adj_ch_dif = ar->mcc_adj_ch_spacing - 1;
 
