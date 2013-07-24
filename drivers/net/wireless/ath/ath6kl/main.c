@@ -524,6 +524,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 	struct ath6kl_req_key *ik;
 	int res;
 	u8 key_rsc[ATH6KL_KEY_SEQ_LEN];
+	u16 adj_ch_dif = 0, vif_tmp_ch;
 
 	ik = &ar->ap_mode_bkey;
 
@@ -584,8 +585,26 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 			if (vif_tmp->ap_hold_conn && !ar->acs_in_prog) {
 				vif_tmp->ap_hold_conn = 0;
 				ar->acs_in_prog = 1;
+				vif_tmp_ch = vif_tmp->profile.ch;
+
+				if (vif_tmp_ch > AP_ACS_POLICY_MAX)
+					adj_ch_dif = (vif->bss_ch > vif_tmp_ch ?
+						(vif->bss_ch - vif_tmp_ch) :
+						(vif_tmp_ch - vif->bss_ch));
+				else if(vif->phy_mode == WMI_11G_MODE)
+					/*if ACS is specified still override */
+					adj_ch_dif = ar->mcc_adj_ch_spacing - 1;
+
+				if (adj_ch_dif &&
+					adj_ch_dif < ar->mcc_adj_ch_spacing) {
+					ath6kl_warn("Override to %d due to MCC"
+						" intf\n", vif->bss_ch);
+					vif_tmp->profile.ch =
+						cpu_to_le16(vif->bss_ch);
+					ar->acs_in_prog = 0;
+				}
 				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-						"Apply ACS for next AP\n");
+						"Apply commit for next AP\n");
 				res = ath6kl_wmi_ap_profile_commit(ar->wmi,
 					vif_tmp->fw_vif_idx, &vif_tmp->profile);
 				if (res)
