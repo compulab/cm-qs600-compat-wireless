@@ -286,6 +286,8 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar->inter_bss = true;
 	ar->max_norm_iface = 1;
 	ar->pas_chdwell_time = 0;
+	ar->sta_bh_override = 0;
+	ar->acs_in_prog = 0;
 
 	spin_lock_init(&ar->lock);
 	spin_lock_init(&ar->mcastpsq_lock);
