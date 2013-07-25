@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.427)
+#define __BUILD_VERSION_ (3.5.0.431)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -395,6 +395,16 @@
  *            wait next TX EAPOL
  */
 #define ATH6KL_SCAN_PREEMPT_IN_HANDSHAKE	(msecs_to_jiffies(1250))
+
+/*
+ * This configuration item enable/disable keepalive support.
+ * Keepalive support: In the absence of any data traffic to AP, null
+ * frames will be sent to the AP at periodic interval, to keep the association
+ * active. This configuration item defines the periodic interval.
+ * Use value of zero to disable keepalive support
+ * Default: 60 seconds
+ */
+#define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 60
 
 /* default roam mode for different situation */
 #if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))

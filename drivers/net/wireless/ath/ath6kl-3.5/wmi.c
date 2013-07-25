@@ -1562,6 +1562,10 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	if (bih->snr == 0x80)
 		return -EINVAL;
 
+	/* Check length and at least one SSID-IE included */
+	if (len < 8 + 2 + 2 + 2)
+		return -EINVAL;
+
 	ath6kl_dbg(ATH6KL_DBG_WMI | ATH6KL_DBG_EXT_SCAN,
 		   "bss info evt - ch %u, snr %d, rssi %d, bssid \"%pM\" "
 		   "frame_type=%d vif=%d\n",
@@ -1588,8 +1592,6 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 	     (vif->scan_chan != channel->center_freq)))
 		return -EINVAL;
 #endif
-	if (len < 8 + 2 + 2)
-		return -EINVAL;
 
 	if (bih->frame_type == BEACON_FTYPE && test_bit(CONNECTED, &vif->flags)
 	    && memcmp(bih->bssid, vif->bssid, ETH_ALEN) == 0) {
@@ -1676,10 +1678,13 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 					((s8)bih->snr - _DEFAULT_SNR) * 100,
 					channel);
 
+	spin_lock_bh(&vif->if_lock);
 	bss = cfg80211_inform_bss_frame(ar->wiphy, channel, mgmt,
 					24 + len,
 					((s8)bih->snr - _DEFAULT_SNR) * 100,
 					GFP_ATOMIC);
+	spin_unlock_bh(&vif->if_lock);
+
 	kfree(mgmt);
 	if (bss == NULL)
 		return -ENOMEM;

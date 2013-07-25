@@ -3247,7 +3247,7 @@ struct wmi_ap_conn_inact_cmd {
 #define MIN_BMISS_TIME		1000
 #define MAX_BMISS_TIME		5000
 #define MIN_BMISS_BEACONS	1
-#define MAX_BMISS_BEACONS	50
+#define MAX_BMISS_BEACONS	100
 
 struct wmi_bmiss_time_cmd {
 	u16 bmissTime;
