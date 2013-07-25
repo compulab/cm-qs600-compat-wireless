@@ -185,7 +185,7 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 u8 ath6kl_platform_has_vreg;
 struct semaphore usb_probe_sem;
 
-#define USB_PROBE_WAIT_TIMEOUT           2000
+#define USB_PROBE_WAIT_TIMEOUT           4000
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER

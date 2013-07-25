@@ -17,7 +17,7 @@
 #ifndef P2P_H
 #define P2P_H
 
-#define ATH6KL_P2P_BMISS_TIME				(50)
+#define ATH6KL_P2P_BMISS_TIME				(100)
 
 #define ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS		4
 

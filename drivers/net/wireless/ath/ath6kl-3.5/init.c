@@ -406,16 +406,6 @@ static const struct ath6kl_hw hw_list[] = {
  */
 
 /*
- * This configuration item enable/disable keepalive support.
- * Keepalive support: In the absence of any data traffic to AP, null
- * frames will be sent to the AP at periodic interval, to keep the association
- * active. This configuration item defines the periodic interval.
- * Use value of zero to disable keepalive support
- * Default: 60 seconds
- */
-#define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 60
-
-/*
  * This configuration item sets the value of disconnect timeout
  * Firmware delays sending the disconnec event to the host for this
  * timeout after is gets disconnected from the current AP.
