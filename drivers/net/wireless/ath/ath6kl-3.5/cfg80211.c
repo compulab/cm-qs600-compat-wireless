@@ -1093,6 +1093,23 @@ done:
 	return;
 }
 
+/* WAR some framework implementation,
+ * Called after auth/prwise,dot11 get set.
+ */
+static void ath6kl_wep_auth_auto(struct ath6kl_vif *vif)
+{
+	if ((vif->prwise_crypto_len != 0) &&
+	    (vif->auth_mode == NONE_AUTH) &&
+	    (vif->prwise_crypto == WEP_CRYPT) &&
+	    (vif->dot11_auth_mode == OPEN_AUTH)) {
+
+		vif->dot11_auth_mode = OPEN_AUTH | SHARED_AUTH;
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s,"
+			"dot11_auth_mode change %d\n",
+			__func__, vif->dot11_auth_mode);
+	}
+}
+
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				   struct cfg80211_connect_params *sme)
 {
@@ -1235,6 +1252,9 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
 	if (sme->crypto.n_akm_suites)
 		ath6kl_set_key_mgmt(vif, sme->crypto.akm_suites[0]);
+
+	/* WAR framework for wep auth */
+	ath6kl_wep_auth_auto(vif);
 
 	if ((sme->key_len) &&
 	    (vif->auth_mode == NONE_AUTH) &&
@@ -2208,7 +2228,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 		n_channels = request->n_channels;
 
-		channels = kzalloc(n_channels * sizeof(u16) * 2, GFP_KERNEL);
+		channels = kzalloc(WMI_MAX_CHANNELS * sizeof(u16) * 2,
+							GFP_KERNEL);
 		if (channels == NULL) {
 			ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
 				"failed to set scan chan, scan all channel\n");

@@ -580,7 +580,7 @@ static void bss_proc_post_flush(struct bss_post_proc *post_proc, bool force)
 	bool aging;
 	int aging_cnt, bss_cnt;
 
-	spin_lock(&post_proc->bss_info_lock);
+	spin_lock_bh(&post_proc->bss_info_lock);
 
 	aging_cnt = bss_cnt = 0;
 	list_for_each_entry_safe(bss_info,
@@ -602,7 +602,7 @@ static void bss_proc_post_flush(struct bss_post_proc *post_proc, bool force)
 		}
 	}
 
-	spin_unlock(&post_proc->bss_info_lock);
+	spin_unlock_bh(&post_proc->bss_info_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 		   "bss_proc flush %s, %d/%d\n",
@@ -664,11 +664,16 @@ int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
 
 	post_proc->flags &= ~ATH6KL_BSS_POST_PROC_SCAN_ONGOING;
 
+	spin_lock_bh(&post_proc->bss_info_lock);
+
 	list_for_each_entry_safe(bss_info,
 				tmp,
 				&post_proc->bss_info_list,
 				list) {
 		cnt++;
+
+		BUG_ON(!bss_info->mgmt);
+
 		bss = cfg80211_inform_bss_frame(vif->ar->wiphy,
 						bss_info->channel,
 						bss_info->mgmt,
@@ -678,6 +683,8 @@ int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
 		if (bss)
 			ath6kl_bss_put(vif->ar, bss);
 	}
+
+	spin_unlock_bh(&post_proc->bss_info_lock);
 
 	if (post_proc->flags & ATH6KL_BSS_POST_PROC_CACHED_BSS)
 		bss_proc_post_flush(post_proc, false);
@@ -713,13 +720,13 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 		   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5],
 		   mgmt->frame_control);
 
-	bss_info = kzalloc(sizeof(struct bss_info_entry), GFP_KERNEL);
+	bss_info = kzalloc(sizeof(struct bss_info_entry), GFP_ATOMIC);
 	if (!bss_info) {
 		ath6kl_err("failed to alloc memory for bss_info\n");
 		return;
 	}
 
-	bss_info->mgmt = kmalloc(len, GFP_KERNEL);
+	bss_info->mgmt = kmalloc(len, GFP_ATOMIC);
 	if (!bss_info->mgmt) {
 		kfree(bss_info);
 		ath6kl_err("failed to alloc memory for bss_info->mgmt\n");
@@ -733,9 +740,9 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 	bss_info->len = len;
 	bss_info->shoot_time = jiffies;
 
-	spin_lock(&post_proc->bss_info_lock);
+	spin_lock_bh(&post_proc->bss_info_lock);
 	list_add_tail(&bss_info->list, &post_proc->bss_info_list);
-	spin_unlock(&post_proc->bss_info_lock);
+	spin_unlock_bh(&post_proc->bss_info_lock);
 
 
 	return;
@@ -797,7 +804,7 @@ int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
 	if ((!post_proc) || (ssid_len == 0))
 		return 0;
 
-	spin_lock(&post_proc->bss_info_lock);
+	spin_lock_bh(&post_proc->bss_info_lock);
 
 	list_for_each_entry_safe(bss_info,
 				tmp,
@@ -807,7 +814,7 @@ int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
 				bss_info->shoot_time + post_proc->aging_time))
 			continue;
 
-		if (bss_info->len < 24 + 4 + 2 + 2 + 2 + 1)
+		if (bss_info->len < 24 + 8 + 2 + 2 + 2 + 1)
 			continue;
 
 		BUG_ON(!bss_info->mgmt);
@@ -822,7 +829,7 @@ int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
 								chan_num);
 	}
 
-	spin_unlock(&post_proc->bss_info_lock);
+	spin_unlock_bh(&post_proc->bss_info_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 		   "bss_proc candidate_bss ssid %s chan_num %d\n",

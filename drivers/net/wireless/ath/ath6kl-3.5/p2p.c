@@ -2259,6 +2259,11 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 		}
 	}
 
+	if (vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) {
+		ath6kl_wmi_set_keepalive_cmd(vif->ar->wmi, vif->fw_vif_idx,
+			WLAN_CONFIG_KEEP_ALIVE_INTERVAL);
+	}
+
 	return;
 }
 
@@ -2543,7 +2548,7 @@ static struct p2p_oper_chan ath6kl_p2p_oper_chan[] = {
 	{ 116, 5180, 5220, 20, P2P_OPER_CHAN_BW_HT40_PLUS},  /* CH36  - CH44 */
 	{ 117, 5200, 5240, 20, P2P_OPER_CHAN_BW_HT40_MINUS}, /* CH40  - CH48 */
 	{ 124, 5745, 5805, 20, P2P_OPER_CHAN_BW_HT20},       /* CH149 - CH161 */
-	{ 125, 5745, 5825, 20, P2P_OPER_CHAN_BW_HT20},       /* CH149 - CH165 */
+	{ 125, 5745, 5805, 20, P2P_OPER_CHAN_BW_HT20},       /* CH149 - CH161 */
 	{ 126, 5745, 5785, 20, P2P_OPER_CHAN_BW_HT40_PLUS},  /* CH149 - CH157 */
 	{ 127, 5765, 5805, 20, P2P_OPER_CHAN_BW_HT40_MINUS}, /* CH153 - CH161 */
 	{ 0, 0, 0, 0, P2P_OPER_CHAN_BW_NULL},
