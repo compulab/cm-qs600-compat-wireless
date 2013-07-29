@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.432)
+#define __BUILD_VERSION_ (3.5.0.434)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -205,6 +205,7 @@
  */
 #undef ATH6KL_SUPPORT_NL80211_QCA
 #endif
+#endif
 
 #ifndef machine_is_apq8064_dma
 #define machine_is_apq8064_dma() 0
@@ -213,7 +214,7 @@
 #ifndef machine_is_apq8064_bueller
 #define machine_is_apq8064_bueller() 0
 #endif
-#endif
+
 
 /*
  * No good way to support every version of cfg80211.ko so far, especially
@@ -404,7 +405,7 @@
  * Use value of zero to disable keepalive support
  * Default: 60 seconds
  */
-#define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 60
+#define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 57
 
 /* default roam mode for different situation */
 #if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
@@ -1066,6 +1067,7 @@ struct ath6kl_sta {
 	/* AP-Keepalive */
 	u16 last_txrx_time_tgt;		/* target time. */
 	unsigned long last_txrx_time;	/* in jiffies., host time. */
+	u32 last_rx_pkts;
 #ifdef ATHTST_SUPPORT
 	int avg_data_rssi;
 #endif
@@ -1321,12 +1323,16 @@ struct bss_info_entry {
 	unsigned long shoot_time;
 };
 
-#define ATH6KL_BSS_POST_PROC_SCAN_ONGOING	(1 << 0)
-#define ATH6KL_BSS_POST_PROC_CACHED_BSS		(1 << 1)
+#define ATH6KL_BSS_POST_PROC_CACHED_BSS		(1 << 0)
+
+enum bss_post_proc_stat {
+	BSS_POST_PROC_SCAN_ONGOING,
+};
 
 struct bss_post_proc {
 	struct ath6kl_vif *vif;
 	u32 flags;
+	unsigned long stat;
 	spinlock_t bss_info_lock;
 	struct list_head bss_info_list;
 

@@ -824,10 +824,12 @@ static int ath6kl_wmi_resend_action_cmd(struct wmi *wmi,
 	mgmt_tx_frame->mgmt_tx_frame_retry--;
 	list_add_tail(&mgmt_tx_frame->list, &wmi->mgmt_tx_frame_list);
 
-	ath6kl_dbg(ATH6KL_DBG_WMI, "resend_action_cmd: id=%u freq=%u len=%u\n",
+	ath6kl_dbg(ATH6KL_DBG_WMI,
+		   "resend_action_cmd: id=%u freq=%u len=%u roc=%d\n",
 		   mgmt_tx_frame->mgmt_tx_frame_idx,
 		   mgmt_tx_frame->mgmt_tx_frame_freq,
-		   mgmt_tx_frame->mgmt_tx_frame_len);
+		   mgmt_tx_frame->mgmt_tx_frame_len,
+		   test_bit(ROC_ONGOING, &mgmt_tx_frame->vif->flags));
 
 	p = (struct wmi_send_action_cmd *) skb->data;
 	p->id = cpu_to_le32(mgmt_tx_frame->mgmt_tx_frame_idx);

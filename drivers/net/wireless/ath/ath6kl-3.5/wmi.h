@@ -106,7 +106,7 @@ struct wmi_mgmt_tx_frame {
 	size_t mgmt_tx_frame_len;
 	int mgmt_tx_frame_idx;
 	u32 mgmt_tx_frame_freq;
-#define WMI_TX_MGMT_RETRY_MAX	(3)
+#define WMI_TX_MGMT_RETRY_MAX	(1)
 	int mgmt_tx_frame_retry;
 };
 

@@ -730,9 +730,16 @@ static void ath6kl_usb_flush_all(struct ath6kl_usb *device)
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
 		/* flush only USB scheduled work, instead of flushing all */
 		if (device->pipes[i].ar_usb) {
-			ath6kl_usb_flush_anchor_urbs(
-				&device->pipes[i].urb_submitted);
+			if (machine_is_apq8064_dma() ||
+				machine_is_apq8064_bueller()) {
+				ath6kl_usb_flush_anchor_urbs(
+					&device->pipes[i].urb_submitted);
+			} else {
+				if (&device->pipes[i].urb_submitted)
+					usb_kill_anchored_urbs(
 
+				&device->pipes[i].urb_submitted);
+			}
 			pipe = &device->pipes[i].ar_usb->pipes[i];
 			if (pipe)
 				flush_work(&pipe->io_complete_work);
