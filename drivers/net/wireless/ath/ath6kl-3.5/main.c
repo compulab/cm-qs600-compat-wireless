@@ -2427,10 +2427,22 @@ bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
 		ath6kl_err("wmi is not ready\n");
 		return false;
 	}
+#if defined(USB_AUTO_SUSPEND)
+	if ((vif->ar->state == ATH6KL_STATE_WOW) ||
+		(vif->ar->state == ATH6KL_STATE_DEEPSLEEP) ||
+		(vif->ar->state == ATH6KL_STATE_PRE_SUSPEND)) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		"ignore wlan disabled in AUTO suspend mode!\n");
+	} else {
+		if (!test_bit(WLAN_ENABLED, &vif->flags))
+			return false;
+	}
+#else
 	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
 		ath6kl_err("wlan disabled\n");
 		return false;
 	}
+#endif
 	return true;
 }
 
