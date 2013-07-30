@@ -1451,22 +1451,7 @@ fail_ctrl_tx:
 	return status;
 }
 
-int ath6kl_conn_list_init(struct ath6kl *ar)
-{
-	int i;
-	struct ath6kl_fw_conn_list *pcon;
-
-	for (i = 0; i < NUM_CONN; i++) {
-		pcon = &ar->mcc_flowctrl_ctx->fw_conn_list[i];
-		INIT_LIST_HEAD(&pcon->conn_queue);
-		INIT_LIST_HEAD(&pcon->re_queue);
-		pcon->connect_status = 0;
-		pcon->previous_can_send = true;
-	}
-	return 0;
-}
-
-void ath6kl_conn_list_cleanup(struct ath6kl *ar)
+void ath6kl_mcc_flowctrl_conn_list_cleanup(struct ath6kl *ar)
 {
 	int i;
 	struct ath6kl_fw_conn_list *pcon;
@@ -2108,7 +2093,7 @@ void ath6kl_tx_data_cleanup(struct ath6kl *ar)
 	for (i = 0; i < WMM_NUM_AC; i++)
 		ath6kl_htc_flush_txep(ar->htc_target, ar->ac2ep_map[i],
 				ATH6KL_DATA_PKT_TAG);
-	ath6kl_conn_list_cleanup(ar);
+	ath6kl_mcc_flowctrl_conn_list_cleanup(ar);
 }
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -3688,54 +3673,6 @@ void ath6kl_mcc_flowctrl_conn_list_deinit(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
 		"mcc_flowctrl deinit (ar %p)\n",
 		ar);
-
-	return;
-}
-
-void ath6kl_mcc_flowctrl_conn_list_cleanup(struct ath6kl *ar)
-{
-	struct ath6kl_mcc_flowctrl *mcc_flowctrl = ar->mcc_flowctrl_ctx;
-	struct ath6kl_fw_conn_list *fw_conn;
-	struct htc_packet *packet, *tmp_pkt;
-	struct list_head container;
-	int i, reclaim = 0;
-
-	WARN_ON(!mcc_flowctrl);
-
-	INIT_LIST_HEAD(&container);
-
-	for (i = 0; i < NUM_CONN; i++) {
-		fw_conn = &mcc_flowctrl->fw_conn_list[i];
-
-		spin_lock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
-		if (!list_empty(&fw_conn->re_queue)) {
-			list_for_each_entry_safe(packet, tmp_pkt,
-				&fw_conn->re_queue, list) {
-				list_del(&packet->list);
-				packet->status = 0;
-				list_add_tail(&packet->list, &container);
-				reclaim++;
-			}
-		}
-
-		if (!list_empty(&fw_conn->conn_queue)) {
-			list_for_each_entry_safe(packet, tmp_pkt,
-				&fw_conn->conn_queue, list) {
-				list_del(&packet->list);
-				packet->status = 0;
-				list_add_tail(&packet->list, &container);
-				reclaim++;
-			}
-		}
-		spin_unlock_bh(&mcc_flowctrl->mcc_flowctrl_lock);
-	}
-
-	ath6kl_tx_complete(ar->htc_target, &container);
-
-	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		"mcc_flowctrl cleanup (ar %p) reclaim %d\n",
-		ar,
-		reclaim);
 
 	return;
 }
