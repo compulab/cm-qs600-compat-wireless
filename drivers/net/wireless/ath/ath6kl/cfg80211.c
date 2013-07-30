@@ -1097,13 +1097,14 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
                 force_scan_interval = ATH6KL_FG_SCAN_INTERVAL;
         }
 
-	vif->scan_req = request;
 
 	if (test_and_set_bit(SCANNING, &vif->flags)) {
 		up(&ar->sem);
 		kfree(channels);
 		return -EBUSY;
 	}
+
+	vif->scan_req = request;
 
 	if (test_bit(ATH6KL_FW_CAPABILITY_STA_P2PDEV_DUPLEX,
 		     ar->fw_capabilities)) {
