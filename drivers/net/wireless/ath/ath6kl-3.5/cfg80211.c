@@ -6431,7 +6431,7 @@ static void _judge_p2p_framework(struct ath6kl *ar, unsigned int p2p_config)
 	if (ar->p2p_concurrent_ap)
 		ar->max_norm_iface++;
 
-	ar->p2p_frame_retry = false;
+	ar->p2p_frame_retry = true;
 
 	if (ar->p2p_compat)
 		ar->p2p_frame_not_report = true;

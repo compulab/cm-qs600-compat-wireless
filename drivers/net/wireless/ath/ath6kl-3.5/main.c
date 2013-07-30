@@ -644,7 +644,8 @@ void ath6kl_bss_post_proc_bss_scan_start(struct ath6kl_vif *vif)
 		bss_proc_post_flush(post_proc, false);
 	else
 		bss_proc_post_flush(post_proc, true);
-	post_proc->flags |= ATH6KL_BSS_POST_PROC_SCAN_ONGOING;
+
+	set_bit(BSS_POST_PROC_SCAN_ONGOING, &post_proc->stat);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 			"bss_proc scan_start\n");
@@ -662,7 +663,8 @@ int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
 	if (!post_proc)
 		return 0;
 
-	post_proc->flags &= ~ATH6KL_BSS_POST_PROC_SCAN_ONGOING;
+	if (!test_and_clear_bit(BSS_POST_PROC_SCAN_ONGOING, &post_proc->stat))
+		return 0;
 
 	spin_lock_bh(&post_proc->bss_info_lock);
 
@@ -709,7 +711,7 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 	if (!post_proc)
 		return;
 
-	if (!(post_proc->flags & ATH6KL_BSS_POST_PROC_SCAN_ONGOING))
+	if (!test_bit(BSS_POST_PROC_SCAN_ONGOING, &post_proc->stat))
 		return;
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
@@ -2425,10 +2427,22 @@ bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
 		ath6kl_err("wmi is not ready\n");
 		return false;
 	}
+#if defined(USB_AUTO_SUSPEND)
+	if ((vif->ar->state == ATH6KL_STATE_WOW) ||
+		(vif->ar->state == ATH6KL_STATE_DEEPSLEEP) ||
+		(vif->ar->state == ATH6KL_STATE_PRE_SUSPEND)) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+		"ignore wlan disabled in AUTO suspend mode!\n");
+	} else {
+		if (!test_bit(WLAN_ENABLED, &vif->flags))
+			return false;
+	}
+#else
 	if (!test_bit(WLAN_ENABLED, &vif->flags)) {
 		ath6kl_err("wlan disabled\n");
 		return false;
 	}
+#endif
 	return true;
 }
 
