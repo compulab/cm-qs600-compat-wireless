@@ -19,12 +19,13 @@
 #include "hif-ops.h"
 
 static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(
-	struct ath6kl_sta *conn, u16 last_txrx_time, unsigned long now)
+	struct ath6kl_sta *conn, u16 last_txrx_time,
+	unsigned long now, u32 rx_pkts)
 {
 	u32 diff_ms;
 	enum ap_keepalive_adjust adjust_result = AP_KA_ADJ_ERROR;
 
-	if (conn->last_txrx_time_tgt) {
+	if (conn->last_txrx_time_tgt || conn->last_rx_pkts) {
 		if (last_txrx_time >= conn->last_txrx_time_tgt)
 			diff_ms = (last_txrx_time -
 				   conn->last_txrx_time_tgt) << 10;
@@ -40,11 +41,17 @@ static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(
 		if (conn->last_txrx_time > now)
 			conn->last_txrx_time = now;
 
+		if (conn->last_rx_pkts != rx_pkts) {
+			conn->last_rx_pkts = rx_pkts;
+			conn->last_txrx_time = now;
+		}
+
 		adjust_result = AP_KA_ADJ_ADJUST;
 	} else {
 		/* First updated, treat as base time. */
 		conn->last_txrx_time_tgt = last_txrx_time;
 		conn->last_txrx_time = now;
+		conn->last_rx_pkts = rx_pkts;
 
 		adjust_result = AP_KA_ADJ_BASESET;
 	}
@@ -54,7 +61,8 @@ static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(
 
 static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
 						struct ath6kl_sta *conn,
-						u16 last_txrx_time)
+						u16 last_txrx_time,
+						u32 rx_pkts)
 {
 	struct ap_keepalive_info *ap_keepalive = vif->ap_keepalive_ctx;
 	unsigned long now = jiffies;
@@ -64,7 +72,8 @@ static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
 	spin_lock_bh(&conn->lock);
 	adjust_result = __ap_keepalive_adjust_txrx_time(conn,
 							last_txrx_time,
-							now);
+							now,
+							rx_pkts);
 	if (adjust_result == AP_KA_ADJ_ADJUST) {
 		if ((now - conn->last_txrx_time) >=
 		    msecs_to_jiffies(ap_keepalive->ap_ka_interval))
@@ -77,11 +86,12 @@ static int _ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif,
 	spin_unlock_bh(&conn->lock);
 
 	ath6kl_dbg(ATH6KL_DBG_KEEPALIVE,
-		   "ap_keepalive check (aid %d tgt/hst/now %d %ld %ld %s\n",
+		   "ap_keepalive check (aid %d tgt/hst/now/rx_pkt %d %ld %ld %d %s\n",
 		   conn->aid,
 		   conn->last_txrx_time_tgt,
 		   conn->last_txrx_time,
 		   now,
+		   conn->last_rx_pkts,
 		   (action == AP_KA_ACTION_NONE) ? "NONE" :
 			((action == AP_KA_ACTION_POLL) ? "POLL" : "REMOVE"));
 
@@ -123,7 +133,8 @@ static int ap_keepalive_update_check_txrx_time(struct ath6kl_vif *vif)
 				action = _ap_keepalive_update_check_txrx_time(
 						vif,
 						conn,
-						per_sta_stat->last_txrx_time);
+						per_sta_stat->last_txrx_time,
+						per_sta_stat->rx_pkts);
 
 				if (action == AP_KA_ACTION_POLL) {
 					ath6kl_wmi_ap_poll_sta(ar->wmi,
@@ -464,7 +475,8 @@ static u32 ap_keepalive_get_inactive_time(struct ath6kl_vif *vif,
 			spin_lock_bh(&conn->lock);
 			__ap_keepalive_adjust_txrx_time(conn,
 						per_sta_stat->last_txrx_time,
-						now);
+						now,
+						per_sta_stat->rx_pkts);
 
 			/* get inactive time. */
 			inact_time = jiffies_to_msecs(now -
