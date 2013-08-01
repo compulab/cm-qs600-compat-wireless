@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.435)
+#define __BUILD_VERSION_ (3.5.0.437)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -215,6 +215,21 @@
 #define machine_is_apq8064_bueller() 0
 #endif
 
+/* enable crash dump by defualt */
+#define CONFIG_CRASH_DUMP 1
+#define REG_DUMP_COUNT_AR6004_USB   76
+#define EXTRA_DUMP_MAX (500 + REG_DUMP_COUNT_AR6004_USB * 4)
+#define DELIMITER 0xaaaaaaaa
+#define DUMP_BUF_SIZE 2000
+#define MAX_DUMP_FW_SIZE 18000
+
+#ifdef CONFIG_ANDROID
+#define CRASH_DUMP_FILE "/data/connectivity/ath6kl.log"
+#else
+#define CRASH_DUMP_FILE "/tmp/ath6kl.log"
+#endif
+
+#define GET_INODE_FROM_FILEP(filp) ((filp)->f_path.dentry->d_inode)
 
 /*
  * No good way to support every version of cfg80211.ko so far, especially

@@ -1874,7 +1874,17 @@ static void ath6kl_usb_register_callback(struct ath6kl *ar,
 static u16 ath6kl_usb_get_free_queue_number(struct ath6kl *ar, u8 PipeID)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
-	return device->pipes[PipeID].urb_cnt;
+	struct ath6kl_usb_pipe *pipe = &device->pipes[PipeID];
+
+	if (pipe->urb_cnt_thresh_out) {
+		if (pipe->urb_cnt_thresh_out >
+			(pipe->urb_alloc - pipe->urb_cnt))
+			return pipe->urb_cnt_thresh_out -
+					(pipe->urb_alloc - pipe->urb_cnt);
+		else
+			return 0;
+	} else
+		return pipe->urb_cnt;
 }
 
 static u16 ath6kl_usb_get_max_queue_number(struct ath6kl *ar, u8 PipeID)

@@ -522,8 +522,14 @@ static bool ath6kl_is_wmm_ie(const u8 *pos)
 		pos[5] == 0x02);
 }
 
+static bool ath6kl_is_exteneded_cap_ie(const u8 *pos)
+{
+	return (pos[0] == WLAN_EID_EXT_CAPABILITY &&
+		pos[1] == 4);
+}
+
 static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
-				    size_t ies_len)
+				    size_t ies_len, int has_wmm)
 {
 	struct ath6kl *ar = vif->ar;
 	const u8 *pos;
@@ -549,6 +555,16 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 		while (pos + 1 < ies + ies_len) {
 			if (pos + 2 + pos[1] > ies + ies_len)
 				break;
+
+			/* For compability issue, if AP doesn't supprot WMM,
+				strip the EXTENDED CAPABILITY IE */
+			if (has_wmm == 0) {
+				if (ath6kl_is_exteneded_cap_ie(pos)) {
+					pos += 2 + pos[1];
+					continue;
+				}
+			}
+
 			if (!(ath6kl_is_wpa_ie(pos) ||
 			      ath6kl_is_rsn_ie(pos))) {
 				if ((ath6kl_is_p2p_ie(pos) ||
@@ -570,8 +586,11 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 		}
 	}
 
-	ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
-				       WMI_FRAME_ASSOC_REQ, buf, len);
+	ret = 0;
+	if (len != 0)
+		ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+					       WMI_FRAME_ASSOC_REQ, buf, len);
+
 	kfree(buf);
 	return ret;
 }
@@ -1110,12 +1129,73 @@ static void ath6kl_wep_auth_auto(struct ath6kl_vif *vif)
 	}
 }
 
+static int ath6kl_bss_post_check_wmm_for_candidate_bss(struct ath6kl_vif *vif,
+					char *ssid,
+					int ssid_len)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+	struct bss_info_entry *bss_info, *tmp;
+	u8 *ssid_ie;
+	int has_wmm = 1;
+
+	if ((!post_proc) || (ssid_len == 0) || (ssid == NULL))
+		return 0;
+
+	spin_lock_bh(&post_proc->bss_info_lock);
+
+	list_for_each_entry_safe(bss_info,
+				tmp,
+				&post_proc->bss_info_list,
+				list) {
+		if (time_after(jiffies,
+				bss_info->shoot_time + post_proc->aging_time))
+			continue;
+
+		if (bss_info->len < 24 + 8 + 2 + 2 + 2 + 1)
+			continue;
+
+		BUG_ON(!bss_info->mgmt);
+
+		/* Always assume 1st IE is SSID IE. */
+		ssid_ie = &(bss_info->mgmt->u.beacon.variable[0]);
+		if ((ssid_ie[0] == WLAN_EID_SSID) &&
+		    (ssid_ie[1] == ssid_len) &&
+		    (memcmp(ssid_ie + 2, ssid, ssid_len) == 0)) {
+			bool found = false;
+			u8 *pos = ssid_ie;
+
+			while (pos + 1 < ssid_ie + bss_info->len) {
+				if (pos + 2 + pos[1] > ssid_ie + bss_info->len)
+					break;
+
+				if (ath6kl_is_wmm_ie(pos)) {
+					found = true;
+					break;
+				}
+
+				pos += 2 + pos[1];
+			}
+
+			/* check wheher there is WMM IE */
+			if (found == false) {
+				has_wmm = 0;
+				break;
+			}
+		}
+	}
+
+	spin_unlock_bh(&post_proc->bss_info_lock);
+
+	return has_wmm;
+}
+
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				   struct cfg80211_connect_params *sme)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int status, left;
+	int has_wmm;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -1180,8 +1260,13 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
 		ath6kl_err("set rate_ctrl failed\n");
 
+	has_wmm = ath6kl_bss_post_check_wmm_for_candidate_bss(vif,
+							sme->ssid,
+							sme->ssid_len);
+
 	if (sme->ie && (sme->ie_len > 0)) {
-		status = ath6kl_set_assoc_req_ies(vif, sme->ie, sme->ie_len);
+		status = ath6kl_set_assoc_req_ies(vif, sme->ie, sme->ie_len,
+							has_wmm);
 		if (status) {
 			up(&ar->sem);
 			return status;

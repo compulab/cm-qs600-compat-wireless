@@ -1478,6 +1478,147 @@ _failed:
 	return NULL;
 }
 
+#if CONFIG_CRASH_DUMP
+static int _readwrite_file(const char *filename, char *rbuf,
+	const char *wbuf, size_t length, int mode)
+{
+	int ret = 0;
+	struct file *filp = (struct file *)-ENOENT;
+	mm_segment_t oldfs;
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	do {
+		filp = filp_open(filename, mode, S_IRUSR);
+
+		if (IS_ERR(filp) || !filp->f_op) {
+			ret = -ENOENT;
+			break;
+		}
+
+		if (!filp->f_op->write || !filp->f_op->read) {
+			filp_close(filp, NULL);
+			ret = -ENOENT;
+			break;
+		}
+
+		if (length == 0) {
+			/* Read the length of the file only */
+			struct inode    *inode;
+
+			inode = GET_INODE_FROM_FILEP(filp);
+			if (!inode) {
+				printk(KERN_ERR
+					"_readwrite_file: Error 2\n");
+				ret = -ENOENT;
+				break;
+			}
+			ret = i_size_read(inode->i_mapping->host);
+			break;
+		}
+
+		if (wbuf) {
+			ret = filp->f_op->write(
+				filp, wbuf, length, &filp->f_pos);
+			if (ret < 0) {
+				printk(KERN_ERR
+					"_readwrite_file: Error 3\n");
+				break;
+			}
+		} else {
+			ret = filp->f_op->read(
+				filp, rbuf, length, &filp->f_pos);
+			if (ret < 0) {
+				printk(KERN_ERR
+					"_readwrite_file: Error 4\n");
+				break;
+			}
+		}
+	} while (0);
+
+	if (!IS_ERR(filp))
+		filp_close(filp, NULL);
+
+	set_fs(oldfs);
+
+	return ret;
+}
+
+static int check_size(void)
+{
+	int status = 0, size = 0;
+	size = _readwrite_file(CRASH_DUMP_FILE, NULL, NULL, 0, O_RDONLY);
+
+	if (size > (MAX_DUMP_FW_SIZE - DUMP_BUF_SIZE)) {
+
+		ath6kl_info("clean big log 0x%x\n", size);
+		status = _readwrite_file(CRASH_DUMP_FILE, NULL, NULL,
+			0, (O_WRONLY | O_TRUNC));
+	}
+
+	return status;
+}
+
+static int dump_fw_crash_to_file(u8 *netdata)
+{
+	char *buf;
+	unsigned int len = 0, buf_len = DUMP_BUF_SIZE;
+	int i;
+	int status = 0;
+
+	status = check_size();
+	if (status)
+		ath6kl_info("crash log file check status code 0x%x\n", status);
+
+	buf = kmalloc(buf_len, GFP_ATOMIC);
+
+	if (buf == NULL)
+		return -ENOMEM;
+
+	memset(buf, 0, buf_len);
+
+	len += scnprintf(buf + len, buf_len - len,
+			"\n++++++++++crash log sart+++++++++++\n");
+
+		for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
+			len += scnprintf(buf + len, buf_len - len,
+				"%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
+				be32_to_cpu(*(u32 *)(netdata+i)),
+				be32_to_cpu(*(u32 *)(netdata+i + 4)),
+				be32_to_cpu(*(u32 *)(netdata+i + 8)),
+				be32_to_cpu(*(u32 *)(netdata+i + 12)));
+		}
+
+		for (; i < EXTRA_DUMP_MAX; i += 16) {
+
+			if ((*(u32 *)(netdata+i) == DELIMITER) ||
+				((*(u32 *)(netdata+i) == 0)))
+				break;
+
+			len += scnprintf(buf + len, buf_len - len,
+				"%d: 0x%08x 0x%08x "
+				"0x%08x 0x%08x\n", i/4,
+				be32_to_cpu(*(u32 *)(netdata+i)),
+				be32_to_cpu(*(u32 *)(netdata+i + 4)),
+				be32_to_cpu(*(u32 *)(netdata+i + 8)),
+				be32_to_cpu(*(u32 *)(netdata+i + 12)));
+		}
+	len += scnprintf(buf + len, buf_len - len,
+			"----------crash log end-------------\n");
+
+	status = _readwrite_file(CRASH_DUMP_FILE, NULL,
+			buf, len, (O_WRONLY | O_APPEND | O_CREAT));
+	if (status < 0)
+		ath6kl_info("write failed with status code 0x%x\n", status);
+
+	kfree(buf);
+	return status;
+}
+
+
+#endif
+
+
 static int htc_rx_completion(struct htc_target *context,
 				struct sk_buff *netbuf, u8 pipeid)
 {
@@ -1491,7 +1632,6 @@ static int htc_rx_completion(struct htc_target *context,
 	struct htc_packet *packet;
 	u16 payload_len;
 	u32 trailerlen = 0;
-
 	int i;
 
 	static u32 assert_pattern = cpu_to_be32(0x0000c600);
@@ -1519,23 +1659,22 @@ static int htc_rx_completion(struct htc_target *context,
 	netdata = netbuf->data;
 	netlen = netbuf->len;
 
-#define CONFIG_CRASH_DUMP 1
 #if CONFIG_CRASH_DUMP
 	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
 
-#define REG_DUMP_COUNT_AR6004   76
 		netdata += 4;
 
+		dump_fw_crash_to_file(netdata);
+
 		ath6kl_info("Firmware crash detected...\n");
-		for (i = 0; i < REG_DUMP_COUNT_AR6004 * 4; i += 16) {
+		for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
 			ath6kl_info("%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
 				be32_to_cpu(*(u32 *)(netdata+i)),
 				be32_to_cpu(*(u32 *)(netdata+i + 4)),
 				be32_to_cpu(*(u32 *)(netdata+i + 8)),
 				be32_to_cpu(*(u32 *)(netdata+i + 12)));
 		}
-#define EXTRA_DUMP_MAX (500 + REG_DUMP_COUNT_AR6004 * 4)
-#define DELIMITER 0xaaaaaaaa
+
 		for (; i < EXTRA_DUMP_MAX; i += 16) {
 
 			if ((*(u32 *)(netdata+i) == DELIMITER) ||
@@ -1556,9 +1695,6 @@ static int htc_rx_completion(struct htc_target *context,
 
 		goto free_netbuf;
 	}
-#undef REG_DUMP_COUNT_AR6004
-#undef EXTRA_DUMP_MAX
-#undef DELIMITER
 #endif
 
 	htc_hdr = (struct htc_frame_hdr *)netdata;
