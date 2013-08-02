@@ -2970,6 +2970,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 	struct net_device *ndev;
 	int ret = 0, i;
 
+#ifdef CONFIG_ANDROID
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller()) {
+		mdelay(400);
+	}
+#endif
+
 	ar->ath6kl_wq = create_singlethread_workqueue("ath6kl");
 	if (!ar->ath6kl_wq)
 		return -ENOMEM;
