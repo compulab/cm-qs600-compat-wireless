@@ -496,7 +496,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	u32 map_no = 0;
 	u16 htc_tag = ATH6KL_DATA_PKT_TAG;
 	u8 ac = 99 ; /* initialize to unmapped ac */
-	bool chk_adhoc_ps_mapping = false;
+	bool cookie_run_out, chk_adhoc_ps_mapping = false;
 	u32 wmi_data_flags = 0;
 	int ret, aggr_tx_status = AGGR_TX_UNKNOW;
 	struct ath6kl_sta *conn = NULL;
@@ -653,31 +653,39 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
+	cookie_run_out = false;
 	if (htc_tag == ATH6KL_DATA_PKT_TAG) {
 		if (test_bit(MCC_ENABLED, &ar->flag)) {
 			if (vif->data_cookie_count <= MAX_VIF_COOKIE_NUM) {
 				cookie = ath6kl_alloc_cookie(ar,
 					COOKIE_TYPE_DATA);
 			}
-		} else
-			cookie = ath6kl_alloc_cookie(ar,
-				COOKIE_TYPE_DATA);
+		} else {
+			cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
+			cookie_run_out = ath6kl_cookie_is_almost_full(ar,
+							COOKIE_TYPE_DATA);
+		}
+		if (cookie)
+			vif->data_cookie_count++;
 	} else
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
-	if (!cookie) {
-		spin_unlock_bh(&ar->lock);
-		goto fail_tx;
+	/* update counts while the lock is held */
+	if (cookie) {
+		ar->tx_pending[eid]++;
+		ar->total_tx_data_pend++;
 	}
 
-	if (htc_tag == ATH6KL_DATA_PKT_TAG)
-		vif->data_cookie_count++;
-
-	/* update counts while the lock is held */
-	ar->tx_pending[eid]++;
-	ar->total_tx_data_pend++;
-
 	spin_unlock_bh(&ar->lock);
+
+	/* CR495283 */
+	if ((cookie_run_out) &&
+	    (ar->ac_stream_active_num <= 1) &&
+	    (!test_and_set_bit(NETQ_STOPPED, &vif->flags)))
+		netif_stop_queue(vif->ndev);
+
+	if (!cookie)
+		goto fail_tx;
 
 	if (!IS_ALIGNED((unsigned long) skb->data - HTC_HDR_LENGTH, 4) &&
 	    skb_cloned(skb)) {
