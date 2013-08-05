@@ -290,6 +290,13 @@ static inline int ath6kl_hif_auto_pm_get_usage_cnt(struct ath6kl *ar)
 
 	return ar->hif_ops->auto_pm_get_usage_cnt(ar);
 }
+
+static inline void ath6kl_hif_auto_pm_set_delay(struct ath6kl *ar, int delay)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_set_delay\n");
+
+	ar->hif_ops->auto_pm_set_delay(ar, delay);
+}
 #endif
 
 static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,

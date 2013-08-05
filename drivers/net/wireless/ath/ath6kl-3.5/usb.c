@@ -1648,7 +1648,20 @@ fail_hif_send_usb:
 	ath6kl_dbg(ATH6KL_DBG_USB, "wakeup_resume done\n");
 }
 
+void usb_auto_pm_set_delay(struct ath6kl *ar, int delay)
+{
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+	struct usb_device *udev = device->udev;
 
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
+		return;
+
+	/* If the the delay is too small or too large, skip the update */
+	if (delay < 0 || delay > USB_SUSPEND_DELAY_MAX)
+		return;
+
+	pm_runtime_set_autosuspend_delay(&udev->dev, delay);
+}
 
 #endif /* USB_AUTO_SUSPEND */
 
@@ -2314,7 +2327,8 @@ static void ath6kl_usb_early_suspend(struct ath6kl *ar)
 			ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND)) {
 		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
 			struct usb_device *udev = device->udev;
-			pm_runtime_set_autosuspend_delay(&udev->dev, 2000);
+			pm_runtime_set_autosuspend_delay(&udev->dev,
+				USB_SUSPEND_DELAY_MAX);
 		}
 		usb_enable_autosuspend(device->udev);
 	}
@@ -2477,6 +2491,7 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.auto_pm_turnon = usb_auto_pm_turnon,
 	.auto_pm_turnoff = usb_auto_pm_turnoff,
 	.auto_pm_get_usage_cnt = usb_debugfs_get_pm_usage_cnt,
+	.auto_pm_set_delay = usb_auto_pm_set_delay,
 #endif
 	.pipe_set_rxq_threshold = ath6kl_usb_set_rxq_threshold,
 #ifdef ATH6KL_HSIC_RECOVER
@@ -2575,13 +2590,16 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 #ifdef USB_AUTO_SUSPEND
 	spin_lock_init(&ar->usb_pm_lock);
 	INIT_LIST_HEAD(&ar->usb_pm_skb_queue.list);
-	pm_runtime_set_autosuspend_delay(&dev->dev, 2000);
+	pm_runtime_set_autosuspend_delay(&dev->dev,
+		USB_SUSPEND_DELAY_MAX);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM) &&
 		!(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_ENABLE) ||
 		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING))) {
 			usb_enable_autosuspend(dev);
 	}
 	ar->auto_pm_cnt = 0;
+	ar->autopm_turn_on = 1;
+	ar->autopm_defer_delay_change_cnt = 0;
 #endif
 	ath6kl_htc_pipe_attach(ar);
 	ret = ath6kl_core_init(ar);
@@ -2713,6 +2731,15 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 	}
 
 	ath6kl_cfg80211_resume(ar);
+
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_defer_delay_change_cnt > 0) {
+		if (--ar->autopm_defer_delay_change_cnt == 0) {
+			usb_auto_pm_set_delay(ar,
+				USB_SUSPEND_DELAY_MIN);
+		}
+	}
+#endif
 
 	return 0;
 }

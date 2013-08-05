@@ -1047,6 +1047,27 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
 	return;
 }
 
+bool ath6kl_cookie_is_almost_full(struct ath6kl *ar,
+	enum cookie_type cookie_type)
+{
+	struct ath6kl_cookie_pool *cookie_pool;
+	bool almost_full;
+
+	if (cookie_type == COOKIE_TYPE_DATA)
+		cookie_pool = &ar->cookie_data;
+	else if (cookie_type == COOKIE_TYPE_CTRL)
+		cookie_pool = &ar->cookie_ctrl;
+	else
+		BUG_ON(1);
+
+	if (cookie_pool->cookie_count < MAX_RESV_COOKIE_NUM)
+		almost_full = true;
+	else
+		almost_full = false;
+
+	return almost_full;
+}
+
 int ath6kl_diag_warm_reset(struct ath6kl *ar)
 {
 	int ret;

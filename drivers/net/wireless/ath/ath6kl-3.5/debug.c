@@ -3052,11 +3052,12 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-#define _BUF_SIZE	(8192)
+#define _BUF_SIZE	(10240)
 	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
 	struct ath6kl_cookie_pool *cookie_pool;
 	u8 *buf;
-	unsigned int len = 0;
+	unsigned int i, len = 0;
 	ssize_t ret_cnt;
 
 	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
@@ -3084,6 +3085,98 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 			cookie_pool->cookie_free_cnt,
 			cookie_pool->cookie_peak_cnt);
 
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			"AR : flag 0x%08lx\n",
+			ar->flag);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			" total_tx_data_pend %d\n",
+			ar->total_tx_data_pend);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			" ac_stream_active_num %d\n",
+			ar->ac_stream_active_num);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			" hiac_stream_active_pri %d\n",
+			ar->hiac_stream_active_pri);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			" ac_stream_active %d/%d/%d/%d\n",
+			ar->ac_stream_active[0],
+			ar->ac_stream_active[1],
+			ar->ac_stream_active[2],
+			ar->ac_stream_active[3]);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			" tx_on_vif %d\n",
+			ar->tx_on_vif);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+			" tx_pending %d/%d/%d/%d/%d/%d\n",
+			ar->tx_pending[0],
+			ar->tx_pending[1],
+			ar->tx_pending[2],
+			ar->tx_pending[3],
+			ar->tx_pending[4],
+			ar->tx_pending[5]);
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if (vif) {
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				"VIF-%d : flags 0x%08lx\n",
+				i,
+				vif->flags);
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				" data_cookie_count %d\n",
+				vif->data_cookie_count);
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+			" TX pkt %ld byte %ld err %ld drop %ld abort %ld\n",
+				vif->net_stats.tx_packets,
+				vif->net_stats.tx_bytes,
+				vif->net_stats.tx_errors,
+				vif->net_stats.tx_dropped,
+				vif->net_stats.tx_aborted_errors);
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+			" RX pkt %ld byte %ld err %ld drop %ld len_err %ld\n",
+				vif->net_stats.rx_packets,
+				vif->net_stats.rx_bytes,
+				vif->net_stats.rx_errors,
+				vif->net_stats.rx_dropped,
+				vif->net_stats.rx_length_errors);
+		}
+	}
+
+	if (ar->wmi) {
+		struct wmi_stat *stat = &(ar->wmi->stat);
+
+		len += scnprintf(buf + len, _BUF_SIZE - len,
+				"WMI :\n");
+		len += scnprintf(buf + len, _BUF_SIZE - len,
+				" tx_cmd %d tx_cmd_fail %d rx_evt %d\n",
+				stat->tx_cmd_cnt,
+				stat->tx_cmd_fail_cnt,
+				stat->rx_evt_cnt);
+		len += scnprintf(buf + len, _BUF_SIZE - len,
+				" conn %d disconnect %d\n",
+				stat->conn_cnt,
+				stat->disconn_cnt);
+		len += scnprintf(buf + len, _BUF_SIZE - len,
+				" scan %d scan_abort %d\n",
+				stat->scan_cnt,
+				stat->scan_abort_cnt);
+		len += scnprintf(buf + len, _BUF_SIZE - len,
+				" roc %d roc_cancel %d\n",
+				stat->roc_cnt,
+				stat->roc_cancel_cnt);
+		for (i = 0; i < WMI_STAT_MAX_REC; i++)
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				" last_cmd 0x%08x %s\n",
+				stat->last_tx_cmd[i],
+				((stat->tx_cmd_cnt &
+				 (WMI_STAT_MAX_REC - 1)) == i) ? "->" : "");
+		for (i = 0; i < WMI_STAT_MAX_REC; i++)
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				" last_evt 0x%08x %s\n",
+				stat->last_rx_evt[i],
+				((stat->rx_evt_cnt &
+				 (WMI_STAT_MAX_REC - 1)) == i) ? "<-" : "");
+	}
 
 	len += ath6kl_htc_stat(ar->htc_target, buf + len, _BUF_SIZE - len);
 

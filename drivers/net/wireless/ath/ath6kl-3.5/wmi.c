@@ -2378,9 +2378,15 @@ int ath6kl_wmi_cmd_send(struct wmi *wmi, u8 if_idx, struct sk_buff *skb,
 	}
 
 	ret = ath6kl_control_tx(wmi->parent_dev, skb, ep_id);
-	if (ret)
+
+	wmi->stat.last_tx_cmd[wmi->stat.tx_cmd_cnt &
+				(WMI_STAT_MAX_REC - 1)] = cmd_id;
+	wmi->stat.tx_cmd_cnt++;
+	if (ret) {
+		wmi->stat.tx_cmd_fail_cnt++;
 		ath6kl_err("wmi fail, cmd_id 0x%x ep_id %d if_idx %d\n",
 				cmd_id, ep_id, if_idx);
+	}
 
 	if ((sync_flag == SYNC_AFTER_WMIFLAG) ||
 	    (sync_flag == SYNC_BOTH_WMIFLAG)) {
@@ -2446,6 +2452,7 @@ int ath6kl_wmi_connect_cmd(struct wmi *wmi, u8 if_idx,
 	if (bssid != NULL)
 		memcpy(cc->bssid, bssid, ETH_ALEN);
 
+	wmi->stat.conn_cnt++;
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_CONNECT_CMDID,
 				  NO_SYNC_WMIFLAG);
 
@@ -2487,6 +2494,8 @@ int ath6kl_wmi_disconnect_cmd(struct wmi *wmi, u8 if_idx)
 	ath6kl_dbg(ATH6KL_DBG_WMI, "wmi disconnect\n");
 
 	wmi->traffic_class = 100;
+
+	wmi->stat.disconn_cnt++;
 
 	/* Disconnect command does not need to do a SYNC before. */
 	ret = ath6kl_wmi_simple_cmd(wmi, if_idx, WMI_DISCONNECT_CMDID);
@@ -2539,6 +2548,7 @@ int ath6kl_wmi_startscan_cmd(struct wmi *wmi, u8 if_idx,
 	for (i = 0; i < num_chan; i++)
 		sc->ch_list[i] = cpu_to_le16(ch_list[i]);
 
+	wmi->stat.scan_cnt++;
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_START_SCAN_CMDID,
 				  NO_SYNC_WMIFLAG);
 
@@ -3949,6 +3959,9 @@ int ath6kl_wmi_remain_on_chnl_cmd(struct wmi *wmi, u8 if_idx, u32 freq, u32 dur)
 	p = (struct wmi_remain_on_chnl_cmd *) skb->data;
 	p->freq = cpu_to_le32(freq);
 	p->duration = cpu_to_le32(dur);
+
+	wmi->stat.roc_cnt++;
+
 	return ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_REMAIN_ON_CHNL_CMDID,
 				   NO_SYNC_WMIFLAG);
 }
@@ -4176,6 +4189,9 @@ int ath6kl_wmi_cancel_remain_on_chnl_cmd(struct wmi *wmi, u8 if_idx)
 {
 	ath6kl_dbg(ATH6KL_DBG_WMI | ATH6KL_DBG_EXT_ROC,
 		"cancel_remain_on_chnl_cmd\n");
+
+	wmi->stat.roc_cancel_cnt++;
+
 	return ath6kl_wmi_simple_cmd(wmi, if_idx,
 				     WMI_CANCEL_REMAIN_ON_CHNL_CMDID);
 }
@@ -4492,6 +4508,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ath6kl_err("ath6kl_wmi_control_rx busy, couldn't get access\n");
 		return -ERESTARTSYS;
 	}
+
+	wmi->stat.last_rx_evt[wmi->stat.rx_evt_cnt &
+				(WMI_STAT_MAX_REC - 1)] = id;
+	wmi->stat.rx_evt_cnt++;
 
 	switch (id) {
 	case WMI_GET_BITRATE_CMDID:
@@ -5041,6 +5061,8 @@ int ath6kl_wmi_abort_scan_cmd(struct wmi *wmi, u8 if_idx)
 {
 	ath6kl_dbg(ATH6KL_DBG_WMI | ATH6KL_DBG_EXT_SCAN,
 		"abort_scan_cmd, if_idx %d\n", if_idx);
+
+	wmi->stat.scan_abort_cnt++;
 
 	return ath6kl_wmi_simple_cmd(wmi, if_idx, WMI_ABORT_SCAN_CMDID);
 }
