@@ -1230,6 +1230,14 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		return -ERESTARTSYS;
 	}
 
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_turn_on) {
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
+		ar->autopm_defer_delay_change_cnt =
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+	}
+#endif
+
 	vif->sme_state = SME_CONNECTING;
 
 	if (ar->tx_pending[ath6kl_wmi_get_control_ep(ar->wmi)]) {
