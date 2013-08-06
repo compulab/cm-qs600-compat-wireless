@@ -1657,7 +1657,7 @@ struct wmi_mcast_filter_add_del_cmd {
 #define WMI_HTCAP_RX_STBC_2SS		BIT(3)
 #define WMI_HTCAP_RX_STBC_3SS		BIT(4)
 #define WMI_HTCAP_TX_STBC		BIT(5)
-
+#define WMI_REQUIRE_HT			BIT(7)
 struct wmi_set_htcap_cmd {
 	u8 band;
 	u8 ht_enable;
