@@ -796,7 +796,7 @@ static void switch_tid_rx_timeout(
 }
 
 #ifdef USB_AUTO_SUSPEND
-void ath6kl_check_autopm_onoff(struct ath6kl *ar)
+void ath6kl_check_autopm_onoff(struct ath6kl *ar, bool call_on_disconnect)
 {
 	struct ath6kl_vif *vif_temp;
 	/*
@@ -820,10 +820,23 @@ void ath6kl_check_autopm_onoff(struct ath6kl *ar)
 			}
 		}
 	}
-	if (autopm_turn_on)
+
+	if (autopm_turn_on) {
 		ath6kl_hif_auto_pm_turnon(ar);
-	else
+		if (call_on_disconnect) {
+			ath6kl_hif_auto_pm_set_delay(ar,
+				USB_SUSPEND_DELAY_REENABLE);
+			ar->autopm_defer_delay_change_cnt =
+				USB_SUSPEND_DEFER_DELAY_CHANGE_CNT;
+		}
+	} else {
 		ath6kl_hif_auto_pm_turnoff(ar);
+		ath6kl_hif_auto_pm_set_delay(ar,
+			USB_SUSPEND_DELAY_MAX);
+		ar->autopm_defer_delay_change_cnt = 0;
+	}
+
+	ar->autopm_turn_on = autopm_turn_on;
 }
 #endif
 
@@ -951,7 +964,7 @@ void ath6kl_switch_parameter_based_on_connection(
 	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect);
 
 #ifdef USB_AUTO_SUSPEND
-	ath6kl_check_autopm_onoff(ar);
+	ath6kl_check_autopm_onoff(ar, call_on_disconnect);
 #endif /* USB_AUTO_SUSPEND */
 }
 
@@ -1216,6 +1229,14 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		ath6kl_err("busy, couldn't get access\n");
 		return -ERESTARTSYS;
 	}
+
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_turn_on) {
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
+		ar->autopm_defer_delay_change_cnt =
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+	}
+#endif
 
 	vif->sme_state = SME_CONNECTING;
 
@@ -1698,6 +1719,14 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 		cfg80211_roamed_bss(vif->ndev, bss, assoc_req_ie, assoc_req_len,
 				assoc_resp_ie, assoc_resp_len, GFP_KERNEL);
 	}
+
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_turn_on) {
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_CONNECTED);
+		ar->autopm_defer_delay_change_cnt =
+			USB_SUSPEND_DEFER_DELAY_CHANGE_CNT;
+	}
+#endif
 }
 
 static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
@@ -1733,6 +1762,13 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	up(&ar->sem);
 
 	vif->sme_state = SME_DISCONNECTED;
+
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_turn_on) {
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
+		ar->autopm_defer_delay_change_cnt = 0;
+	}
+#endif
 
 	/*
 	 * To avoid race condition between driver and supplicant, waiting
@@ -5463,6 +5499,14 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 		return -ERESTARTSYS;
 	}
 
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_turn_on) {
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
+		ar->autopm_defer_delay_change_cnt =
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+	}
+#endif
+
 	/* If already ongoing scan then wait it finish. */
 	if (vif->scan_req) {
 		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
@@ -5556,6 +5600,14 @@ static int _ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 		ath6kl_err("busy, couldn't get access\n");
 		return -ERESTARTSYS;
 	}
+
+#ifdef USB_AUTO_SUSPEND
+	if (ar->autopm_turn_on) {
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
+		ar->autopm_defer_delay_change_cnt =
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+	}
+#endif
 
 	/*
 	 * RoC not yet start but be cancelled. Wait it started then cancel

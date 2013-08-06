@@ -119,6 +119,23 @@ struct wmi_mgmt_tx_frame {
 
 #define WMI_VOICE_USER_PRIORITY    0x7
 
+struct wmi_stat {
+#define WMI_STAT_MAX_REC	(1 << 3)
+	u32 tx_cmd_cnt;
+	u32 tx_cmd_fail_cnt;
+	u32 rx_evt_cnt;
+	u32 last_tx_cmd[WMI_STAT_MAX_REC];
+	u32 last_rx_evt[WMI_STAT_MAX_REC];
+
+	/* count some important WMI command */
+	u32 scan_cnt;
+	u32 scan_abort_cnt;
+	u32 roc_cnt;
+	u32 roc_cancel_cnt;
+	u32 conn_cnt;
+	u32 disconn_cnt;
+};
+
 struct wmi {
 	u16 stream_exist_for_ac[WMM_NUM_AC];
 	u8 fat_pipe_exist;
@@ -133,6 +150,8 @@ struct wmi {
 	bool is_probe_ssid;
 
 	struct list_head mgmt_tx_frame_list;
+
+	struct wmi_stat stat;
 };
 
 struct host_app_area {
@@ -1698,7 +1717,7 @@ enum wmi_bi_ftype {
 
 #define DEF_SCAN_FOR_ROAM_INTVL			2
 #define WMI_ROAM_LRSSI_SCAN_PERIOD		(15 * 1000)	/* secs */
-#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	29	/* rssi */
+#define WMI_ROAM_LRSSI_ROAM_THRESHOLD	20	/* rssi */
 #define WMI_ROAM_LRSSI_SCAN_THRESHOLD (WMI_ROAM_LRSSI_ROAM_THRESHOLD + \
 	DEF_SCAN_FOR_ROAM_INTVL)	/* rssi */
 #define WMI_ROAM_LRSSI_ROAM_FLOOR		60	/* rssi */

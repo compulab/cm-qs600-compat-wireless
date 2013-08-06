@@ -294,6 +294,7 @@ struct ath6kl_hif_ops {
 	void (*auto_pm_enable)(struct ath6kl *ar);
 	void (*auto_pm_turnon)(struct ath6kl *ar);
 	void (*auto_pm_turnoff)(struct ath6kl *ar);
+	void (*auto_pm_set_delay)(struct ath6kl *ar, int delay);
 #endif
 	int (*pipe_set_rxq_threshold)(struct ath6kl *ar, u32 rxq_threshold);
 #ifdef ATH6KL_HSIC_RECOVER
