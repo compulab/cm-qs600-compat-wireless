@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.443)
+#define __BUILD_VERSION_ (3.5.0.446)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -344,6 +344,7 @@
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 #define MAX_COOKIE_CTRL_NUM	(64 + 2)
+#define MAX_COOKIE_FAIL_IN_ROW		  20
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL MAX_COOKIE_CTRL_NUM
@@ -983,6 +984,9 @@ struct ath6kl_cookie_pool {
 	u32 cookie_alloc_fail_cnt;
 	u32 cookie_free_cnt;
 	u32 cookie_peak_cnt;
+
+	/* recover */
+	u32 cookie_fail_in_row;
 };
 
 struct ath6kl_ps_buf_desc {
@@ -2093,6 +2097,8 @@ void ath6kl_sdio_exit_msm(void);
 int ath6kl_hsic_init_msm(u8 *has_vreg);
 void ath6kl_hsic_exit_msm(void);
 int ath6kl_hsic_bind(int bind);
+typedef void (*enumeration_war_func_t)(void);
+extern int msm_hsic_register_enum_war_handler(enumeration_war_func_t func);
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER

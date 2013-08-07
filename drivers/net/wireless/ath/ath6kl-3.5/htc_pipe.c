@@ -1559,7 +1559,7 @@ static int check_size(void)
 	return status;
 }
 
-static int dump_fw_crash_to_file(u8 *netdata)
+static int dump_fw_crash_to_file(struct htc_target *target, u8 *netdata)
 {
 	char *buf;
 	unsigned int len = 0, buf_len = DUMP_BUF_SIZE;
@@ -1577,32 +1577,37 @@ static int dump_fw_crash_to_file(u8 *netdata)
 
 	memset(buf, 0, buf_len);
 
+	len = snprintf(buf + len, buf_len - len, "Drv ver %s\n",
+		DRV_VERSION);
+	len += snprintf(buf + len, buf_len - len, "FW ver %s\n",
+		target->dev->ar->wiphy->fw_version);
+
 	len += scnprintf(buf + len, buf_len - len,
-			"\n++++++++++crash log sart+++++++++++\n");
+		"\n++++++++++crash log sart+++++++++++\n");
 
-		for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
-			len += scnprintf(buf + len, buf_len - len,
-				"%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
-				be32_to_cpu(*(u32 *)(netdata+i)),
-				be32_to_cpu(*(u32 *)(netdata+i + 4)),
-				be32_to_cpu(*(u32 *)(netdata+i + 8)),
-				be32_to_cpu(*(u32 *)(netdata+i + 12)));
-		}
+	for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
+		len += scnprintf(buf + len, buf_len - len,
+			"%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
+			be32_to_cpu(*(u32 *)(netdata+i)),
+			be32_to_cpu(*(u32 *)(netdata+i + 4)),
+			be32_to_cpu(*(u32 *)(netdata+i + 8)),
+			be32_to_cpu(*(u32 *)(netdata+i + 12)));
+	}
 
-		for (; i < EXTRA_DUMP_MAX; i += 16) {
+	for (; i < EXTRA_DUMP_MAX; i += 16) {
 
-			if ((*(u32 *)(netdata+i) == DELIMITER) ||
-				((*(u32 *)(netdata+i) == 0)))
-				break;
+		if ((*(u32 *)(netdata+i) == DELIMITER) ||
+			((*(u32 *)(netdata+i) == 0)))
+			break;
 
-			len += scnprintf(buf + len, buf_len - len,
-				"%d: 0x%08x 0x%08x "
-				"0x%08x 0x%08x\n", i/4,
-				be32_to_cpu(*(u32 *)(netdata+i)),
-				be32_to_cpu(*(u32 *)(netdata+i + 4)),
-				be32_to_cpu(*(u32 *)(netdata+i + 8)),
-				be32_to_cpu(*(u32 *)(netdata+i + 12)));
-		}
+		len += scnprintf(buf + len, buf_len - len,
+			"%d: 0x%08x 0x%08x "
+			"0x%08x 0x%08x\n", i/4,
+			be32_to_cpu(*(u32 *)(netdata+i)),
+			be32_to_cpu(*(u32 *)(netdata+i + 4)),
+			be32_to_cpu(*(u32 *)(netdata+i + 8)),
+			be32_to_cpu(*(u32 *)(netdata+i + 12)));
+	}
 	len += scnprintf(buf + len, buf_len - len,
 			"----------crash log end-------------\n");
 
@@ -1664,9 +1669,13 @@ static int htc_rx_completion(struct htc_target *context,
 
 		netdata += 4;
 
-		dump_fw_crash_to_file(netdata);
+		dump_fw_crash_to_file(target, netdata);
 
 		ath6kl_info("Firmware crash detected...\n");
+		ath6kl_info("Driver version %s\n", DRV_VERSION);
+		ath6kl_info("Firmware version %s\n",
+					target->dev->ar->wiphy->fw_version);
+
 		for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
 			ath6kl_info("%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
 				be32_to_cpu(*(u32 *)(netdata+i)),

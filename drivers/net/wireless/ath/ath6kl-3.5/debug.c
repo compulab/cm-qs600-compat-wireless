@@ -3067,23 +3067,27 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 	/* HTC cookie stats */
 	cookie_pool = &ar->cookie_data;
 	len += scnprintf(buf + len, _BUF_SIZE - len,
-			"DATA Cookie : num %d avail %d, alloc %d fail %d free %d peak %d\n",
+			"DATA Cookie : num %d avail %d, alloc %d"
+			"fail %d free %d peak %d failinrow %d\n",
 			cookie_pool->cookie_num,
 			cookie_pool->cookie_count,
 			cookie_pool->cookie_alloc_cnt,
 			cookie_pool->cookie_alloc_fail_cnt,
 			cookie_pool->cookie_free_cnt,
-			cookie_pool->cookie_peak_cnt);
+			cookie_pool->cookie_peak_cnt,
+			cookie_pool->cookie_fail_in_row);
 
 	cookie_pool = &ar->cookie_ctrl;
 	len += scnprintf(buf + len, _BUF_SIZE - len,
-			"CTRL Cookie : num %d avail %d, alloc %d fail %d free %d peak %d\n",
+			"CTRL Cookie : num %d avail %d, alloc %d"
+			"fail %d free %d peak %d failinrow %d\n",
 			cookie_pool->cookie_num,
 			cookie_pool->cookie_count,
 			cookie_pool->cookie_alloc_cnt,
 			cookie_pool->cookie_alloc_fail_cnt,
 			cookie_pool->cookie_free_cnt,
-			cookie_pool->cookie_peak_cnt);
+			cookie_pool->cookie_peak_cnt,
+			cookie_pool->cookie_fail_in_row);
 
 	len += scnprintf(buf + len, _BUF_SIZE - len,
 			"AR : flag 0x%08lx\n",
