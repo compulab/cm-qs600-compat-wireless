@@ -37,7 +37,7 @@ include $(DLKM_DIR)/AndroidKernelModule.mk
 include $(CLEAR_VARS)
 LOCAL_MODULE             := alx.ko
 LOCAL_MODULE_KBUILD_NAME := eth.ko
-LOCAL_MODULE_TAGS        := debug
+LOCAL_MODULE_TAGS        := optional debug
 LOCAL_MODULE_PATH        := $(TARGET_OUT)/lib/modules/alx
 include $(DLKM_DIR)/AndroidKernelModule.mk
 
@@ -79,7 +79,7 @@ endif
 
 include $(CLEAR_VARS)
 LOCAL_MODULE             := ath6kl_usb.ko
-LOCAL_MODULE_TAGS        := debug
+LOCAL_MODULE_TAGS        := optional debug
 LOCAL_MODULE_KBUILD_NAME := wlan.ko
 LOCAL_MODULE_PATH        := $(TARGET_OUT)/lib/modules/ath6kl-3.5
 include $(DLKM_DIR)/AndroidKernelModule.mk
