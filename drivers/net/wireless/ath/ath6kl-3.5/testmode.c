@@ -253,8 +253,10 @@ struct wlan_hb_params {
 		struct {
 			u32 srv_ip;
 			u32 dev_ip;
+			u32 seq;
 			u16 src_port;
 			u16 dst_port;
+			u16 interval;
 			u16 timeout;
 			u8 session;
 			u8 gateway_mac[ETH_ALEN];
@@ -496,6 +498,8 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 				hb_params->params.tcp_params.dst_port,
 				hb_params->params.tcp_params.srv_ip,
 				hb_params->params.tcp_params.dev_ip,
+				hb_params->params.tcp_params.seq,
+				hb_params->params.udp_params.interval,
 				hb_params->params.tcp_params.timeout,
 				hb_params->params.tcp_params.session,
 				hb_params->params.tcp_params.gateway_mac)) {

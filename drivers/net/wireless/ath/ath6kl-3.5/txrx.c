@@ -447,6 +447,14 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 
 	if (cookie == NULL) {
 		spin_unlock_bh(&ar->lock);
+		if (ar->cookie_ctrl.cookie_fail_in_row >
+				MAX_COOKIE_FAIL_IN_ROW) {
+			ath6kl_err("control cookie fail %d time reset!\n",
+				ar->cookie_ctrl.cookie_fail_in_row);
+			ar->cookie_ctrl.cookie_fail_in_row = 0;
+			ath6kl_reset_device(ar, ar->target_type, true, true);
+			ath6kl_fw_crash_trap(ar);
+		}
 		status = -ENOMEM;
 		goto fail_ctrl_tx;
 	}
@@ -674,6 +682,9 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	if (cookie) {
 		ar->tx_pending[eid]++;
 		ar->total_tx_data_pend++;
+		ar->cookie_data.cookie_fail_in_row = 0;
+	} else {
+		ar->cookie_data.cookie_fail_in_row++;
 	}
 
 	spin_unlock_bh(&ar->lock);
@@ -904,6 +915,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		spin_unlock_bh(&ar->lock);
 		ath6kl_err("wmi ctrl ep is full\n");
+		ath6kl_reset_device(ar, ar->target_type, true, true);
 		ath6kl_fw_crash_trap(ar);
 		return action;
 	}

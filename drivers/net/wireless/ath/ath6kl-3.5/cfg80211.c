@@ -4385,7 +4385,10 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 #endif
 		ret = ath6kl_cfg80211_deepsleep_suspend(ar);
 		if (ret) {
-			ath6kl_err("deepsleep suspend failed: %d\n", ret);
+			if (ret != -ENOTSUPP)
+				ath6kl_err("deepsleep suspend failed:"
+				" %d\n", ret);
+
 			return ret;
 		}
 
