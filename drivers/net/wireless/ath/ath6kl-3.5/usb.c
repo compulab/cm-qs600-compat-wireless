@@ -798,6 +798,8 @@ static void ath6kl_usb_recv_complete(struct urb *urb)
 #ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
 	struct ath6kl *ar = pipe->ar_usb->ar;
 #endif
+	if (WARN_ON_ONCE(pipe->ar_usb == NULL))
+		return;
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
 		   "%s: recv pipe: %d, stat:%d, len:%d urb:0x%p\n", __func__,
@@ -2557,7 +2559,8 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 #ifdef ATH6KL_BUS_VOTE
 #ifdef CONFIG_ANDROID
-	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0)
+	if (ath6kl_bt_on == 1 || ath6kl_platform_has_vreg == 0 ||
+		machine_is_apq8064_dma() || machine_is_apq8064_bueller())
 		usb_reset_device(ar_usb->udev);
 #endif
 #endif
@@ -2601,19 +2604,19 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	ar->autopm_turn_on = 1;
 	ar->autopm_defer_delay_change_cnt = 0;
 #endif
-	ath6kl_htc_pipe_attach(ar);
-	ret = ath6kl_core_init(ar);
-	if (ret) {
-		ath6kl_err("Failed to init ath6kl core: %d\n", ret);
-		goto err_core_free;
-	}
-
 
 #ifdef ATH6KL_HSIC_RECOVER
 	/* Initialize the worker */
 	INIT_WORK(&recover_war_work,
 		  ath6kl_recover_war_work);
 #endif
+
+	ath6kl_htc_pipe_attach(ar);
+	ret = ath6kl_core_init(ar);
+	if (ret) {
+		ath6kl_err("Failed to init ath6kl core: %d\n", ret);
+		goto err_core_free;
+	}
 
 #ifdef ATH6KL_BUS_VOTE
 	up(&usb_probe_sem);
@@ -2829,8 +2832,6 @@ static int ath6kl_usb_init(void)
 	down(&usb_probe_sem);
 #endif
 
-	usb_register(&ath6kl_usb_driver);
-
 #ifdef ATH6KL_BUS_VOTE
 #ifdef CONFIG_ANDROID
 	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller()) {
@@ -2841,7 +2842,11 @@ static int ath6kl_usb_init(void)
 
 	if (ath6kl_hsic_init_msm(&ath6kl_platform_has_vreg) != 0)
 		ath6kl_err("%s ath6kl_hsic_init_msm failed\n", __func__);
+#endif
 
+	usb_register(&ath6kl_usb_driver);
+
+#ifdef ATH6KL_BUS_VOTE
 	if (ath6kl_platform_has_vreg) {
 		/* Waiting for usb probe callback called */
 		if (down_timeout(&usb_probe_sem,
@@ -2864,10 +2869,13 @@ static void ath6kl_usb_exit(void)
 					ATH6KL_USB_UNLOAD_STATE_TARGET_RESET)
 		goto finish;
 
-	timeleft = wait_event_interruptible_timeout(ath6kl_usb_unload_event_wq,
+	if (!machine_is_apq8064_dma() && !machine_is_apq8064_bueller()) {
+		timeleft = wait_event_interruptible_timeout(
+				ath6kl_usb_unload_event_wq,
 				atomic_read(&ath6kl_usb_unload_state) ==
 				ATH6KL_USB_UNLOAD_STATE_DEV_DISCONNECTED,
 				ATH6KL_USB_UNLOAD_TIMEOUT);
+	}
 
 finish:
 	usb_unregister_notify(&ath6kl_usb_dev_nb);

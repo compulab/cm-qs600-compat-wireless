@@ -273,6 +273,7 @@ struct ath6kl_platform_data {
 	struct ath6kl_power_vreg_data *wifi_chip_pwd;
 	struct ath6kl_power_vreg_data *wifi_vddpa;
 	struct ath6kl_power_vreg_data *wifi_vddio;
+	bool has_enum_workaround;
 };
 
 struct ath6kl_platform_data *gpdata;
@@ -568,6 +569,31 @@ int ath6kl_hsic_bind(int bind)
 	return 0;
 }
 
+struct work_struct enum_war_work;
+
+void ath6kl_hsic_enum_war_handler(void)
+{
+	ath6kl_info("%s: schedule worker thread\n", __func__);
+	schedule_work(&enum_war_work);
+}
+
+static void ath6kl_enum_war_work(struct work_struct *work)
+{
+	int ret;
+
+	ret = ath6kl_platform_power(gpdata, 0);
+
+	if (ret == 0 && ath6kl_bt_on == 0)
+		ath6kl_hsic_bind(0);
+
+	msleep(200);
+
+	ret = ath6kl_platform_power(gpdata, 1);
+
+	if (ret == 0 && ath6kl_bt_on == 0)
+		ath6kl_hsic_bind(1);
+}
+
 static int ath6kl_hsic_probe(struct platform_device *pdev)
 {
 	struct ath6kl_platform_data *pdata = NULL;
@@ -579,7 +605,7 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 		previous = 0;
 		ath6kl_toggle_radio(pdev->dev.platform_data, 1);
 	} else {
-
+		struct device_node *node = pdev->dev.of_node;
 		ath6kl_bus_scale_pdata = msm_bus_cl_get_pdata(pdev);
 		bus_perf_client =
 			msm_bus_scale_register_client(
@@ -615,6 +641,9 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 			goto err;
 		}
 
+		pdata->has_enum_workaround = of_property_read_bool(node,
+						"qca,has-enum-workaround");
+
 		pdata->pdev = pdev;
 		platform_set_drvdata(pdev, pdata);
 		gpdata = pdata;
@@ -622,10 +651,22 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 		if (pdata->wifi_chip_pwd != NULL) {
 			ret = ath6kl_platform_power(pdata, 1);
 
-			if (ret == 0 && ath6kl_bt_on == 0)
+			if (ret == 0 && ath6kl_bt_on == 0) {
 				ath6kl_hsic_bind(1);
+#if 0
+				if (pdata->has_enum_workaround) {
+					msm_hsic_register_enum_war_handler(
+						ath6kl_hsic_enum_war_handler);
+				}
+#endif
+			}
 
 			*platform_has_vreg = 1;
+		}
+
+		if (pdata->has_enum_workaround) {
+			/* Initialize the worker */
+			INIT_WORK(&enum_war_work, ath6kl_enum_war_work);
 		}
 	}
 

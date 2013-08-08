@@ -57,6 +57,9 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr)
 	if (vif->nw_type != AP_NETWORK)
 		return &vif->sta_list[0];
 
+	if (is_zero_ether_addr(node_addr))
+		return NULL;
+
 	max_conn = (vif->nw_type == AP_NETWORK) ? AP_MAX_NUM_STA : 0;
 
 	for (i = 0; i < max_conn; i++) {
@@ -926,6 +929,7 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	cookie_pool->cookie_alloc_fail_cnt = 0;
 	cookie_pool->cookie_free_cnt = 0;
 	cookie_pool->cookie_peak_cnt = 0;
+	cookie_pool->cookie_fail_in_row = 0;
 
 	ath6kl_info("Create HTC cookie, type %d num %d\n",
 			cookie_type,
@@ -961,6 +965,7 @@ static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
 	cookie_pool->cookie_alloc_fail_cnt = 0;
 	cookie_pool->cookie_free_cnt = 0;
 	cookie_pool->cookie_peak_cnt = 0;
+	cookie_pool->cookie_fail_in_row = 0;
 
 	return;
 }
@@ -986,10 +991,13 @@ struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar,
 
 		alloced = cookie_pool->cookie_num - cookie_pool->cookie_count;
 		cookie_pool->cookie_alloc_cnt++;
+		cookie_pool->cookie_fail_in_row = 0;
 		if (alloced > cookie_pool->cookie_peak_cnt)
 			cookie_pool->cookie_peak_cnt = alloced;
-	} else
+	} else {
 		cookie_pool->cookie_alloc_fail_cnt++;
+		cookie_pool->cookie_fail_in_row++;
+	}
 
 	return cookie;
 }
