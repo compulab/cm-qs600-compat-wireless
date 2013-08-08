@@ -3041,8 +3041,10 @@ struct wmi_heart_beat_params_cmd {
 struct wmi_heart_beat_tcp_params_cmd {
 	__le32 srv_ip;
 	__le32 dev_ip;
+	__le32 seq;
 	__le16 src_port;
 	__le16 dst_port;
+	__le16 interval;
 	__le16 timeout;
 	u8 session;
 	u8 gateway_mac[ETH_ALEN];
@@ -3547,8 +3549,8 @@ int ath6kl_wmi_set_oppps_cmd(struct wmi *wmi, u8 if_idx,
 int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx,
 	u8 enable, u8 item, u8 session);
 int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
-	u16 src_port, u16 dst_port, u32 srv_ip, u32 dev_ip, u16 timeout,
-	u8 session, u8 *gateway_mac);
+	u16 src_port, u16 dst_port, u32 srv_ip, u32 dev_ip, u32 seq,
+	u16 interval, u16 timeout, u8 session, u8 *gateway_mac);
 int ath6kl_wmi_heart_beat_set_tcp_filter(struct wmi *wmi, u8 if_idx,
 	u8 *filter, u8 length, u8 offset, u8 session);
 int ath6kl_wmi_heart_beat_set_udp_params(struct wmi *wmi, u8 if_idx,

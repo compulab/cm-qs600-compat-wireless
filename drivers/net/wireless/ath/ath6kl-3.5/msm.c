@@ -653,11 +653,12 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 
 			if (ret == 0 && ath6kl_bt_on == 0) {
 				ath6kl_hsic_bind(1);
-
+#if 0
 				if (pdata->has_enum_workaround) {
 					msm_hsic_register_enum_war_handler(
 						ath6kl_hsic_enum_war_handler);
 				}
+#endif
 			}
 
 			*platform_has_vreg = 1;

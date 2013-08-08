@@ -5594,8 +5594,8 @@ int ath6kl_wmi_set_heart_beat_params(struct wmi *wmi, u8 if_idx,
 }
 
 int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
-	u16 src_port, u16 dst_port, u32 srv_ip, u32 dev_ip, u16 timeout,
-	u8 session,  u8 *gateway_mac)
+	u16 src_port, u16 dst_port, u32 srv_ip,	u32 dev_ip, u32 seq,
+	u16 interval, u16 timeout, u8 session,  u8 *gateway_mac)
 {
 	struct sk_buff *skb;
 	struct wmi_heart_beat_tcp_params_cmd *cmd;
@@ -5609,6 +5609,8 @@ int ath6kl_wmi_heart_beat_set_tcp_params(struct wmi *wmi, u8 if_idx,
 	cmd->dst_port = cpu_to_le16(dst_port);
 	cmd->srv_ip = cpu_to_le32(srv_ip);
 	cmd->dev_ip = cpu_to_le32(dev_ip);
+	cmd->seq = cpu_to_le32(seq);
+	cmd->interval = cpu_to_le16(interval);
 	cmd->timeout = cpu_to_le16(timeout);
 	cmd->session = session;
 	memcpy(cmd->gateway_mac, gateway_mac, ETH_ALEN);
