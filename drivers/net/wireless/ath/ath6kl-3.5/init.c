@@ -337,6 +337,7 @@ static const struct ath6kl_hw hw_list[] = {
 
 		.fw = {
 			.dir		= AR6004_HW_3_0_FW_DIR,
+			.otp		= AR6004_HW_3_0_OTP_FILE,
 			.fw		= AR6004_HW_3_0_FIRMWARE_FILE,
 			.tcmd	        = AR6004_HW_3_0_TCMD_FIRMWARE_FILE,
 			.api2		= ATH6KL_FW_API2_FILE,
