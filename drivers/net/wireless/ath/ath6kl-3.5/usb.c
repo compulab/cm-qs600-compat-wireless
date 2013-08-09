@@ -183,9 +183,11 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 
 #ifdef ATH6KL_BUS_VOTE
 u8 ath6kl_platform_has_vreg;
+u8 ath6kl_driver_unloaded;
 struct semaphore usb_probe_sem;
 
-#define USB_PROBE_WAIT_TIMEOUT           4000
+#define USB_PROBE_WAIT_TIMEOUT                   4000
+#define USB_PROBE_WAIT_TIMEOUT_ENUM_WAR          8000
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
@@ -2848,10 +2850,23 @@ static int ath6kl_usb_init(void)
 
 #ifdef ATH6KL_BUS_VOTE
 	if (ath6kl_platform_has_vreg) {
+		u32 probe_timeout;
+
+		if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
+			probe_timeout = USB_PROBE_WAIT_TIMEOUT;
+		else
+			probe_timeout = USB_PROBE_WAIT_TIMEOUT_ENUM_WAR;
+
 		/* Waiting for usb probe callback called */
 		if (down_timeout(&usb_probe_sem,
-			msecs_to_jiffies(USB_PROBE_WAIT_TIMEOUT)) != 0) {
+			msecs_to_jiffies(probe_timeout)) != 0) {
 			ath6kl_info("can't wait for usb probe done\n");
+
+			if (!machine_is_apq8064_dma() &&
+				!machine_is_apq8064_bueller()) {
+				ath6kl_hsic_enum_war_schedule();
+				msleep(1000);
+			}
 		}
 	}
 #endif
@@ -2862,6 +2877,10 @@ static int ath6kl_usb_init(void)
 static void ath6kl_usb_exit(void)
 {
 	long timeleft = 0;
+#ifdef ATH6KL_BUS_VOTE
+	ath6kl_driver_unloaded = 1;
+#endif
+
 	atomic_set(&ath6kl_usb_unload_state, ATH6KL_USB_UNLOAD_STATE_DRV_DEREG);
 	usb_deregister(&ath6kl_usb_driver);
 
