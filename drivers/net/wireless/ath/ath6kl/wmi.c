@@ -1419,6 +1419,20 @@ static int ath6kl_wmi_stats_event_rx(struct wmi *wmi, u8 *datap, int len,
 	return 0;
 }
 
+static int ath6kl_wmi_get_rsn_cap_rx(struct wmi *wmi, u8 *datap, int len,
+                                    struct ath6kl_vif *vif)
+{
+	struct wmi_rsn_cap_cmd *reply;
+
+	if (len < sizeof(struct wmi_rsn_cap_cmd))
+		return -EINVAL;
+
+	reply = (struct wmi_rsn_cap_cmd *) datap;
+	ath6kl_get_rsn_cap_event(vif, le16_to_cpu(reply->rsn_cap));
+
+	return 0;
+}
+
 static u8 ath6kl_wmi_get_upper_threshold(s16 rssi,
 					 struct sq_threshold_params *sq_thresh,
 					 u32 size)
@@ -2213,6 +2227,30 @@ int ath6kl_wmi_bmisstime_cmd(struct wmi *wmi, u8 if_idx,
 	return ret;
 }
 
+int ath6kl_wmi_set_rsn_cap_cmd(struct wmi *wmi, u8 if_idx,
+                            u16 rsn_cap)
+{
+	struct sk_buff *skb;
+	struct wmi_rsn_cap_cmd *cmd;
+	int ret;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_rsn_cap_cmd *) skb->data;
+	cmd->rsn_cap = cpu_to_le16(rsn_cap);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_RSN_CAP_CMDID,
+				  NO_SYNC_WMIFLAG);
+	return ret;
+}
+
+int ath6kl_wmi_get_rsn_cap_cmd(struct wmi *wmi, u8 if_idx)
+{
+	return ath6kl_wmi_simple_cmd(wmi, if_idx, WMI_GET_RSN_CAP_CMDID);
+}
+
 int ath6kl_wmi_powermode_cmd(struct wmi *wmi, u8 if_idx, u8 pwr_mode)
 {
 	struct sk_buff *skb;
@@ -2323,6 +2361,48 @@ int ath6kl_wmi_addkey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
 		memcpy(cmd->key_mac_addr, mac_addr, ETH_ALEN);
 
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_ADD_CIPHER_KEY_CMDID,
+				  sync_flag);
+
+	return ret;
+}
+
+int ath6kl_wmi_addigtk_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
+			   enum crypto_type key_type,
+			   u8 key_usage, u8 key_len,
+			   u8 *key_rsc, unsigned int key_rsc_len,
+			   u8 *key_material,
+			   u8 key_op_ctrl, u8 *mac_addr,
+			   enum wmi_sync_flag sync_flag)
+{
+	struct sk_buff *skb;
+	struct wmi_add_igtk_key_cmd *cmd;
+	int ret;
+
+	ath6kl_dbg(ATH6KL_DBG_WMI, "addigtk cmd: key_index=%u key_type=%d "
+		   "key_usage=%d key_len=%d key_op_ctrl=%d\n",
+		   key_index, key_type, key_usage, key_len, key_op_ctrl);
+
+	if ((key_index > WMI_MAX_SUPPORT_11W_KEY_INDEX) ||
+	    (key_len > WMI_MAX_KEY_LEN) || (key_material == NULL) ||
+	    key_rsc_len > 6)
+		return -EINVAL;
+
+	if ((WEP_CRYPT != key_type) && (NULL == key_rsc))
+		return -EINVAL;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_add_igtk_key_cmd *) skb->data;
+	cmd->key_index = key_index;
+	cmd->key_len = key_len;
+	memcpy(cmd->key, key_material, key_len);
+
+	if (key_rsc != NULL)
+		memcpy(cmd->key_rsc, key_rsc, key_rsc_len);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb, WMI_SET_IGTK_CMDID,
 				  sync_flag);
 
 	return ret;
@@ -4211,6 +4291,9 @@ static int ath6kl_wmi_proc_events_vif(struct wmi *wmi, u16 if_idx, u16 cmd_id,
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_NEIGHBOR_REPORT_EVENTID\n");
 		return ath6kl_wmi_neighbor_report_event_rx(wmi, datap, len,
 							   vif);
+	case WMI_GET_RSN_CAP_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GET_RSN_CAP_EVENTID\n");
+		return ath6kl_wmi_get_rsn_cap_rx(wmi, datap, len, vif);
 	case WMI_SCAN_COMPLETE_EVENTID:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_SCAN_COMPLETE_EVENTID\n");
 		return ath6kl_wmi_scan_complete_rx(wmi, datap, len, vif);
