@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.448)
+#define __BUILD_VERSION_ (3.5.0.451)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -2094,11 +2094,12 @@ void ath6kl_sdio_exit_msm(void);
 #endif
 
 #ifdef ATH6KL_BUS_VOTE
+extern u8 ath6kl_driver_unloaded;
+
 int ath6kl_hsic_init_msm(u8 *has_vreg);
 void ath6kl_hsic_exit_msm(void);
 int ath6kl_hsic_bind(int bind);
-typedef void (*enumeration_war_func_t)(void);
-extern int msm_hsic_register_enum_war_handler(enumeration_war_func_t func);
+void ath6kl_hsic_enum_war_schedule(void);
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
