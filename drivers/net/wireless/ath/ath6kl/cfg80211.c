@@ -2690,6 +2690,7 @@ int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 		htcap = &vif->htcap[band];
 		htcap->cap_info = 0;
 		htcap->ht_enable = wiphy->bands[band]->ht_cap.ht_supported;
+		htcap->require_ht = 0;
 		ret = ath6kl_set_htcap(vif, band,
 				wiphy->bands[band]->ht_cap.ht_supported);
 		if (ret)
@@ -3212,6 +3213,12 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		htcap->cap_info = info->ht_cap_info;
 	} else {
 		htcap->cap_info = 0;
+	}
+
+	if (info->require_ht) {
+		htcap->require_ht = info->require_ht;
+	} else {
+		htcap->require_ht = 0;
 	}
 
 	if (ath6kl_set_htcap(vif, band,
