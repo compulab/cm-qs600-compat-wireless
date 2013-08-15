@@ -1044,8 +1044,10 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 	unsigned int len = 0, n_reg;
 	u32 addr;
 	__le32 reg_val;
-	int i, status;
-
+	int status;
+#ifdef REG_ALL_DUMP
+	int i;
+#endif
 	/* Dump all the registers if no register is specified */
 	if (!ar->debug.dbgfs_diag_reg)
 		n_reg = ath6kl_get_num_reg();
@@ -1074,6 +1076,7 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 		goto done;
 	}
 
+#ifdef REG_ALL_DUMP
 	for (i = 0; i < ARRAY_SIZE(diag_reg); i++) {
 		len += scnprintf(buf + len, reg_len - len,
 				"%s\n", diag_reg[i].reg_info);
@@ -1090,6 +1093,7 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 					addr, le32_to_cpu(reg_val));
 		}
 	}
+#endif
 
 done:
 	file->private_data = buf;
@@ -5548,7 +5552,7 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 	usb_auto_usagecnt = ath6kl_hif_auto_pm_get_usage_cnt(ar);
 
 	len = snprintf(buf, sizeof(buf),
-		"usbautopm: 0x%x\n", usb_auto_usagecnt);
+		"usbautopm: 0x%x localcnt:0x%x \n", usb_auto_usagecnt, ar->auto_pm_cnt);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }

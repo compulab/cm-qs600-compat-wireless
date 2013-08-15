@@ -702,6 +702,70 @@ int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
 	return 0;
 }
 
+static struct bss_info_entry *bss_post_proc_bss_info(struct ath6kl_vif *vif,
+					struct ieee80211_mgmt *mgmt,
+					int len,
+					s32 snr,
+					struct ieee80211_channel *channel)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+	struct bss_info_entry *bss_info, *tmp;
+	bool updated = false;
+	int hits = 0;
+
+	spin_lock_bh(&post_proc->bss_info_lock);
+
+	/*
+	 * Expect reverse travel should hit in high possibility.
+	 * And check some hints first to speed up. Also assume
+	 * Duration & Sequence are always be zero and ignore the
+	 * timestamp field.
+	 */
+	list_for_each_entry_safe_reverse(bss_info,
+				tmp,
+				&post_proc->bss_info_list,
+				list) {
+		BUG_ON(!bss_info->mgmt);
+
+		hits++;
+		if ((bss_info->channel == channel) &&
+		    (bss_info->len == len) &&
+		    (memcmp(bss_info->mgmt, mgmt, 24) == 0)) {
+			if (memcmp((u8 *)(bss_info->mgmt) + 24 + 8,
+				   (u8 *)mgmt + 24 + 8,
+				   len - 24 - 8) == 0) {
+				list_del(&bss_info->list);
+
+				/* Update */
+				memcpy((u8 *)(bss_info->mgmt), (u8 *)mgmt, len);
+				bss_info->shoot_time = jiffies;
+				bss_info->signal = snr; /* TODO: average SNR */
+				updated = true;
+
+				break;
+			}
+		}
+	}
+
+	/*
+	 * Remove and insert back to the list to let the list is
+	 * always keep shoot-time ordered.
+	 */
+	if (updated)
+		list_add_tail(&bss_info->list, &post_proc->bss_info_list);
+	else
+		bss_info = NULL;
+
+	spin_unlock_bh(&post_proc->bss_info_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
+		   "bss_proc bssinfo %s, hits %d\n",
+		   (updated ? "updated" : "add"),
+		   hits);
+
+	return bss_info;
+}
+
 void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				struct ieee80211_mgmt *mgmt,
 				int len,
@@ -719,11 +783,15 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
 		   "bss_proc bssinfo (vif %d) BSSID "
-		   "%02x:%02x:%02x:%02x:%02x:%02x FC %04x\n",
+		   "%02x:%02x:%02x:%02x:%02x:%02x FC %04x len %d\n",
 		   vif->fw_vif_idx,
 		   mgmt->bssid[0], mgmt->bssid[1], mgmt->bssid[2],
 		   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5],
-		   mgmt->frame_control);
+		   mgmt->frame_control,
+		   len);
+
+	if (bss_post_proc_bss_info(vif, mgmt, len, snr, channel))
+		return;
 
 	bss_info = kzalloc(sizeof(struct bss_info_entry), GFP_ATOMIC);
 	if (!bss_info) {
@@ -1249,6 +1317,9 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 	int status = 0;
 	u32 address;
 	__le32 data;
+#ifdef USB_AUTO_SUSPEND
+	struct ath6kl_vif *vif;
+#endif
 
 	if (target_type != TARGET_TYPE_AR6003 &&
 		target_type != TARGET_TYPE_AR6004 &&
@@ -1269,6 +1340,24 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 		address = AR6003_RESET_CONTROL_ADDRESS;
 		break;
 	}
+
+#ifdef USB_AUTO_SUSPEND
+	vif = ath6kl_vif_first(ar);
+	if (vif != NULL) {
+		if (ar->state == ATH6KL_STATE_WOW ||
+			ar->state == ATH6KL_STATE_DEEPSLEEP) {
+			ath6kl_hif_auto_pm_turnoff(ar);
+			msleep(20);
+		} else {
+			if (ar->autopm_turn_on) {
+				ath6kl_hif_auto_pm_set_delay(ar,
+					USB_SUSPEND_DELAY_MAX);
+				ar->autopm_defer_delay_change_cnt =
+					USB_SUSPEND_DEFER_DELAY_FOR_RECOVER;
+			}
+		}
+	}
+#endif
 
 	/* If the bootstrap mode is HSIC, do warm reset */
 	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {

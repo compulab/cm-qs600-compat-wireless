@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.451)
+#define __BUILD_VERSION_ (3.5.0.457)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -337,9 +337,9 @@
  * MAX_HI_COOKIE_NUM are reserved for high priority traffic.
  * Need more cookies for WMM purpose.
  */
-#define MAX_DEF_COOKIE_NUM                400
+#define MAX_DEF_COOKIE_NUM                1600
 #define MAX_HI_COOKIE_NUM                 40	/* 10% of MAX_COOKIE_NUM */
-#define MAX_VIF_COOKIE_NUM                200   /* 50% of MAX_COOKIE_NUM */
+#define MAX_VIF_COOKIE_NUM                800   /* 50% of MAX_COOKIE_NUM */
 #define MAX_RESV_COOKIE_NUM               (MAX_HI_COOKIE_NUM / 2)
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
@@ -1513,6 +1513,7 @@ enum ath6kl_dev_state {
 	EAPOL_HANDSHAKE_PROTECT,
 	REG_COUNTRY_UPDATE,
 	CFG80211_REGDB,
+	RECOVER_IN_PROCESS,
 };
 
 enum ath6kl_state {
@@ -1549,8 +1550,9 @@ enum ath6kl_vap_mode {
 #define USB_SUSPEND_DELAY_CONNECTED                    400
 #define USB_SUSPEND_DELAY_MIN                          200
 
-#define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT               1
-#define USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND             2
+#define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT				1
+#define USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND			2
+#define USB_SUSPEND_DEFER_DELAY_FOR_RECOVER			3
 
 struct usb_pm_skb_queue_t {
 	struct list_head list;
@@ -1866,6 +1868,8 @@ struct ath6kl {
 
 	/* set if wow pattern set by debug_fs */
 	bool get_wow_pattern;
+
+	struct work_struct reset_cover_war_work;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)

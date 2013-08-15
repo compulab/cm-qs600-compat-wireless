@@ -446,15 +446,19 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (cookie == NULL) {
-		spin_unlock_bh(&ar->lock);
+#ifdef ATH6KL_HSIC_RECOVER
 		if (ar->cookie_ctrl.cookie_fail_in_row >
 				MAX_COOKIE_FAIL_IN_ROW) {
 			ath6kl_err("control cookie fail %d time reset!\n",
 				ar->cookie_ctrl.cookie_fail_in_row);
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
-			ath6kl_reset_device(ar, ar->target_type, true, true);
-			ath6kl_fw_crash_trap(ar);
+			if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+				ath6kl_info("%s schedule recover\n", __func__);
+				schedule_work(&ar->reset_cover_war_work);
+			}
 		}
+#endif
+		spin_unlock_bh(&ar->lock);
 		status = -ENOMEM;
 		goto fail_ctrl_tx;
 	}
@@ -913,10 +917,14 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		spin_lock_bh(&ar->lock);
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
-		spin_unlock_bh(&ar->lock);
 		ath6kl_err("wmi ctrl ep is full\n");
-		ath6kl_reset_device(ar, ar->target_type, true, true);
-		ath6kl_fw_crash_trap(ar);
+#ifdef ATH6KL_HSIC_RECOVER
+		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+			ath6kl_info("%s schedule recover work\n", __func__);
+			schedule_work(&ar->reset_cover_war_work);
+		}
+#endif
+		spin_unlock_bh(&ar->lock);
 		return action;
 	}
 

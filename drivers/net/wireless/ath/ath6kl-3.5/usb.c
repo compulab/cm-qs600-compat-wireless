@@ -1276,14 +1276,19 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	struct ath6kl_usb *ar_usb;
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t *entry, *p_usb_pm_skb_queue;
-	struct ath6kl *ar;
 #endif
+	struct ath6kl *ar;
 
 	ar_usb = usb_get_intfdata(interface);
 	if (ar_usb == NULL)
 		return;
 
+	ar = ar_usb->ar;
+
 	ath6kl_stop_txrx(ar_usb->ar);
+#ifdef ATH6KL_HSIC_RECOVER
+	cancel_work_sync(&ar->reset_cover_war_work);
+#endif
 
 	/* Delay to wait for the target to reboot */
 #ifdef CONFIG_ANDROID
@@ -1302,7 +1307,6 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	 * we need to clean pm_skb_queue to avoid memory leak.
 	 */
 
-	ar = ar_usb->ar;
 	p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
 
 	while (get_queue_depth(&(p_usb_pm_skb_queue->list)) > 0) {
@@ -1506,7 +1510,7 @@ void usb_auto_pm_disable(struct ath6kl *ar)
 	struct usb_interface *interface = device->interface;
 	usb_autopm_get_interface_async(interface);
 	ar->auto_pm_cnt++;
-	ath6kl_dbg(ATH6KL_DBG_USB, "autopm +1 refcnt=%d my=%d\n",
+	ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_AUTOPM, "autopm +1 refcnt=%d my=%d\n",
 		usb_debugfs_get_pm_usage_cnt(ar), ar->auto_pm_cnt);
 	/*usb_debugfs_get_pm_usage_cnt(ar);*/
 
@@ -1519,7 +1523,7 @@ void usb_auto_pm_enable(struct ath6kl *ar)
 	struct usb_interface *interface = device->interface;
 	usb_autopm_put_interface_async(interface);
 	ar->auto_pm_cnt--;
-	ath6kl_dbg(ATH6KL_DBG_USB, "autopm -1 refcnt=%d my=%d\n",
+	ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_AUTOPM, "autopm -1 refcnt=%d my=%d\n",
 		usb_debugfs_get_pm_usage_cnt(ar), ar->auto_pm_cnt);
 	/*usb_debugfs_get_pm_usage_cnt(ar);*/
 }
@@ -1716,13 +1720,13 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 		(ar->state == ATH6KL_STATE_WOW) ||
 		(ar->state == ATH6KL_STATE_DEEPSLEEP)) {
 
-		ath6kl_dbg(ATH6KL_DBG_USB, "usb_send sleep Q  %d  queue len =%d\n",
+		ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_AUTOPM, "usb_send sleep Q  %d  queue len =%d\n",
 			ar->state,
 			get_queue_depth(&(p_usb_pm_skb_queue->list)));
 		p_pmskb = kmalloc(sizeof(struct usb_pm_skb_queue_t),
 			GFP_ATOMIC);
 		if (p_pmskb == NULL)
-			ath6kl_dbg(ATH6KL_DBG_USB, "p_pmskb = kmalloc fila\n");
+			ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_AUTOPM, "p_pmskb = kmalloc fila\n");
 
 		p_pmskb->pipeID = PipeID;
 		p_pmskb->ar = ar;
@@ -1730,7 +1734,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 
 		list_add_tail(&(p_pmskb->list), &(p_usb_pm_skb_queue->list));
 		qlen = get_queue_depth(&(p_usb_pm_skb_queue->list));
-		ath6kl_dbg(ATH6KL_DBG_USB, "qlen = %d\n", qlen);
+		ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_AUTOPM, "qlen = %d\n", qlen);
 
 		/*
 		msleep_interruptible(3000);
@@ -1744,7 +1748,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	}
 
 	spin_unlock_bh(&ar->usb_pm_lock);
-	ath6kl_dbg(ATH6KL_DBG_USB, "usb_send 2\n");
+	ath6kl_dbg(ATH6KL_DBG_USB | ATH6KL_DBG_EXT_AUTOPM, "usb_send\n");
 
 #elif defined(CONFIG_ANDROID)
 	if (PipeID != ATH6KL_USB_PIPE_TX_CTRL)
@@ -2439,6 +2443,7 @@ static void ath6kl_recover_war_work(struct work_struct *work)
 	ath6kl_hsic_rediscovery();
 }
 
+/* schedule ath6kl_recover_war_work */
 int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 {
 	struct ath6kl_usb *ar_usb = ar->hif_priv;
@@ -2447,7 +2452,8 @@ int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 
 	vif = ath6kl_vif_first(ar);
 
-	usb_disable_autosuspend(ar_usb->udev);
+	if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag))
+		usb_disable_autosuspend(ar_usb->udev);
 
 	netdev = vif->ndev;
 #ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -2459,6 +2465,18 @@ int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 	ath6kl_info("%s schedule recover worker thread\n", __func__);
 	schedule_work(&recover_war_work);
 	return 0;
+}
+
+static void ath6kl_reset_war_work(struct work_struct *work)
+{
+	struct ath6kl *ar;
+
+	ar = container_of(work, struct ath6kl, reset_cover_war_work);
+
+	ath6kl_reset_device(ar, ar->target_type, true, true);
+
+	ath6kl_info("%s do HSIC rediscovery\n", __func__);
+	ath6kl_hsic_sw_recover(ar);
 }
 #endif
 
@@ -2609,8 +2627,10 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 #ifdef ATH6KL_HSIC_RECOVER
 	/* Initialize the worker */
+	INIT_WORK(&ar->reset_cover_war_work,
+			ath6kl_reset_war_work);
 	INIT_WORK(&recover_war_work,
-		  ath6kl_recover_war_work);
+			ath6kl_recover_war_work);
 #endif
 
 	ath6kl_htc_pipe_attach(ar);

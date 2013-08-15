@@ -529,7 +529,7 @@ static bool ath6kl_is_exteneded_cap_ie(const u8 *pos)
 }
 
 static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
-				    size_t ies_len, int has_wmm)
+				    size_t ies_len)
 {
 	struct ath6kl *ar = vif->ar;
 	const u8 *pos;
@@ -556,13 +556,10 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 			if (pos + 2 + pos[1] > ies + ies_len)
 				break;
 
-			/* For compability issue, if AP doesn't supprot WMM,
-				strip the EXTENDED CAPABILITY IE */
-			if (has_wmm == 0) {
-				if (ath6kl_is_exteneded_cap_ie(pos)) {
-					pos += 2 + pos[1];
-					continue;
-				}
+			/* Strip the EXTENDED CAPABILITY IE */
+			if (ath6kl_is_exteneded_cap_ie(pos)) {
+				pos += 2 + pos[1];
+				continue;
 			}
 
 			if (!(ath6kl_is_wpa_ie(pos) ||
@@ -1142,73 +1139,12 @@ static void ath6kl_wep_auth_auto(struct ath6kl_vif *vif)
 	}
 }
 
-static int ath6kl_bss_post_check_wmm_for_candidate_bss(struct ath6kl_vif *vif,
-					char *ssid,
-					int ssid_len)
-{
-	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
-	struct bss_info_entry *bss_info, *tmp;
-	u8 *ssid_ie;
-	int has_wmm = 1;
-
-	if ((!post_proc) || (ssid_len == 0) || (ssid == NULL))
-		return 0;
-
-	spin_lock_bh(&post_proc->bss_info_lock);
-
-	list_for_each_entry_safe(bss_info,
-				tmp,
-				&post_proc->bss_info_list,
-				list) {
-		if (time_after(jiffies,
-				bss_info->shoot_time + post_proc->aging_time))
-			continue;
-
-		if (bss_info->len < 24 + 8 + 2 + 2 + 2 + 1)
-			continue;
-
-		BUG_ON(!bss_info->mgmt);
-
-		/* Always assume 1st IE is SSID IE. */
-		ssid_ie = &(bss_info->mgmt->u.beacon.variable[0]);
-		if ((ssid_ie[0] == WLAN_EID_SSID) &&
-		    (ssid_ie[1] == ssid_len) &&
-		    (memcmp(ssid_ie + 2, ssid, ssid_len) == 0)) {
-			bool found = false;
-			u8 *pos = ssid_ie;
-
-			while (pos + 1 < ssid_ie + bss_info->len) {
-				if (pos + 2 + pos[1] > ssid_ie + bss_info->len)
-					break;
-
-				if (ath6kl_is_wmm_ie(pos)) {
-					found = true;
-					break;
-				}
-
-				pos += 2 + pos[1];
-			}
-
-			/* check wheher there is WMM IE */
-			if (found == false) {
-				has_wmm = 0;
-				break;
-			}
-		}
-	}
-
-	spin_unlock_bh(&post_proc->bss_info_lock);
-
-	return has_wmm;
-}
-
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				   struct cfg80211_connect_params *sme)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int status, left;
-	int has_wmm;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -1281,13 +1217,8 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
 		ath6kl_err("set rate_ctrl failed\n");
 
-	has_wmm = ath6kl_bss_post_check_wmm_for_candidate_bss(vif,
-							sme->ssid,
-							sme->ssid_len);
-
 	if (sme->ie && (sme->ie_len > 0)) {
-		status = ath6kl_set_assoc_req_ies(vif, sme->ie, sme->ie_len,
-							has_wmm);
+		status = ath6kl_set_assoc_req_ies(vif, sme->ie, sme->ie_len);
 		if (status) {
 			up(&ar->sem);
 			return status;
@@ -4277,7 +4208,7 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 		return -EOPNOTSUPP;
 
 
-	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep suspend %x\n",
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "deep sleep suspend %x\n",
 					need_suspend_vif);
 
 #ifdef CONFIG_ANDROID
@@ -4354,7 +4285,7 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 	switch (mode) {
 	case ATH6KL_CFG_SUSPEND_WOW:
 
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "wow mode suspend\n");
+		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "wow mode suspend\n");
 
 		/* Flush all non control pkts in TX path */
 		ath6kl_tx_data_cleanup(ar);
@@ -4378,7 +4309,7 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 		if (ar->state == ATH6KL_STATE_DEEPSLEEP)
 			break;
 
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep suspend\n");
+		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "deep sleep suspend\n");
 
 #ifdef USB_AUTO_SUSPEND
 		ar->state = ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP;
@@ -4439,7 +4370,7 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 
 	switch (ar->state) {
 	case  ATH6KL_STATE_WOW:
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "wow mode resume\n");
+		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "wow mode resume\n");
 
 #ifdef CONFIG_HAS_WAKELOCK
 		wake_lock_timeout(&ar->wake_lock, 3*HZ);
@@ -4467,7 +4398,7 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 		break;
 
 	case ATH6KL_STATE_DEEPSLEEP:
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND, "deep sleep resume\n");
+		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "deep sleep resume\n");
 
 		spin_lock_bh(&ar->state_lock);
 		ar->state = ATH6KL_STATE_ON;
@@ -6715,6 +6646,7 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	clear_bit(SKIP_SCAN, &ar->flag);
 	clear_bit(DESTROY_IN_PROGRESS, &ar->flag);
 	clear_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
+	clear_bit(RECOVER_IN_PROCESS, &ar->flag);
 
 	ar->listen_intvl_t = A_DEFAULT_LISTEN_INTERVAL;
 	ar->listen_intvl_b = 0;
@@ -7004,7 +6936,9 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 	if ((vif->fw_vif_idx == 0) &&
 	    (vif->ar->target_subtype & TARGET_SUBTYPE_HT40))
 		ath6kl_htcoex_config(vif, ATH6KL_HTCOEX_SCAN_PERIOD, 0);
+#endif
 
+#ifndef CE_SUPPORT
 	/* WAR: CR480066 */
 	vif->bss_post_proc_ctx = ath6kl_bss_post_proc_init(vif);
 	if (!vif->bss_post_proc_ctx) {
