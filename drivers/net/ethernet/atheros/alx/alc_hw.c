@@ -137,16 +137,14 @@ out:
 u16 l1c_reset_mac(struct alx_hw *hw)
 {
 	u32 val, mrst_val;
-	u16 ret;
 	u16 i;
 
 	/* disable all interrupts, RXQ/TXQ */
 	alx_mem_w32(hw, L1C_IMR, 0);
 	alx_mem_w32(hw, L1C_ISR, L1C_ISR_DIS);
 
-	ret = l1c_enable_mac(hw, false, 0);
-	if (ret != 0)
-		return ret;
+	l1c_enable_mac(hw, false, 0);
+
 	/* reset whole mac safely. OOB is meaningful for L1D only  */
 	alx_mem_r32(hw, L1C_MASTER, &mrst_val);
 	mrst_val |= L1C_MASTER_OOB_DIS;
@@ -520,7 +518,7 @@ u16 l1c_enable_mac(struct alx_hw *hw, bool en, u16 en_ctrl)
 				    L1C_MAC_STS_RXQ_BUSY)) == 0) {
 				break;
 			}
-			udelay(20);
+			msleep(1);
 		}
 		if (L1C_DMA_MAC_RST_TO == i)
 			return LX_ERR_RSTMAC;
@@ -532,7 +530,7 @@ u16 l1c_enable_mac(struct alx_hw *hw, bool en, u16 en_ctrl)
 			alx_mem_r32(hw, L1C_MAC_STS, &val);
 			if ((val & L1C_MAC_STS_IDLE) == 0)
 				break;
-			udelay(10);
+			msleep(1);
 		}
 		if (L1C_DMA_MAC_RST_TO == i)
 			return LX_ERR_RSTMAC;
