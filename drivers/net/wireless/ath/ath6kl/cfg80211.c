@@ -1099,7 +1099,6 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 
 	if (test_and_set_bit(SCANNING, &vif->flags)) {
-		up(&ar->sem);
 		kfree(channels);
 		return -EBUSY;
 	}
