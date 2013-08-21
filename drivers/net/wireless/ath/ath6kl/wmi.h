@@ -3112,6 +3112,31 @@ struct wmi_flowctrl_ind_event {
 	u8 ac_queue_depth[NUM_CONN];
 } __packed;
 
+/* scan plan parameters */
+enum {
+	/* default */
+	WMI_SCAN_PLAN_DEFAULT = 1,
+
+	/* 2G followed by 5G */
+	WMI_SCAN_PLAN_2G_FIRST = 1,
+
+	/* 5G followed by 2G */
+	WMI_SCAN_PLAN_5G_FIRST = 2,
+};
+
+struct wmi_set_scan_chan_plan{
+	u32 flag;
+
+	/* scan plan type */
+	u8 type;
+
+	/* number of channels */
+	u8 numChannels;
+
+	/* channels in Mhz */
+	u16 channelList[1];
+} __packed;
+
 enum htc_endpoint_id ath6kl_wmi_get_control_ep(struct wmi *wmi);
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id);
 int ath6kl_wmi_dix_2_dot3(struct wmi *wmi, struct sk_buff *skb);
