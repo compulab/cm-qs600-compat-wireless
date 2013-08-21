@@ -448,11 +448,11 @@ static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
 		bam_pipe->ipa_params.src_idx = 0;
 
 		bam_pipe->ipa_params.dir = PEER_PERIPHERAL_TO_USB;
-		bam_pipe->ipa_params.client = bam_info[pipe_num].client;
+		bam_pipe->ipa_params.dst_client = bam_info[pipe_num].client;
 		bam_pipe->ipa_params.src_pipe = NULL;
 		bam_pipe->ipa_params.dst_pipe = &(bam_pipe->dst_pipe);
 		/* Fill the Tx pipe ep confg from IPA Config module */
-		ath6kl_ipacm_get_ep_config_info(bam_pipe->ipa_params.client,
+		ath6kl_ipacm_get_ep_config_info(bam_pipe->ipa_params.dst_client,
 				&(bam_pipe->ipa_params.ipa_ep_cfg));
 		bam_pipe->ipa_params.priv = pipe;
 		bam_pipe->ipa_params.notify = ath6kl_ipa_data_callback;
@@ -496,11 +496,11 @@ static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
 		bam_pipe->ipa_params.dst_idx = 0;
 
 		bam_pipe->ipa_params.dir = USB_TO_PEER_PERIPHERAL;
-		bam_pipe->ipa_params.client = bam_info[pipe_num].client;
+		bam_pipe->ipa_params.src_client = bam_info[pipe_num].client;
 		bam_pipe->ipa_params.src_pipe = &(bam_pipe->src_pipe);
 		bam_pipe->ipa_params.dst_pipe = NULL;
 		/* Fill the Tx pipe ep conf from IPA Config module */
-		ath6kl_ipacm_get_ep_config_info(bam_pipe->ipa_params.client,
+		ath6kl_ipacm_get_ep_config_info(bam_pipe->ipa_params.src_client,
 				&(bam_pipe->ipa_params.ipa_ep_cfg));
 		bam_pipe->ipa_params.priv = (void *)pipe;
 		bam_pipe->ipa_params.notify = ath6kl_ipa_data_callback;
@@ -524,7 +524,7 @@ static int ath6kl_create_bam_pipe(struct ath6kl_usb_pipe *pipe)
 		 * since we cannot provide this as part of Rx properties
 		 * */
 		status = ath6kl_ipa_add_flt_rule(pipe->ar_usb->ar,
-				bam_pipe->ipa_params.client);
+				bam_pipe->ipa_params.src_client);
 		if (status) {
 			ath6kl_dbg(ATH6KL_DBG_BAM2BAM,
 					"BAM-CM: Failed to add filter rule for "
@@ -1495,8 +1495,8 @@ static int ath6kl_usb_submit_urb(struct ath6kl *ar,
 	if (ath6kl_is_bam_pipe(pipe)) {
 		ath6kl_put_context(skb, urb_context);
 		/* send to IPA bam driver */
-		status = ipa_tx_dp(pipe->bam_pipe.ipa_params.client, skb, NULL);
-
+		status = ipa_tx_dp(pipe->bam_pipe.ipa_params.dst_client, skb,
+				NULL);
 		if (status) {
 			pipe_stats->num_ipa_tx_err++;
 			ath6kl_err("ath6kl usb : usb bam transmit failed %d\n",
