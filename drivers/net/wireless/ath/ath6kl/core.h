@@ -1120,7 +1120,6 @@ struct ath6kl_cookie *ath6kl_alloc_cookie(struct ath6kl *ar, struct ath6kl_vif *
 void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_vif *vif,
 						struct ath6kl_cookie *cookie);
 int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev);
-int ath6kl_conn_list_init(struct ath6kl *ar);
 void ath6kl_tx_scheduler(struct ath6kl_vif *vif);
 void ath6kl_flowctrl_change(struct ath6kl_vif *vif);
 struct aggr_info *aggr_init(struct ath6kl_vif *vif);
@@ -1225,7 +1224,6 @@ int ath6kl_ipa_enable_host_route_config (struct ath6kl_vif *vif, bool enable);
 
 struct ath6kl_mcc_flowctrl *ath6kl_mcc_flowctrl_conn_list_init(struct ath6kl *ar);
 void ath6kl_mcc_flowctrl_conn_list_deinit(struct ath6kl *ar);
-void ath6kl_mcc_flowctrl_conn_list_cleanup(struct ath6kl *ar);
 void ath6kl_mcc_flowctrl_tx_schedule(struct ath6kl *ar, u8 is_ch_chg);
 enum htc_send_queue_result ath6kl_mcc_flowctrl_tx_schedule_pkt(struct ath6kl *ar, void *pkt);
 void ath6kl_mcc_flowctrl_state_change(struct ath6kl *ar);
