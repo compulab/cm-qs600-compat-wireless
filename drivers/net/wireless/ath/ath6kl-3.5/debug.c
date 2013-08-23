@@ -5509,13 +5509,8 @@ static const struct file_operations fops_disable_runtime_flowctrl = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
+
 #ifdef USB_AUTO_SUSPEND
-
-int debugfs_get_pm_state(struct ath6kl *usbpm_ar)
-{
-	return usbpm_ar->state;
-}
-
 static ssize_t ath6kl_usb_autopm_usagecnt_write(struct file *file,
 				const char __user *user_buf,
 				size_t count, loff_t *ppos)
@@ -5552,7 +5547,9 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 	usb_auto_usagecnt = ath6kl_hif_auto_pm_get_usage_cnt(ar);
 
 	len = snprintf(buf, sizeof(buf),
-		"usbautopm: 0x%x localcnt:0x%x \n", usb_auto_usagecnt, ar->auto_pm_cnt);
+		"usbautopm: 0x%x localcnt:0x%x\n",
+		usb_auto_usagecnt,
+		ar->auto_pm_cnt);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -5578,7 +5575,7 @@ static ssize_t ath6kl_usb_pm_status_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	char buf[256];
+	char buf[384];
 	int len;
 	int state;
 	int buf_len;
@@ -5587,14 +5584,32 @@ static ssize_t ath6kl_usb_pm_status_read(struct file *file,
 
 	buf_len = sizeof(buf);
 
-	state = debugfs_get_pm_state(ar);
+	state = ar->state;
 
 	len = snprintf(buf, sizeof(buf), "state: %s\n", ar_state[state]);
 
 	p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
 
-	len += snprintf(buf + len, buf_len - len, "usb_pm_q depth: %d\n",
-		get_queue_depth(&(p_usb_pm_skb_queue->list)));
+	len += snprintf(buf + len, buf_len - len,
+			"usb_pm_q depth: %d\n",
+			get_queue_depth(&(p_usb_pm_skb_queue->list)));
+
+	len += snprintf(buf + len, buf_len - len,
+			"auto_pm_cnt: %d (%d)\n",
+			ar->auto_pm_cnt,
+			ath6kl_hif_auto_pm_get_usage_cnt(ar));
+
+	len += snprintf(buf + len, buf_len - len,
+			"autopm_turn_on: %d\n",
+			ar->autopm_turn_on);
+
+	len += snprintf(buf + len, buf_len - len,
+			"autopm_defer_delay_change_cnt: %d\n",
+			ar->autopm_defer_delay_change_cnt);
+
+	len += snprintf(buf + len, buf_len - len,
+			"autopm_curr_delay_time: %d\n\n",
+			ar->autopm_curr_delay_time);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -5605,7 +5620,6 @@ static const struct file_operations fops_usb_pm_status = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
-
 #endif /* USB_AUTO_SUSPEND */
 
 /* File operation for P2P IE not append */

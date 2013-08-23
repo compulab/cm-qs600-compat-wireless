@@ -1350,10 +1350,10 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 			msleep(20);
 		} else {
 			if (ar->autopm_turn_on) {
-				ath6kl_hif_auto_pm_set_delay(ar,
-					USB_SUSPEND_DELAY_MAX);
 				ar->autopm_defer_delay_change_cnt =
 					USB_SUSPEND_DEFER_DELAY_FOR_RECOVER;
+				ath6kl_hif_auto_pm_set_delay(ar,
+					USB_SUSPEND_DELAY_MAX);
 			}
 		}
 	}

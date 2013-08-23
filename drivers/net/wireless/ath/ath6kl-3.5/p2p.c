@@ -531,9 +531,9 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
-		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 		ar->autopm_defer_delay_change_cnt =
-			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P;
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 	}
 #endif
 

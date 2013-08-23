@@ -3363,6 +3363,18 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		del_timer(&vif->vifscan_timer);
 		ath6kl_wmi_abort_scan_cmd(vif->ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
+
+#ifdef USB_AUTO_SUSPEND
+		if (ath6kl_hif_auto_pm_get_usage_cnt(vif->ar) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+				   ATH6KL_DBG_EXT_AUTOPM,
+				   "%s: warnning refcnt=0, my=%d\n",
+				   __func__,
+				   vif->ar->auto_pm_cnt);
+		} else
+			ath6kl_hif_auto_pm_enable(vif->ar);
+#endif
+
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
 	}

@@ -480,8 +480,9 @@ static bool ath6kl_cfg80211_ready(struct ath6kl_vif *vif)
 	if ((vif->ar->state == ATH6KL_STATE_WOW) ||
 		(vif->ar->state == ATH6KL_STATE_DEEPSLEEP) ||
 		(vif->ar->state == ATH6KL_STATE_PRE_SUSPEND)) {
-		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-		"ignore wlan disabled in AUTO suspend mode!\n");
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+			   ATH6KL_DBG_EXT_AUTOPM,
+			   "autopm ignore wlan disabled in autopm mode!\n");
 	} else {
 		if (!test_bit(WLAN_ENABLED, &vif->flags))
 			return false;
@@ -535,7 +536,7 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 	const u8 *pos;
 	u8 *buf = NULL;
 	size_t len = 0;
-	int ret;
+	int ret = 0;
 
 	/*
 	 * Clear previously set flag
@@ -583,9 +584,7 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 		}
 	}
 
-	ret = 0;
-	if (len != 0)
-		ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+	ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
 					       WMI_FRAME_ASSOC_REQ, buf, len);
 
 	kfree(buf);
@@ -818,19 +817,28 @@ void ath6kl_check_autopm_onoff(struct ath6kl *ar, bool call_on_disconnect)
 		}
 	}
 
+	ath6kl_dbg(ATH6KL_DBG_EXT_AUTOPM,
+	"autopm next mode(%d) %s --> %s, vif_cnt %d cur-delay_cnt/time %d/%d\n",
+		call_on_disconnect,
+		(ar->autopm_turn_on ? "ON" : "OFF"),
+		(autopm_turn_on ? "ON" : "OFF"),
+		vif_cnt,
+		ar->autopm_defer_delay_change_cnt,
+		ar->autopm_curr_delay_time);
+
 	if (autopm_turn_on) {
 		ath6kl_hif_auto_pm_turnon(ar);
 		if (call_on_disconnect) {
-			ath6kl_hif_auto_pm_set_delay(ar,
-				USB_SUSPEND_DELAY_REENABLE);
 			ar->autopm_defer_delay_change_cnt =
 				USB_SUSPEND_DEFER_DELAY_CHANGE_CNT;
+			ath6kl_hif_auto_pm_set_delay(ar,
+				USB_SUSPEND_DELAY_REENABLE);
 		}
 	} else {
 		ath6kl_hif_auto_pm_turnoff(ar);
+		ar->autopm_defer_delay_change_cnt = 0;
 		ath6kl_hif_auto_pm_set_delay(ar,
 			USB_SUSPEND_DELAY_MAX);
-		ar->autopm_defer_delay_change_cnt = 0;
 	}
 
 	ar->autopm_turn_on = autopm_turn_on;
@@ -1168,9 +1176,9 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
-		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 		ar->autopm_defer_delay_change_cnt =
-			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P;
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 	}
 #endif
 
@@ -1653,9 +1661,9 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
-		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_CONNECTED);
 		ar->autopm_defer_delay_change_cnt =
 			USB_SUSPEND_DEFER_DELAY_CHANGE_CNT;
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_CONNECTED);
 	}
 #endif
 }
@@ -1696,8 +1704,8 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
-		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 		ar->autopm_defer_delay_change_cnt = 0;
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 	}
 #endif
 
@@ -1744,25 +1752,20 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 		del_timer(&vif->vifscan_timer);
 		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
+
+#ifdef USB_AUTO_SUSPEND
+		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+				   ATH6KL_DBG_EXT_AUTOPM,
+				   "%s: warnning refcnt=0, my=%d\n",
+				   __func__,
+				   ar->auto_pm_cnt);
+		} else
+			ath6kl_hif_auto_pm_enable(ar);
+#endif
+
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
-#if defined(USB_AUTO_SUSPEND)
-		/*
-		In Disconnected state, the driver will enter deep sleep,
-		such that the scan response will be lost, thus here
-		prevent driver goes into deep sleep mode
-		*/
-
-		if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
-			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-				"%s: warnning pm_usage_cnt =0\n", __func__);
-			} else {
-				ath6kl_hif_auto_pm_enable(ar);
-			}
-		}
-
-#endif
 	}
 
 	if (vif->nw_type & ADHOC_NETWORK) {
@@ -1872,25 +1875,25 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 	if (vif->scan_req) {
 		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
+
+#ifdef USB_AUTO_SUSPEND
+		/*
+		 * Here maybe false alarmif race-condition happened between
+		 * scan-comp-event & scan-abort-command.
+		 */
+		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+				   ATH6KL_DBG_EXT_SCAN |
+				   ATH6KL_DBG_EXT_AUTOPM,
+				   "%s: warnning refcnt=0, my=%d\n",
+				   __func__,
+				   ar->auto_pm_cnt);
+		} else
+			ath6kl_hif_auto_pm_enable(ar);
+#endif
+
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
-#if defined(USB_AUTO_SUSPEND)
-		/*
-		In Disconnected state, the driver will enter deep sleep,
-		such that the scan response will be lost, thus here
-		prevent driver goes into deep sleep mode
-		*/
-
-		if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
-			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-				"%s: warnning pm_usage_cnt =0\n", __func__);
-			} else {
-				ath6kl_hif_auto_pm_enable(ar);
-			}
-		}
-
-#endif
 	}
 }
 
@@ -2349,12 +2352,12 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		vif->scan_req = request;
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
+
 #ifdef USB_AUTO_SUSPEND
-		if (test_bit(SCANNING, &ar->usb_autopm_scan) == 0) {
-			set_bit(SCANNING, &ar->usb_autopm_scan);
-			ath6kl_hif_auto_pm_disable(ar);
-		}
+		/* Disable autopm until scan finished. */
+		ath6kl_hif_auto_pm_disable(ar);
 #endif
+
 	}
 
 	kfree(channels);
@@ -2395,23 +2398,24 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 		"%s: status%s\n", __func__,
 		aborted ? " aborted" : "complete");
 
-#if defined(USB_AUTO_SUSPEND)
+#ifdef USB_AUTO_SUSPEND
 	/*
-	In Disconnected state, the driver will enter deep sleep,
-	such that the scan response will be lost, thus here
-	prevent driver goes into deep sleep mode
-	*/
-
-	if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
-		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
-			"%s: warnning pm_usage_cnt =0\n", __func__);
-		} else {
-			ath6kl_hif_auto_pm_enable(ar);
-		}
-	}
-
+	 * Here maybe flase alarm. Ex, th6kl_cfg80211_stop() try
+	 * to finish all actions after stop the device and not really
+	 * wait event back, or this interface will be deleted later
+	 * (like p2p-p2p0-x) for some reaseon.
+	 */
+	if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+			   ATH6KL_DBG_EXT_SCAN |
+			   ATH6KL_DBG_EXT_AUTOPM,
+			   "%s: warnning refcnt=0, my=%d\n",
+			   __func__,
+			   ar->auto_pm_cnt);
+	} else
+		ath6kl_hif_auto_pm_enable(ar);
 #endif
+
 	del_timer(&vif->vifscan_timer);
 
 	if (test_bit(SCANNING_WAIT, &vif->flags)) {
@@ -4208,8 +4212,10 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 		return -EOPNOTSUPP;
 
 
-	ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "deep sleep suspend %x\n",
-					need_suspend_vif);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "deep sleep suspend, need_suspend_vif 0x%x\n",
+		   need_suspend_vif);
 
 #ifdef CONFIG_ANDROID
 	if (ar->wow_irq) {
@@ -4232,9 +4238,10 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 	}
 
 #ifdef USB_AUTO_SUSPEND
-	/* in mck3.0, we won't have credit full problem as before,
-	   so we could move ATH6KL_STATE_DEEPSLEEP after stop_all()
-	*/
+	/*
+	 * After McK3.x, we won't have credit full problem as before,
+	 * so we could move ATH6KL_STATE_DEEPSLEEP after stop_all()
+	 */
 	ath6kl_cfg80211_stop_all(ar);
 
 	spin_lock_bh(&ar->state_lock);
@@ -4271,22 +4278,58 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 	return ret;
 }
 
+static char *_get_suspend_mode_string(enum ath6kl_cfg_suspend_mode mode)
+{
+	if (mode == ATH6KL_CFG_SUSPEND_DEEPSLEEP)
+		return "DEEPSLEEP";
+	else if (mode == ATH6KL_CFG_SUSPEND_CUTPOWER)
+		return "CUTPOWER";
+	else if (mode == ATH6KL_CFG_SUSPEND_WOW)
+		return "WOW";
+
+	return "UNKNOWN";
+}
+
+static char *_get_suspend_stat_string(enum ath6kl_state state)
+{
+	if (state == ATH6KL_STATE_OFF)
+		return "OFF";
+	else if (state == ATH6KL_STATE_ON)
+		return "ON";
+	else if (state == ATH6KL_STATE_DEEPSLEEP)
+		return "DEEPSLEEP";
+	else if (state == ATH6KL_STATE_CUTPOWER)
+		return "CUTPOWER";
+	else if (state == ATH6KL_STATE_WOW)
+		return "WOW";
+	else if (state == ATH6KL_STATE_PRE_SUSPEND)
+		return "PRE-SUSPEND";
+	else if (state == ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP)
+		return "PRE-DEEPSLEEP";
+
+	return "UNKNOWN";
+}
+
 int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 			    enum ath6kl_cfg_suspend_mode mode,
 			    struct cfg80211_wowlan *wow)
 {
 	int ret;
 	u32 need_suspend_vif = 0;
+
 	/* make sure no AP mode at any vif*/
 	if (ath6kl_cfg80211_need_suspend(ar, &need_suspend_vif)
 		&& ar->get_wow_pattern == true)
 		mode = ATH6KL_CFG_SUSPEND_WOW;
 
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "Start suspend mode %s, ar->state %s\n",
+		   _get_suspend_mode_string(mode),
+		   _get_suspend_stat_string(ar->state));
+
 	switch (mode) {
 	case ATH6KL_CFG_SUSPEND_WOW:
-
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "wow mode suspend\n");
-
 		/* Flush all non control pkts in TX path */
 		ath6kl_tx_data_cleanup(ar);
 #ifdef USB_AUTO_SUSPEND
@@ -4308,8 +4351,6 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 	case ATH6KL_CFG_SUSPEND_DEEPSLEEP:
 		if (ar->state == ATH6KL_STATE_DEEPSLEEP)
 			break;
-
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "deep sleep suspend\n");
 
 #ifdef USB_AUTO_SUSPEND
 		ar->state = ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP;
@@ -4360,6 +4401,12 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 		break;
 	}
 
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "End suspend mode %s, ar->state %s\n",
+		   _get_suspend_mode_string(mode),
+		   _get_suspend_stat_string(ar->state));
+
 	return 0;
 }
 
@@ -4368,17 +4415,18 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 	int i, ret;
 	struct ath6kl_vif *vif;
 
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "Start resume, ar->state %s\n",
+		   _get_suspend_stat_string(ar->state));
+
 	switch (ar->state) {
 	case  ATH6KL_STATE_WOW:
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "wow mode resume\n");
-
 #ifdef CONFIG_HAS_WAKELOCK
 		wake_lock_timeout(&ar->wake_lock, 3*HZ);
 #else
 		/* TODO: What should I do if there is no wake lock?? */
 #endif
-
-
 
 		spin_lock_bh(&ar->state_lock);
 		ar->state = ATH6KL_STATE_ON;
@@ -4398,8 +4446,6 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 		break;
 
 	case ATH6KL_STATE_DEEPSLEEP:
-		ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_AUTOPM, "deep sleep resume\n");
-
 		spin_lock_bh(&ar->state_lock);
 		ar->state = ATH6KL_STATE_ON;
 		spin_unlock_bh(&ar->state_lock);
@@ -4478,6 +4524,11 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 	default:
 		break;
 	}
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "End resume, ar->state %s\n",
+		   _get_suspend_stat_string(ar->state));
 
 	return 0;
 }
@@ -5435,9 +5486,9 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
-		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 		ar->autopm_defer_delay_change_cnt =
-			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P;
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 	}
 #endif
 
@@ -5537,9 +5588,9 @@ static int _ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
-		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 		ar->autopm_defer_delay_change_cnt =
-			USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND;
+			USB_SUSPEND_DEFER_DELAY_FOR_P2P;
+		ath6kl_hif_auto_pm_set_delay(ar, USB_SUSPEND_DELAY_MAX);
 	}
 #endif
 

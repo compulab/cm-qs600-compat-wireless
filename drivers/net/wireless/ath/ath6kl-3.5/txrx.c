@@ -448,7 +448,8 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	if (cookie == NULL) {
 #ifdef ATH6KL_HSIC_RECOVER
 		if (ar->cookie_ctrl.cookie_fail_in_row >
-				MAX_COOKIE_FAIL_IN_ROW) {
+				MAX_COOKIE_FAIL_IN_ROW &&
+				ar->fw_crash_notify) {
 			ath6kl_err("control cookie fail %d time reset!\n",
 				ar->cookie_ctrl.cookie_fail_in_row);
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
@@ -919,7 +920,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
 #ifdef ATH6KL_HSIC_RECOVER
-		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag) &&
+			ar->fw_crash_notify) {
 			ath6kl_info("%s schedule recover work\n", __func__);
 			schedule_work(&ar->reset_cover_war_work);
 		}
@@ -3444,20 +3446,20 @@ static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx)
 			ath6kl_wmi_abort_scan_cmd(ar->wmi,
 					tmp->fw_vif_idx);
 			cfg80211_scan_done(tmp->scan_req, true);
+
+#ifdef USB_AUTO_SUSPEND
+			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+					   ATH6KL_DBG_EXT_AUTOPM,
+					   "%s: warnning refcnt=0, my=%d\n",
+					   __func__,
+					   ar->auto_pm_cnt);
+			} else
+				ath6kl_hif_auto_pm_enable(ar);
+#endif
+
 			tmp->scan_req = NULL;
 			clear_bit(SCANNING, &tmp->flags);
-
-#if defined(USB_AUTO_SUSPEND)
-			if (test_and_clear_bit(SCANNING,
-				&ar->usb_autopm_scan)) {
-				if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-					ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-					"%s: warnning pm_usage_cnt =0\n",
-					__func__);
-				} else
-					ath6kl_hif_auto_pm_enable(ar);
-			}
-#endif
 		}
 	}
 

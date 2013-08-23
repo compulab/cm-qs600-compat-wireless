@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.457)
+#define __BUILD_VERSION_ (3.5.0.459)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1547,11 +1547,11 @@ enum ath6kl_vap_mode {
 #ifdef USB_AUTO_SUSPEND
 #define USB_SUSPEND_DELAY_MAX                         2000
 #define USB_SUSPEND_DELAY_REENABLE                     500
-#define USB_SUSPEND_DELAY_CONNECTED                    400
+#define USB_SUSPEND_DELAY_CONNECTED                   2000
 #define USB_SUSPEND_DELAY_MIN                          200
 
-#define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT				1
-#define USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND			2
+#define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT			1
+#define USB_SUSPEND_DEFER_DELAY_FOR_P2P				2
 #define USB_SUSPEND_DEFER_DELAY_FOR_RECOVER			3
 
 struct usb_pm_skb_queue_t {
@@ -1853,10 +1853,10 @@ struct ath6kl {
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
-	unsigned long  usb_autopm_scan;
 	int auto_pm_cnt;
 	int autopm_turn_on;
 	int autopm_defer_delay_change_cnt;
+	int autopm_curr_delay_time;
 #endif
 	struct wmi_green_tx_params green_tx_params;
 
