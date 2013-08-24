@@ -1445,17 +1445,17 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 
 	ath6kl_stop_txrx(ar_usb->ar);
 
+	/* Delay to wait for target to reboot */
+	mdelay(20);
+
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	if (ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM)) {
-		mdelay(20);
 		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
 		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
 		ath6kl_disconnect_bam_pipes(ar_usb);
 	}
 #endif
 
-	/* Delay to wait for the target to reboot */
-	mdelay(20);
 	ath6kl_core_cleanup(ar_usb->ar);
 	ath6kl_core_destroy(ar_usb->ar);
 
