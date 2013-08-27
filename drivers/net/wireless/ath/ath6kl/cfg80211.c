@@ -910,11 +910,28 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	clear_bit(CONNECT_PEND, &vif->flags);
 
 	if (vif->sme_state == SME_CONNECTING) {
-		cfg80211_connect_result(vif->ndev,
-					bssid, NULL, 0,
-					NULL, 0,
-					WLAN_STATUS_UNSPECIFIED_FAILURE,
-					GFP_KERNEL);
+
+		/*
+		 * In case of OPEN-WEP or SHARED-WEP authentication, send
+		 * exact protocol reason code. This enables user applications
+		 * to reconnect the station with correct configuration.
+		 */
+		if ((vif->auth_mode == NONE_AUTH) &&
+		    (vif->prwise_crypto == WEP_CRYPT) &&
+		    ((vif->dot11_auth_mode == OPEN_AUTH) ||
+		    (vif->dot11_auth_mode == SHARED_AUTH))) {
+
+			cfg80211_connect_result(vif->ndev, bssid, NULL, 0,
+						NULL, 0,
+						proto_reason,
+						GFP_KERNEL);
+		} else {
+			cfg80211_connect_result(vif->ndev,
+						bssid, NULL, 0,
+						NULL, 0,
+						WLAN_STATUS_UNSPECIFIED_FAILURE,
+						GFP_KERNEL);
+		}
 	} else if (vif->sme_state == SME_CONNECTED) {
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
