@@ -4074,7 +4074,8 @@ static ssize_t ath6kl_patterngen_write(struct file *file,
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
-	}
+	} else if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		vif->data_cookie_count++;
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -4121,6 +4122,14 @@ static ssize_t ath6kl_patterngen_write(struct file *file,
 fail_tx:
 	if (skb)
 		dev_kfree_skb(skb);
+
+	if (cookie) {
+		spin_lock_bh(&ar->lock);
+		if (htc_tag == ATH6KL_DATA_PKT_TAG)
+			vif->data_cookie_count--;
+		ath6kl_free_cookie(ar, cookie);
+		spin_unlock_bh(&ar->lock);
+	}
 
 	kfree(pattern_buf);
 
@@ -6344,7 +6353,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("anistat", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_ani_state_read);
 
-	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR | S_IWOTH,
+	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR,
 				ar->debugfs_phy, ar, &fops_pattern_gen);
 
 	debugfs_create_file("p2p_rc", S_IRUSR | S_IWUSR,

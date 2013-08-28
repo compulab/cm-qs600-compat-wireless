@@ -22,9 +22,6 @@
 #include <linux/interrupt.h>
 #include <linux/mmc/sdio_func.h>
 #endif
-#ifdef CONFIG_IDME
-#include <linux/of.h>
-#endif
 #include "core.h"
 #include "cfg80211.h"
 #include "target.h"
@@ -713,10 +710,10 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 #if defined(CE_SUPPORT) || defined(CE_2_SUPPORT)
 	/* avoid association reject by AP not found */
 	vif->sc_params.maxact_chdwell_time = 60;
+	vif->sc_params.maxact_scan_per_ssid = 2;
 #else
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
 #endif
-	vif->sc_params.maxact_scan_per_ssid = 2;
 
 	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 		vif->sc_params.pas_chdwell_time =
@@ -1357,104 +1354,6 @@ static bool check_device_tree(struct ath6kl *ar)
 }
 #endif /* CONFIG_OF */
 
-#ifdef CONFIG_IDME
-static inline unsigned char idme_char_to_hex(const char *nibble)
-{
-   switch (*nibble)
-   {
-   case '0': return 0x0;
-   case '1': return 0x1;
-   case '2': return 0x2;
-   case '3': return 0x3;
-   case '4': return 0x4;
-   case '5': return 0x5;
-   case '6': return 0x6;
-   case '7': return 0x7;
-   case '8': return 0x8;
-   case '9': return 0x9;
-   case 'A': case 'a': return 0xa;
-   case 'B': case 'b': return 0xb;
-   case 'C': case 'c': return 0xc;
-   case 'D': case 'd': return 0xd;
-   case 'E': case 'e': return 0xe;
-   case 'F': case 'f': return 0xf;
-   default: return 0;
-   }
-}
-
-/* based on ath6kl_replace_with_module_param */
-static int ath6kl_replace_with_idme(struct ath6kl *ar)
-{
-	int i, ret;
-	u16 *p;
-	u32 sum = 0;
-	u32 param;
-	u8 macaddr[ETH_ALEN] = {0,};
-	struct device_node *ap;
-	int len;
-	const char *idme_mac;
-
-	if (ar->fw_board == NULL)
-		return -EINVAL;
-
-	/* Get IDME mac address */
-	ap = of_find_node_by_path("/idme/mac_addr");
-	if (!ap) {
-		ath6kl_err("Unable to get of node /idme/mac_addr\n");
-		return -EINVAL;
-	}
-	idme_mac = of_get_property(ap, "value", &len);
-	if (len != 13) {
-		ath6kl_err("IDME mac_addr not valid: length %d != 13\n", len);
-		return -EINVAL;
-	}
-	//ath6kl_info("Reading the mac address from IDME: %s\n", idme_mac);
-
-	/* Convert IDME mac address */
-	for (i = 0; i < 6; i++) {
-		macaddr[i] = idme_char_to_hex(idme_mac+i*2)<<4 |
-			idme_char_to_hex(idme_mac+i*2+1);
-	}
-
-	/* set checksum filed in the board data to zero */
-	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
-
-	/* replace the mac address with IDME value */
-	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], macaddr, ETH_ALEN);
-
-	p = (u16 *) ar->fw_board;
-
-	/* calculate check sum */
-	for (i = 0; i < (ar->fw_board_len / 2); i++)
-		sum ^= *p++;
-
-
-	sum = ~sum;
-
-	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
-
-	ret = ath6kl_bmi_read(ar,
-				ath6kl_get_hi_item_addr(ar,
-				HI_ITEM(hi_option_flag2)),
-				(u8 *) &param, 4);
-
-	if (ret) {
-		ath6kl_err("failed to do bmi read %d\n", ret);
-		return ret;
-	}
-
-	param |= HI_OPTION_DISABLE_MAC_OTP;
-	ath6kl_bmi_write(ar,
-			 ath6kl_get_hi_item_addr(ar,
-			 HI_ITEM(hi_option_flag2)),
-			 (u8 *)&param, 4);
-
-	return 0;
-}
-#endif /* CONFIG_IDME */
-
 #ifdef CONFIG_ANDROID
 static void ath6kl_replace_with_softmac_2(struct ath6kl *ar)
 {
@@ -1622,12 +1521,6 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 		/*if valid MAC from module_param, then use it */
 		if (ath6kl_replace_with_module_param(ar, ath6kl_wifi_mac) == 0)
 			return 0;
-
-#ifdef CONFIG_IDME
-		/* if valid mac from IDME, then use it */
-		if (ath6kl_replace_with_idme(ar) == 0)
-			return 0;
-#endif
 
 		ret = ath6kl_get_fw(ar, ar->hw.fw_softmac, &ar->fw_softmac,
 			    &ar->fw_softmac_len);

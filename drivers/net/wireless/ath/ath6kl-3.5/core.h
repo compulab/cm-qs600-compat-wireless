@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.9457)
+#define __BUILD_VERSION_ (3.5.0.460)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -222,6 +222,7 @@
 #define DELIMITER 0xaaaaaaaa
 #define DUMP_BUF_SIZE 2000
 #define MAX_DUMP_FW_SIZE 18000
+#define MAX_STRDUMP_LEN 200
 
 #ifdef CONFIG_ANDROID
 #define CRASH_DUMP_FILE "/data/connectivity/ath6kl.log"
@@ -1481,7 +1482,7 @@ struct ath6kl_vif {
 	struct p2p_pending_connect_info *pending_connect_info;
 
 	struct bss_post_proc *bss_post_proc_ctx;
-	u32 data_cookie_count;
+	int data_cookie_count;
 
 	struct ap_rc_info ap_rc_info_ctx;
 
@@ -1547,7 +1548,7 @@ enum ath6kl_vap_mode {
 #ifdef USB_AUTO_SUSPEND
 #define USB_SUSPEND_DELAY_MAX                         2000
 #define USB_SUSPEND_DELAY_REENABLE                     500
-#define USB_SUSPEND_DELAY_CONNECTED                    2000
+#define USB_SUSPEND_DELAY_CONNECTED                   2000
 #define USB_SUSPEND_DELAY_MIN                          200
 
 #define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT			1
@@ -2137,5 +2138,12 @@ extern unsigned int ath6kl_ce_flags;
 
 #ifdef CONFIG_ANDROID
 extern unsigned int ath6kl_bt_on;
+#endif
+
+#if CONFIG_CRASH_DUMP
+int _readwrite_file(const char *filename, char *rbuf,
+	const char *wbuf, size_t length, int mode);
+int print_to_file(const char *fmt, ...);
+int check_dump_file_size(void);
 #endif
 #endif /* CORE_H */

@@ -1479,86 +1479,6 @@ _failed:
 }
 
 #if CONFIG_CRASH_DUMP
-static int _readwrite_file(const char *filename, char *rbuf,
-	const char *wbuf, size_t length, int mode)
-{
-	int ret = 0;
-	struct file *filp = (struct file *)-ENOENT;
-	mm_segment_t oldfs;
-	oldfs = get_fs();
-	set_fs(KERNEL_DS);
-
-	do {
-		filp = filp_open(filename, mode, S_IRUSR);
-
-		if (IS_ERR(filp) || !filp->f_op) {
-			ret = -ENOENT;
-			break;
-		}
-
-		if (!filp->f_op->write || !filp->f_op->read) {
-			filp_close(filp, NULL);
-			ret = -ENOENT;
-			break;
-		}
-
-		if (length == 0) {
-			/* Read the length of the file only */
-			struct inode    *inode;
-
-			inode = GET_INODE_FROM_FILEP(filp);
-			if (!inode) {
-				printk(KERN_ERR
-					"_readwrite_file: Error 2\n");
-				ret = -ENOENT;
-				break;
-			}
-			ret = i_size_read(inode->i_mapping->host);
-			break;
-		}
-
-		if (wbuf) {
-			ret = filp->f_op->write(
-				filp, wbuf, length, &filp->f_pos);
-			if (ret < 0) {
-				printk(KERN_ERR
-					"_readwrite_file: Error 3\n");
-				break;
-			}
-		} else {
-			ret = filp->f_op->read(
-				filp, rbuf, length, &filp->f_pos);
-			if (ret < 0) {
-				printk(KERN_ERR
-					"_readwrite_file: Error 4\n");
-				break;
-			}
-		}
-	} while (0);
-
-	if (!IS_ERR(filp))
-		filp_close(filp, NULL);
-
-	set_fs(oldfs);
-
-	return ret;
-}
-
-static int check_size(void)
-{
-	int status = 0, size = 0;
-	size = _readwrite_file(CRASH_DUMP_FILE, NULL, NULL, 0, O_RDONLY);
-
-	if (size > (MAX_DUMP_FW_SIZE - DUMP_BUF_SIZE)) {
-
-		ath6kl_info("clean big log 0x%x\n", size);
-		status = _readwrite_file(CRASH_DUMP_FILE, NULL, NULL,
-			0, (O_WRONLY | O_TRUNC));
-	}
-
-	return status;
-}
-
 static int dump_fw_crash_to_file(struct htc_target *target, u8 *netdata)
 {
 	char *buf;
@@ -1566,7 +1486,7 @@ static int dump_fw_crash_to_file(struct htc_target *target, u8 *netdata)
 	int i;
 	int status = 0;
 
-	status = check_size();
+	status = check_dump_file_size();
 	if (status)
 		ath6kl_info("crash log file check status code 0x%x\n", status);
 

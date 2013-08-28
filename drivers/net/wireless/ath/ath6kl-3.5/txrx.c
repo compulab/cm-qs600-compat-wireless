@@ -19,8 +19,6 @@
 #include "htc-ops.h"
 #include "epping.h"
 #include <linux/version.h>
-#include <net/arp.h>
-#include <linux/trapz.h> /* ACOS_MOD_ONELINE */
 #include "hif-ops.h"
 
 /* 802.1d to AC mapping. Refer pg 57 of WMM-test-plan-v1.2 */
@@ -450,12 +448,14 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	if (cookie == NULL) {
 #ifdef ATH6KL_HSIC_RECOVER
 		if (ar->cookie_ctrl.cookie_fail_in_row >
-				MAX_COOKIE_FAIL_IN_ROW) {
+				MAX_COOKIE_FAIL_IN_ROW &&
+				ar->fw_crash_notify) {
 			ath6kl_err("control cookie fail %d time reset!\n",
 				ar->cookie_ctrl.cookie_fail_in_row);
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
 			if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 				ath6kl_info("%s schedule recover\n", __func__);
+				print_to_file("%s recover\n", __func__);
 				schedule_work(&ar->reset_cover_war_work);
 			}
 		}
@@ -514,6 +514,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	u32 wmi_data_flags = 0;
 	int ret, aggr_tx_status = AGGR_TX_UNKNOW;
 	struct ath6kl_sta *conn = NULL;
+	bool cookie_cnt_updated = false;
 
 	/* If target is not associated */
 	if (!test_bit(CONNECTED, &vif->flags) &&
@@ -679,8 +680,10 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 			cookie_run_out = ath6kl_cookie_is_almost_full(ar,
 							COOKIE_TYPE_DATA);
 		}
-		if (cookie)
+		if (cookie) {
+			cookie_cnt_updated = true;
 			vif->data_cookie_count++;
+		}
 	} else
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
@@ -758,12 +761,13 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 fail_tx:
 	dev_kfree_skb(skb);
 
-	/* ACOS_MOD_BEGIN */
-	TRAPZ_DESCRIBE(TRAPZ_KERN_NET_WIFI, tx_drop_packet,
-		"Wifi packet could not be enqueued for Tx -- was dropped");
-	TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_WIFI, tx_drop_packet,
-		0, 0, 0, 0);
-	/* ACOS_MOD_END */
+	if (cookie) {
+		spin_lock_bh(&ar->lock);
+		if (cookie_cnt_updated)
+			vif->data_cookie_count--;
+		ath6kl_free_cookie(ar, cookie);
+		spin_unlock_bh(&ar->lock);
+	}
 
 	vif->net_stats.tx_dropped++;
 	vif->net_stats.tx_aborted_errors++;
@@ -928,8 +932,10 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
 #ifdef ATH6KL_HSIC_RECOVER
-		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag) &&
+			ar->fw_crash_notify) {
 			ath6kl_info("%s schedule recover work\n", __func__);
+			print_to_file("%s schedule recover work\n", __func__);
 			schedule_work(&ar->reset_cover_war_work);
 		}
 #endif
@@ -1132,28 +1138,11 @@ void ath6kl_tx_complete(struct htc_target *target,
 				   "%s: skb=0x%p data=0x%p len=0x%x eid=%d %s\n",
 				   __func__, skb, packet->buf, packet->act_len,
 				   eid, "error!");
-
-			/* ACOS_MOD_BEGIN */
-			TRAPZ_DESCRIBE(TRAPZ_KERN_NET_WIFI, tx_error_packet,
-					"Wifi packet enqueued -- "
-					"but error on transmission.");
-			TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_WIFI,
-					tx_error_packet, 0, 0, 0, 0);
-			/* ACOS_MOD_END */
 		} else {
 			ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
 				   "%s: skb=0x%p data=0x%p len=0x%x eid=%d %s\n",
 				   __func__, skb, packet->buf, packet->act_len,
 				   eid, "OK");
-
-			/* ACOS_MOD_BEGIN */
-			TRAPZ_DESCRIBE(TRAPZ_KERN_NET_WIFI, tx_packet,
-					"Sent a packet on Wifi");
-			TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_WIFI,
-					tx_packet,
-					"Packet type: %d size: %d",
-			   		skb->pkt_type, packet->act_len, 0, 0);
-			/* ACOS_MOD_END */
 
 			flushing[if_idx] = false;
 			vif->net_stats.tx_packets++;
@@ -1162,8 +1151,13 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
 		if (ath6kl_cookie->htc_pkt->info.tx.tag ==
-			ATH6KL_DATA_PKT_TAG)
+			ATH6KL_DATA_PKT_TAG) {
 			vif->data_cookie_count--;
+			if (vif->data_cookie_count < 0) {
+				vif->data_cookie_count = 0;
+				ath6kl_err("Error, data_cookie_count unsync\n");
+			}
+		}
 
 		ath6kl_free_cookie(ar, ath6kl_cookie);
 
@@ -2187,13 +2181,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	vif->net_stats.rx_packets++;
 	vif->net_stats.rx_bytes += packet->act_len;
 
-	/* ACOS_MOD_BEGIN */
-	TRAPZ_DESCRIBE(TRAPZ_KERN_NET_WIFI, rx_packet,
-			"Received a packet on Wifi");
-	TRAPZ_LOG_PRINTF(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_WIFI, rx_packet,
-			"Packet type: %d size: %d", skb->pkt_type, skb->len, 0, 0);
-	/* ACOS_MOD_END */
-
 	ath6kl_dbg_dump(ATH6KL_DBG_RAW_BYTES, __func__, "rx ",
 			skb->data, skb->len);
 
@@ -2237,12 +2224,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	    ((packet->act_len < min_hdr_len) ||
 	     (packet->act_len > WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH))) {
 		ath6kl_info("frame len is too short or too long\n");
-		/* ACOS_MOD_BEGIN */
-		TRAPZ_DESCRIBE(TRAPZ_KERN_NET_WIFI, rx_error_packet,
-				"Received a corrupted Wifi packet");
-		TRAPZ_LOG(TRAPZ_LOG_DEBUG, 0, TRAPZ_KERN_NET_WIFI,
-				rx_error_packet, 0, 0, 0, 0);
-		/* ACOS_MOD_END */
 		vif->net_stats.rx_errors++;
 		vif->net_stats.rx_length_errors++;
 		dev_kfree_skb(skb);
@@ -2735,7 +2716,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 {
 	struct ath6kl_vif *vif = txtid->vif;
 	struct ath6kl *ar = vif->ar;
-	struct ath6kl_cookie *cookie;
+	struct ath6kl_cookie *cookie = NULL;
 	enum htc_endpoint_id eid;
 	struct wmi_data_hdr *wmi_hdr;
 	struct sk_buff *amsdu_skb, *skb = NULL;
@@ -2870,6 +2851,13 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 
 fail_tx:
 	dev_kfree_skb(skb);
+
+	if (cookie) {
+		spin_lock_bh(&ar->lock);
+		vif->data_cookie_count--;
+		ath6kl_free_cookie(ar, cookie);
+		spin_unlock_bh(&ar->lock);
+	}
 
 	vif->net_stats.tx_dropped++;
 	vif->net_stats.tx_aborted_errors++;
