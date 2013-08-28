@@ -536,7 +536,7 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 	const u8 *pos;
 	u8 *buf = NULL;
 	size_t len = 0;
-	int ret = 0;
+	int ret;
 
 	/*
 	 * Clear previously set flag
@@ -584,7 +584,9 @@ static int ath6kl_set_assoc_req_ies(struct ath6kl_vif *vif, const u8 *ies,
 		}
 	}
 
-	ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
+	ret = 0;
+	if (len != 0)
+		ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
 					       WMI_FRAME_ASSOC_REQ, buf, len);
 
 	kfree(buf);
@@ -3922,6 +3924,65 @@ static int ath6kl_flush_pmksa(struct wiphy *wiphy, struct net_device *netdev)
 	return 0;
 }
 
+/*
+static int ath6kl_set_multicast_wow_pattern(struct ath6kl *ar)
+{
+    struct ath6kl_vif *vif;
+    int ret;
+
+    u8 pattern_idx = 0;
+    u8 pattern_offset;
+    // using fix pattern for ip address : 224:0.0.251 
+    u8 pattern_buf[]={ 0x01,0x00,0x5e ,0x00 ,0x00, 0xfb };
+    u8 pattern_mask[16];
+    u8 pattern_len;
+    u8 mask_idx = 0;
+    u32 host_req_delay = WOW_HOST_REQ_DELAY;
+
+    vif = ath6kl_vif_first(ar);
+    if (!vif)
+        return -EIO;
+
+    //set pattern Idx 
+    pattern_idx = 1;
+
+    //set pattern offset 
+    pattern_offset = 0;
+
+    pattern_len = sizeof(pattern_buf);
+
+    // for hsic mode, reduce the wakeup time to 2 secs 
+    if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
+		host_req_delay = 2000;
+
+   // generate bytemask by pattern length 
+   for (mask_idx = 0; mask_idx < pattern_len/8; mask_idx++)
+	pattern_mask[mask_idx] = 0xff;
+
+   if (pattern_len % 8)
+	pattern_mask[mask_idx] = (1 << (pattern_len % 8)) - 1;
+
+   ath6kl_wmi_del_wow_pattern_cmd(ar->wmi,
+				       vif->fw_vif_idx,
+				       WOW_LIST_ID,
+				       pattern_idx);
+
+   ret = ath6kl_wmi_add_wow_ext_pattern_cmd(ar->wmi,
+							vif->fw_vif_idx,
+							WOW_LIST_ID,
+							pattern_len,
+							pattern_idx,
+							pattern_offset,
+							pattern_buf,
+							pattern_mask);
+
+   if (ret)
+       return -EINVAL;
+        
+   return 0;
+}
+*/
+
 static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 {
 	struct ath6kl_vif *vif;
@@ -4086,6 +4147,20 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		}
 	}
 
+
+        /* Setup Multicast wake-up pattern */ 
+
+        /* Do not call this function  as device is
+         * waking up too often due to the match of
+         * the multicast IP address
+        ret = ath6kl_set_multicast_wow_pattern(ar);
+
+        if (ret) {
+            ath6kl_err("failed to add WOW MULTICAST pattern\n");
+            return ret;
+        }
+
+         */
 	clear_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif->flags);
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,

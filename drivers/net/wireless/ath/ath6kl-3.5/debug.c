@@ -6344,7 +6344,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("anistat", S_IRUSR,
 				ar->debugfs_phy, ar, &fops_ani_state_read);
 
-	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR,
+	debugfs_create_file("pattern_gen", S_IWUSR | S_IRUSR | S_IWOTH,
 				ar->debugfs_phy, ar, &fops_pattern_gen);
 
 	debugfs_create_file("p2p_rc", S_IRUSR | S_IWUSR,

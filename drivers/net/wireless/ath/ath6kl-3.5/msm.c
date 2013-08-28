@@ -515,11 +515,18 @@ chip_pwd_fail:
 void ath6kl_hsic_rediscovery(void)
 {
 #ifdef ATH6KL_BUS_VOTE
+	int rc = 0;
+	rc = ath6kl_vreg_disable(gpdata->wifi_chip_pwd);
 	mdelay(100);
 	ath6kl_hsic_bind(0);
 
 	/* delay a while */
 	mdelay(1000);
+	rc = ath6kl_configure_vreg(gpdata->wifi_chip_pwd);
+	if (rc < 0) {
+		ath6kl_err("power on chip_pwd error\n");
+		ath6kl_vreg_disable(gpdata->wifi_chip_pwd);
+	}
 	ath6kl_hsic_bind(1);
 #endif
 }
