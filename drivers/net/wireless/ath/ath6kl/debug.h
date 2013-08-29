@@ -44,6 +44,9 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* Enable end point ping loop back test mode */
 	ATH6KL_MODULE_ENABLE_EPPING		= BIT(6),
 
+	/* enable lpl */
+	AT6HKL_MODULE_LPL_ENABLE		= BIT(7),
+
 	/* hole */
 
 	/* Enable BAM2BAM feature */
