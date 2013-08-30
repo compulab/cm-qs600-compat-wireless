@@ -531,6 +531,9 @@ int ath6kl_hsic_is_bt_on(void)
 	int rc;
 	int bt_reset_gpio_val = 0;
 
+	if (gpdata->bt_gpio_sys_rst < 0)
+		return 0;
+
 	rc = gpio_request(gpdata->bt_gpio_sys_rst, "bt_sys_rst_n");
 	if (rc) {
 		ath6kl_err("unable to request gpio %d (%d)\n",
@@ -712,8 +715,7 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 				"qca,bt-reset-gpio", 0);
 		if (pdata->bt_gpio_sys_rst < 0) {
 			ath6kl_err("%s: bt-reset-gpio not"
-						"provided in device tree\n", __func__);
-			goto err;
+				"provided in device tree\n", __func__);
 		}
 
 		pdata->pdev = pdev;
