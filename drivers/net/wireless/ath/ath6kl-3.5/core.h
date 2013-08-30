@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.460)
+#define __BUILD_VERSION_ (3.5.0.467)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1855,6 +1855,7 @@ struct ath6kl {
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
 	int auto_pm_cnt;
+	int auto_pm_fail_cnt;
 	int autopm_turn_on;
 	int autopm_defer_delay_change_cnt;
 	int autopm_curr_delay_time;
@@ -1871,6 +1872,9 @@ struct ath6kl {
 	bool get_wow_pattern;
 
 	struct work_struct reset_cover_war_work;
+
+	u16 last_host_req_delay;
+	u32 last_wow_fliter;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -2140,9 +2144,12 @@ extern unsigned int ath6kl_ce_flags;
 extern unsigned int ath6kl_bt_on;
 #endif
 
-#if CONFIG_CRASH_DUMP
+#if defined(CONFIG_CRASH_DUMP) || defined(ATH6KL_HSIC_RECOVER)
 int _readwrite_file(const char *filename, char *rbuf,
 	const char *wbuf, size_t length, int mode);
+#endif
+
+#ifdef CONFIG_CRASH_DUMP
 int print_to_file(const char *fmt, ...);
 int check_dump_file_size(void);
 #endif

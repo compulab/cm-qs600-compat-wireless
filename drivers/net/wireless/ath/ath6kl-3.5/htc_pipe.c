@@ -1478,7 +1478,7 @@ _failed:
 	return NULL;
 }
 
-#if CONFIG_CRASH_DUMP
+#ifdef CONFIG_CRASH_DUMP
 static int dump_fw_crash_to_file(struct htc_target *target, u8 *netdata)
 {
 	char *buf;
@@ -1584,7 +1584,7 @@ static int htc_rx_completion(struct htc_target *context,
 	netdata = netbuf->data;
 	netlen = netbuf->len;
 
-#if CONFIG_CRASH_DUMP
+#ifdef CONFIG_CRASH_DUMP
 	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
 
 		netdata += 4;

@@ -258,11 +258,11 @@ static inline int ath6kl_hif_bus_config(struct ath6kl *ar)
 }
 
 #ifdef USB_AUTO_SUSPEND
-static inline void ath6kl_hif_auto_pm_disable(struct ath6kl *ar)
+static inline int ath6kl_hif_auto_pm_disable(struct ath6kl *ar)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_disable\n");
 
-	ar->hif_ops->auto_pm_disable(ar);
+	return ar->hif_ops->auto_pm_disable(ar);
 }
 
 static inline void ath6kl_hif_auto_pm_enable(struct ath6kl *ar)

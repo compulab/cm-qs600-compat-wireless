@@ -5548,7 +5548,7 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	char buf[32];
+	char buf[128];
 	int len;
 	int usb_auto_usagecnt;
 	struct ath6kl *ar = file->private_data;
@@ -5556,9 +5556,10 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 	usb_auto_usagecnt = ath6kl_hif_auto_pm_get_usage_cnt(ar);
 
 	len = snprintf(buf, sizeof(buf),
-		"usbautopm: 0x%x localcnt:0x%x\n",
+		"usbautopm: 0x%x localcnt:0x%x/0x%x\n",
 		usb_auto_usagecnt,
-		ar->auto_pm_cnt);
+		ar->auto_pm_cnt,
+		ar->auto_pm_fail_cnt);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -5604,8 +5605,9 @@ static ssize_t ath6kl_usb_pm_status_read(struct file *file,
 			get_queue_depth(&(p_usb_pm_skb_queue->list)));
 
 	len += snprintf(buf + len, buf_len - len,
-			"auto_pm_cnt: %d (%d)\n",
+			"auto_pm_cnt: %d/%d (%d)\n",
 			ar->auto_pm_cnt,
+			ar->auto_pm_fail_cnt,
 			ath6kl_hif_auto_pm_get_usage_cnt(ar));
 
 	len += snprintf(buf + len, buf_len - len,

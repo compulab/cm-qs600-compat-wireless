@@ -1757,9 +1757,10 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
 			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 				   ATH6KL_DBG_EXT_AUTOPM,
-				   "%s: warnning refcnt=0, my=%d\n",
+				   "%s: warnning refcnt=0, my=%d/%d\n",
 				   __func__,
-				   ar->auto_pm_cnt);
+				   ar->auto_pm_cnt,
+				   ar->auto_pm_fail_cnt);
 		} else
 			ath6kl_hif_auto_pm_enable(ar);
 #endif
@@ -1885,9 +1886,10 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 				   ATH6KL_DBG_EXT_SCAN |
 				   ATH6KL_DBG_EXT_AUTOPM,
-				   "%s: warnning refcnt=0, my=%d\n",
+				   "%s: warnning refcnt=0, my=%d/%d\n",
 				   __func__,
-				   ar->auto_pm_cnt);
+				   ar->auto_pm_cnt,
+				   ar->auto_pm_fail_cnt);
 		} else
 			ath6kl_hif_auto_pm_enable(ar);
 #endif
@@ -2409,9 +2411,10 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 			   ATH6KL_DBG_EXT_SCAN |
 			   ATH6KL_DBG_EXT_AUTOPM,
-			   "%s: warnning refcnt=0, my=%d\n",
+			   "%s: warnning refcnt=0, my=%d/%d\n",
 			   __func__,
-			   ar->auto_pm_cnt);
+			   ar->auto_pm_cnt,
+			   ar->auto_pm_fail_cnt);
 	} else
 		ath6kl_hif_auto_pm_enable(ar);
 #endif

@@ -3368,9 +3368,10 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		if (ath6kl_hif_auto_pm_get_usage_cnt(vif->ar) == 0) {
 			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 				   ATH6KL_DBG_EXT_AUTOPM,
-				   "%s: warnning refcnt=0, my=%d\n",
+				   "%s: warnning refcnt=0, my=%d/%d\n",
 				   __func__,
-				   vif->ar->auto_pm_cnt);
+				   vif->ar->auto_pm_cnt,
+				   vif->ar->auto_pm_fail_cnt);
 		} else
 			ath6kl_hif_auto_pm_enable(vif->ar);
 #endif
