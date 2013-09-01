@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.469)
+#define __BUILD_VERSION_ (3.5.0.470)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -760,6 +760,10 @@ enum ath6kl_recovery_mode {
 #define AGGR_TX_PROG_HS_MAX_NUM		22
 #define AGGR_TX_PROG_HS_TIMEOUT		8	/* in ms */
 
+#define AGGR_TX_STICK_NONE	(0)
+#define AGGR_TX_STICK_ON	(1)
+#define AGGR_TX_STICK_OFF	(2)
+
 #define AGGR_GET_TXTID(_p, _x)           (&(_p->tx_tid[(_x)]))
 
 #define WMI_TIMEOUT (2 * HZ)
@@ -918,6 +922,7 @@ struct aggr_info {
 	bool tx_amsdu_seq_pkt;
 	bool tx_amsdu_progressive;
 	bool tx_amsdu_progressive_hispeed;	/* in high speed or not */
+	int tx_amsdu_stick_onoff;		/* Stick On/Off A-MSDU */
 
 	u8 tx_amsdu_max_aggr_num;
 	u32 tx_amsdu_max_aggr_len;
@@ -1993,6 +1998,11 @@ void aggr_tx_config(struct ath6kl_vif *vif,
 			u8 tx_amsdu_max_aggr_num,
 			u16 tx_amsdu_max_pdu_len,
 			u16 tx_amsdu_timeout);
+void aggr_tx_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info);
 void aggr_config(struct ath6kl_vif *vif,
 			u16 rx_aggr_timeout);
 struct aggr_info *aggr_init(struct ath6kl_vif *vif);

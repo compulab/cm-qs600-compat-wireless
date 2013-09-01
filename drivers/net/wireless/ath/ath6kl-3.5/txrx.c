@@ -2898,6 +2898,62 @@ static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn)
 	return 0;
 }
 
+void aggr_tx_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info) {
+	u8 *pie, *peie;
+	struct ieee80211_ht_cap *ht_cap_ie = NULL;
+	bool uapsd = false;
+
+	if (vif->nw_type != INFRA_NETWORK)
+		return;
+
+	if ((vif->bssid[0] == 0x00) &&
+	    (vif->bssid[1] == 0x15) &&
+	    (vif->bssid[2] == 0xff)) {
+		/* AssocResp IEs */
+		pie = assoc_info + beacon_ie_len + assoc_req_len +
+			(sizeof(u16) * 3); /* capinfo + status code + associd */
+		peie = assoc_info + beacon_ie_len +
+			assoc_req_len + assoc_resp_len;
+
+		while (pie < peie) {
+			switch (*pie) {
+			case WLAN_EID_HT_CAPABILITY:
+				if (pie[1] >= sizeof(struct ieee80211_ht_cap))
+					ht_cap_ie =
+					(struct ieee80211_ht_cap *)(pie + 2);
+				break;
+			case WLAN_EID_VENDOR_SPECIFIC:
+				if (pie[1] == 24) {
+					if (pie[2] == 0x00 &&
+					     pie[3] == 0x50 &&
+					     pie[4] == 0xf2 &&
+					     pie[5] == 0x02 &&
+					     pie[8] == 0x80)
+						uapsd = true;
+				}
+				break;
+			}
+			pie += pie[1] + 2;
+		}
+
+		if (uapsd && ht_cap_ie) {
+			if ((ht_cap_ie->cap_info & IEEE80211_HT_CAP_SGI_20) &&
+			    !(ht_cap_ie->cap_info & IEEE80211_HT_CAP_SGI_40)) {
+				vif->aggr_cntxt->tx_amsdu_stick_onoff =
+							AGGR_TX_STICK_OFF;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+							"tx amsdu WAR\n");
+			}
+		}
+	}
+
+	return;
+}
+
 /*
  * For the continuous un-received packets, wait timer will be divided by 2
  * I.E. pkt#1, pkt#2, pkt#3 don't receive,
@@ -3120,6 +3176,21 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 				}
 			}
 		}
+		if (vif->nw_type == INFRA_NETWORK) {
+			if ((txtid->max_aggr_sz) &&
+			    (vif->aggr_cntxt->tx_amsdu_stick_onoff ==
+							AGGR_TX_STICK_OFF)) {
+				txtid->max_aggr_sz = 0;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+					"Stick tx amsdu from ON to OFF\n");
+			} else if ((txtid->max_aggr_sz == 0) &&
+				   (vif->aggr_cntxt->tx_amsdu_stick_onoff ==
+							AGGR_TX_STICK_ON)) {
+				txtid->max_aggr_sz = 4096;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+					"Stick tx amsdu from OFF to ON\n");
+			}
+		}
 	}
 }
 
@@ -3216,6 +3287,7 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
 	aggr->tx_amsdu_timeout = AGGR_TX_TIMEOUT;
+	aggr->tx_amsdu_stick_onoff = AGGR_TX_STICK_NONE;
 
 	/* Always enable host-based A-MSDU. */
 	set_bit(AMSDU_ENABLED, &vif->flags);
@@ -3322,6 +3394,10 @@ void aggr_reset_state(struct aggr_conn_info *aggr_conn)
 
 	if (vif->nw_type != AP_NETWORK)
 		aggr_conn->aggr_cntxt->tx_amsdu_enable = false;
+
+	if (vif->nw_type == INFRA_NETWORK)
+		aggr_conn->aggr_cntxt->tx_amsdu_stick_onoff =
+							AGGR_TX_STICK_NONE;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU, "%s: tx_amsdu_enable %d\n",
 		   __func__, aggr_conn->aggr_cntxt->tx_amsdu_enable);

@@ -1744,6 +1744,12 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 				assoc_req_len,
 				assoc_resp_len,
 				assoc_info);
+	aggr_tx_connect_event(vif,
+				beacon_ie_len,
+				assoc_req_len,
+				assoc_resp_len,
+				assoc_info);
+
 	ath6kl_switch_parameter_based_on_connection(vif, false);
 }
 

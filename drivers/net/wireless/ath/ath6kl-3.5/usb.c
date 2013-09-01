@@ -200,7 +200,7 @@ struct semaphore usb_probe_sem;
 struct work_struct recover_war_work;
 #endif
 
-#if defined(ATH6KL_USB_VOTE) || defined(ATH6KL_HSIC_RECOVER)
+#if defined(ATH6KL_BUS_VOTE) || defined(ATH6KL_HSIC_RECOVER)
 u8 ath6kl_driver_unloaded;
 #endif
 
