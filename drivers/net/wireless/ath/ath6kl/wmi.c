@@ -3395,7 +3395,7 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 	struct wmi_connect_cmd *cm;
 	struct ath6kl *ar = wmip->parent_dev;
 	int res;
-	u8 ap_acs_ch = 0;
+	u16 ap_acs_ch = 0;
 	bool apap_override = 0;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cm));
@@ -3409,7 +3409,7 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 
 	if (!ar->sta_bh_override && !apap_override) {
 		if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch))
-			cm->ch = cpu_to_le16(ap_acs_ch);
+			cm->ch = ap_acs_ch;
 	}
 	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_CONFIG_COMMIT_CMDID,
 				  NO_SYNC_WMIFLAG);
