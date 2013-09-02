@@ -32,6 +32,8 @@
 #define ATH6KL_TID_MASK 0xf
 #define ATH6KL_AID_SHIFT 4
 
+static void ath6kl_mcc_event_ctrl_timer_handler(unsigned long ptr);
+
  /* Dont define if IPA conf. Manager is not present */
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -46,7 +48,6 @@ u32 flt_hdl_ipv6=0;
 u32 flt_hdl_ipv4=0;
 
 extern int ath6kl_usb_data_send_to_bam_pipe(int pipe_no, struct sk_buff *skb);
-static void ath6kl_mcc_event_ctrl_timer_handler(unsigned long ptr);
 
 /* Strurue decl for SYSBAM pipes */
 static struct usb_sysbam_pipe {
