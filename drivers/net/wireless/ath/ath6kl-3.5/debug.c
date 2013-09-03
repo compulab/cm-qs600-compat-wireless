@@ -1044,8 +1044,10 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 	unsigned int len = 0, n_reg;
 	u32 addr;
 	__le32 reg_val;
-	int i, status;
-
+	int status;
+#ifdef REG_ALL_DUMP
+	int i;
+#endif
 	/* Dump all the registers if no register is specified */
 	if (!ar->debug.dbgfs_diag_reg)
 		n_reg = ath6kl_get_num_reg();
@@ -1074,6 +1076,7 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 		goto done;
 	}
 
+#ifdef REG_ALL_DUMP
 	for (i = 0; i < ARRAY_SIZE(diag_reg); i++) {
 		len += scnprintf(buf + len, reg_len - len,
 				"%s\n", diag_reg[i].reg_info);
@@ -1090,6 +1093,7 @@ static int ath6kl_regdump_open(struct inode *inode, struct file *file)
 					addr, le32_to_cpu(reg_val));
 		}
 	}
+#endif
 
 done:
 	file->private_data = buf;
@@ -4070,7 +4074,8 @@ static ssize_t ath6kl_patterngen_write(struct file *file,
 	if (!cookie) {
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
-	}
+	} else if (htc_tag == ATH6KL_DATA_PKT_TAG)
+		vif->data_cookie_count++;
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -4117,6 +4122,14 @@ static ssize_t ath6kl_patterngen_write(struct file *file,
 fail_tx:
 	if (skb)
 		dev_kfree_skb(skb);
+
+	if (cookie) {
+		spin_lock_bh(&ar->lock);
+		if (htc_tag == ATH6KL_DATA_PKT_TAG)
+			vif->data_cookie_count--;
+		ath6kl_free_cookie(ar, cookie);
+		spin_unlock_bh(&ar->lock);
+	}
 
 	kfree(pattern_buf);
 
@@ -5505,13 +5518,8 @@ static const struct file_operations fops_disable_runtime_flowctrl = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
+
 #ifdef USB_AUTO_SUSPEND
-
-int debugfs_get_pm_state(struct ath6kl *usbpm_ar)
-{
-	return usbpm_ar->state;
-}
-
 static ssize_t ath6kl_usb_autopm_usagecnt_write(struct file *file,
 				const char __user *user_buf,
 				size_t count, loff_t *ppos)
@@ -5540,7 +5548,7 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	char buf[32];
+	char buf[128];
 	int len;
 	int usb_auto_usagecnt;
 	struct ath6kl *ar = file->private_data;
@@ -5548,7 +5556,10 @@ static ssize_t ath6kl_usb_autopm_usagecnt_read(struct file *file,
 	usb_auto_usagecnt = ath6kl_hif_auto_pm_get_usage_cnt(ar);
 
 	len = snprintf(buf, sizeof(buf),
-		"usbautopm: 0x%x\n", usb_auto_usagecnt);
+		"usbautopm: 0x%x localcnt:0x%x/0x%x\n",
+		usb_auto_usagecnt,
+		ar->auto_pm_cnt,
+		ar->auto_pm_fail_cnt);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -5574,7 +5585,7 @@ static ssize_t ath6kl_usb_pm_status_read(struct file *file,
 				char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
-	char buf[256];
+	char buf[384];
 	int len;
 	int state;
 	int buf_len;
@@ -5583,14 +5594,33 @@ static ssize_t ath6kl_usb_pm_status_read(struct file *file,
 
 	buf_len = sizeof(buf);
 
-	state = debugfs_get_pm_state(ar);
+	state = ar->state;
 
 	len = snprintf(buf, sizeof(buf), "state: %s\n", ar_state[state]);
 
 	p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
 
-	len += snprintf(buf + len, buf_len - len, "usb_pm_q depth: %d\n",
-		get_queue_depth(&(p_usb_pm_skb_queue->list)));
+	len += snprintf(buf + len, buf_len - len,
+			"usb_pm_q depth: %d\n",
+			get_queue_depth(&(p_usb_pm_skb_queue->list)));
+
+	len += snprintf(buf + len, buf_len - len,
+			"auto_pm_cnt: %d/%d (%d)\n",
+			ar->auto_pm_cnt,
+			ar->auto_pm_fail_cnt,
+			ath6kl_hif_auto_pm_get_usage_cnt(ar));
+
+	len += snprintf(buf + len, buf_len - len,
+			"autopm_turn_on: %d\n",
+			ar->autopm_turn_on);
+
+	len += snprintf(buf + len, buf_len - len,
+			"autopm_defer_delay_change_cnt: %d\n",
+			ar->autopm_defer_delay_change_cnt);
+
+	len += snprintf(buf + len, buf_len - len,
+			"autopm_curr_delay_time: %d\n\n",
+			ar->autopm_curr_delay_time);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
@@ -5601,7 +5631,6 @@ static const struct file_operations fops_usb_pm_status = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
-
 #endif /* USB_AUTO_SUSPEND */
 
 /* File operation for P2P IE not append */

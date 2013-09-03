@@ -290,7 +290,7 @@ struct ath6kl_hif_ops {
 
 #ifdef USB_AUTO_SUSPEND
 	int (*auto_pm_get_usage_cnt)(struct ath6kl *ar);
-	void (*auto_pm_disable)(struct ath6kl *ar);
+	int (*auto_pm_disable)(struct ath6kl *ar);
 	void (*auto_pm_enable)(struct ath6kl *ar);
 	void (*auto_pm_turnon)(struct ath6kl *ar);
 	void (*auto_pm_turnoff)(struct ath6kl *ar);

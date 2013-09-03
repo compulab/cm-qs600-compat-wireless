@@ -205,6 +205,7 @@ enum ATH6K_DEBUG_MASK_EXT {
 	ATH6KL_DBG_EXT_ROC	= BIT_OFFSET32(1),	/* Remain-on-Channel */
 	ATH6KL_DBG_EXT_SCAN	= BIT_OFFSET32(2),	/* Scan */
 	ATH6KL_DBG_EXT_BSS_PROC	= BIT_OFFSET32(3),	/* BSS post-proc */
+	ATH6KL_DBG_EXT_AUTOPM	= BIT_OFFSET32(4),	/* Auto Power-Management */
 
 	ATH6KL_DBG_EXT_ANY	= 0xffffffff00000000ULL  /* enable all logs */
 };

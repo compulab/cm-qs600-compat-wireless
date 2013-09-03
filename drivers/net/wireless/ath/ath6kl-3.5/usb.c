@@ -122,6 +122,13 @@ struct ath6kl_usb {
 	u32 max_sche_tx;
 	u32 max_sche_rx;
 	u32 rxq_threshold;
+
+	/* statis */
+	u32 suspend_cnt;
+	u32 resume_cnt;
+	u32 pm_suspend_cnt;
+	u32 pm_resume_cnt;
+	u32 pm_reset_resume_cnt;
 };
 
 /* usb urb object */
@@ -183,7 +190,6 @@ struct ath6kl_usb_ctrl_diag_resp_read {
 
 #ifdef ATH6KL_BUS_VOTE
 u8 ath6kl_platform_has_vreg;
-u8 ath6kl_driver_unloaded;
 struct semaphore usb_probe_sem;
 
 #define USB_PROBE_WAIT_TIMEOUT                   4000
@@ -192,6 +198,10 @@ struct semaphore usb_probe_sem;
 
 #ifdef ATH6KL_HSIC_RECOVER
 struct work_struct recover_war_work;
+#endif
+
+#if defined(ATH6KL_BUS_VOTE) || defined(ATH6KL_HSIC_RECOVER)
+u8 ath6kl_driver_unloaded;
 #endif
 
 #ifdef ATHTST_SUPPORT
@@ -245,6 +255,26 @@ static void usb_auto_pm_turnoff(struct ath6kl *ar);
 #define ATH6KL_USB_IS_INT_EP(attr)  (((attr) & 3) == 0x03)
 #define ATH6KL_USB_IS_ISOC_EP(attr)  (((attr) & 3) == 0x01)
 #define ATH6KL_USB_IS_DIR_IN(addr)  ((addr) & 0x80)
+
+static char *_get_suspend_stat_string(enum ath6kl_state state)
+{
+	if (state == ATH6KL_STATE_OFF)
+		return "OFF";
+	else if (state == ATH6KL_STATE_ON)
+		return "ON";
+	else if (state == ATH6KL_STATE_DEEPSLEEP)
+		return "DEEPSLEEP";
+	else if (state == ATH6KL_STATE_CUTPOWER)
+		return "CUTPOWER";
+	else if (state == ATH6KL_STATE_WOW)
+		return "WOW";
+	else if (state == ATH6KL_STATE_PRE_SUSPEND)
+		return "PRE-SUSPEND";
+	else if (state == ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP)
+		return "PRE-DEEPSLEEP";
+
+	return "UNKNOWN";
+}
 
 /* pipe/urb operations */
 static struct ath6kl_urb_context *ath6kl_usb_alloc_urb_from_pipe(
@@ -1109,6 +1139,10 @@ skip_mark_busy:
 				tx_completion(device->ar->htc_target, buf);
 #ifdef USB_AUTO_SUSPEND
 			spin_lock_bh(&ar->usb_pm_lock);
+			/*
+			 * TX-complete back means USB bus is awake and flush
+			 * pending queue immediately.
+			 */
 			ath6kl_auto_pm_wakeup_resume(ar);
 			spin_unlock_bh(&ar->usb_pm_lock);
 #endif
@@ -1276,14 +1310,19 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	struct ath6kl_usb *ar_usb;
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t *entry, *p_usb_pm_skb_queue;
-	struct ath6kl *ar;
 #endif
+	struct ath6kl *ar;
 
 	ar_usb = usb_get_intfdata(interface);
 	if (ar_usb == NULL)
 		return;
 
+	ar = ar_usb->ar;
+
 	ath6kl_stop_txrx(ar_usb->ar);
+#ifdef ATH6KL_HSIC_RECOVER
+	cancel_work_sync(&ar->reset_cover_war_work);
+#endif
 
 	/* Delay to wait for the target to reboot */
 #ifdef CONFIG_ANDROID
@@ -1302,14 +1341,17 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	 * we need to clean pm_skb_queue to avoid memory leak.
 	 */
 
-	ar = ar_usb->ar;
 	p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
 
 	while (get_queue_depth(&(p_usb_pm_skb_queue->list)) > 0) {
-		ath6kl_dbg(ATH6KL_DBG_USB, "%s  resume_wk qeue %d\n", __func__,
-		get_queue_depth(&(p_usb_pm_skb_queue->list)));
-		entry = list_first_entry(&p_usb_pm_skb_queue->list,
+		ath6kl_dbg(ATH6KL_DBG_USB |
+			   ATH6KL_DBG_EXT_AUTOPM,
+			   "%s  resume_wk qeue %d\n",
+			   __func__,
+			   get_queue_depth(&(p_usb_pm_skb_queue->list)));
+			   entry = list_first_entry(&p_usb_pm_skb_queue->list,
 					struct usb_pm_skb_queue_t, list);
+
 		list_del(&entry->list);
 		kfree(entry);
 	}
@@ -1500,16 +1542,39 @@ int usb_debugfs_get_pm_usage_cnt(struct ath6kl *ar)
 	return atomic_read(&interface->pm_usage_cnt);
 }
 
-void usb_auto_pm_disable(struct ath6kl *ar)
+int usb_auto_pm_disable(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
 	struct usb_interface *interface = device->interface;
-	usb_autopm_get_interface_async(interface);
-	ar->auto_pm_cnt++;
-	ath6kl_dbg(ATH6KL_DBG_USB, "autopm +1 refcnt=%d my=%d\n",
-		usb_debugfs_get_pm_usage_cnt(ar), ar->auto_pm_cnt);
-	/*usb_debugfs_get_pm_usage_cnt(ar);*/
+	int refcnt;
+	int ret;
 
+	spin_lock_bh(&ar->usb_pm_lock);
+	ret = usb_autopm_get_interface_async(interface);
+
+	if (ret)
+		ar->auto_pm_fail_cnt++;
+	else
+		ar->auto_pm_cnt++;
+	spin_unlock_bh(&ar->usb_pm_lock);
+
+	refcnt = usb_debugfs_get_pm_usage_cnt(ar);
+	if (refcnt != ar->auto_pm_cnt)
+		ath6kl_err("autopm unsync, refcnt=%d my=%d/%d ret %d",
+			   refcnt,
+			   ar->auto_pm_cnt,
+			   ar->auto_pm_fail_cnt,
+			   ret);
+
+	ath6kl_dbg(ATH6KL_DBG_USB |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "autopm +1 refcnt=%d my=%d/%d ret %d\n",
+		   refcnt,
+		   ar->auto_pm_cnt,
+		   ar->auto_pm_fail_cnt,
+		   ret);
+
+	return ret;
 }
 
 
@@ -1517,25 +1582,59 @@ void usb_auto_pm_enable(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
 	struct usb_interface *interface = device->interface;
-	usb_autopm_put_interface_async(interface);
-	ar->auto_pm_cnt--;
-	ath6kl_dbg(ATH6KL_DBG_USB, "autopm -1 refcnt=%d my=%d\n",
-		usb_debugfs_get_pm_usage_cnt(ar), ar->auto_pm_cnt);
-	/*usb_debugfs_get_pm_usage_cnt(ar);*/
+	int refcnt;
+
+	spin_lock_bh(&ar->usb_pm_lock);
+	if (ar->auto_pm_fail_cnt)
+		ar->auto_pm_fail_cnt--;
+	else {
+		ar->auto_pm_cnt--;
+		usb_autopm_put_interface_async(interface);
+	}
+	spin_unlock_bh(&ar->usb_pm_lock);
+
+	refcnt = usb_debugfs_get_pm_usage_cnt(ar);
+	if (refcnt != ar->auto_pm_cnt)
+		ath6kl_err("autopm unsync, refcnt=%d my=%d/%d",
+			   refcnt,
+			   ar->auto_pm_cnt,
+			   ar->auto_pm_fail_cnt);
+
+	ath6kl_dbg(ATH6KL_DBG_USB |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "autopm -1 refcnt=%d my=%d/%d\n",
+		   usb_debugfs_get_pm_usage_cnt(ar),
+		   ar->auto_pm_cnt,
+		   ar->auto_pm_fail_cnt);
 }
 
 void usb_auto_pm_turnoff(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
-	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
+
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_AUTOPM,
+			   "autopm turn-off, refcnt=%d my=%d/%d\n",
+			   usb_debugfs_get_pm_usage_cnt(ar),
+			   ar->auto_pm_cnt,
+			   ar->auto_pm_fail_cnt);
+
 		usb_disable_autosuspend(device->udev);
+	}
 }
 
 void usb_auto_pm_turnon(struct ath6kl *ar)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
-	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM))
+	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_AUTOPM,
+			   "autopm turn-on, refcnt=%d my=%d/%d\n",
+			   usb_debugfs_get_pm_usage_cnt(ar),
+			   ar->auto_pm_cnt,
+			   ar->auto_pm_fail_cnt);
+
 		usb_enable_autosuspend(device->udev);
+	}
 }
 
 
@@ -1553,20 +1652,24 @@ void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk)
 	int usb_status;
 	struct usb_pm_skb_queue_t *entry, *p_usb_pm_skb_queue;
 	struct ath6kl *pm_ar;
-	int pm_PipeID;
+	int pm_PipeID, q_cnt = 0;
 
 	pm_ar = wk;
 	p_usb_pm_skb_queue =  &pm_ar->usb_pm_skb_queue;
 
 
-	ath6kl_dbg(ATH6KL_DBG_USB, "%s  resume_wk qeue %d  empty=%d\n",
-		__func__,
-		get_queue_depth(&(p_usb_pm_skb_queue->list)),
-		list_empty(&p_usb_pm_skb_queue->list));
+	ath6kl_dbg(ATH6KL_DBG_USB |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "autopm resume_wk queue depth %d\n",
+		   get_queue_depth(&(p_usb_pm_skb_queue->list)));
 
 	while (get_queue_depth(&(p_usb_pm_skb_queue->list)) > 0) {
-		ath6kl_dbg(ATH6KL_DBG_USB, "%s  resume_wk qeue %d\n", __func__,
-		get_queue_depth(&(p_usb_pm_skb_queue->list)));
+		q_cnt++;
+		ath6kl_dbg(ATH6KL_DBG_USB |
+			   ATH6KL_DBG_EXT_AUTOPM,
+			   "autopm resume_wk entry %d\n",
+			   q_cnt);
+
 		entry = list_first_entry(&p_usb_pm_skb_queue->list,
 					struct usb_pm_skb_queue_t, list);
 
@@ -1649,7 +1752,9 @@ void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk)
 	}	/* end of while (Dequeu ...) */
 
 fail_hif_send_usb:
-	ath6kl_dbg(ATH6KL_DBG_USB, "wakeup_resume done\n");
+	ath6kl_dbg(ATH6KL_DBG_USB |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "autopm wakeup_resume done\n");
 }
 
 void usb_auto_pm_set_delay(struct ath6kl *ar, int delay)
@@ -1660,13 +1765,21 @@ void usb_auto_pm_set_delay(struct ath6kl *ar, int delay)
 	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
 		return;
 
+	ath6kl_dbg(ATH6KL_DBG_USB |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "autopm set_delay %d --> %d, delay_cnt %d (MAX_DELAY %d)\n",
+		   ar->autopm_curr_delay_time,
+		   delay,
+		   ar->autopm_defer_delay_change_cnt,
+		   USB_SUSPEND_DELAY_MAX);
+
 	/* If the the delay is too small or too large, skip the update */
 	if (delay < 0 || delay > USB_SUSPEND_DELAY_MAX)
 		return;
 
+	ar->autopm_curr_delay_time = delay;
 	pm_runtime_set_autosuspend_delay(&udev->dev, delay);
 }
-
 #endif /* USB_AUTO_SUSPEND */
 
 static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
@@ -1683,8 +1796,9 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	int usb_status;
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t *p_pmskb;
-	int qlen, usb_pm_increament;
+	int qlen, usb_pm_increament = 0;
 	struct usb_pm_skb_queue_t *p_usb_pm_skb_queue =  &ar->usb_pm_skb_queue;
+	int pm_disable_result = 0;
 #endif
 #ifdef USB_AUTO_SUSPEND
 
@@ -1693,13 +1807,15 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 #endif
 
 	ath6kl_dbg(ATH6KL_DBG_USB_BULK,
-			"+%s pipe : %d, buf:0x%p, ar state:%d\n",
-			__func__, PipeID, buf, ar->state);
+			"+%s pipe : %d, buf:0x%p, ar state:%s\n",
+			__func__, PipeID, buf,
+			_get_suspend_stat_string(ar->state));
 
 #ifdef USB_AUTO_SUSPEND
 	if (ar->state == ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP) {
-		ath6kl_dbg(ATH6KL_DBG_USB, "%s: deep sleep state=%d\n",
-		__func__, ar->state);
+		ath6kl_dbg(ATH6KL_DBG_USB, "%s: deep sleep state=%s\n",
+		__func__,
+		_get_suspend_stat_string(ar->state));
 		status = -ETXTBSY;
 		pipe_st->num_tx++;
 		return status;
@@ -1708,21 +1824,28 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	usb_pm_increament = 0;
 	if (ar->state != ATH6KL_STATE_PRE_SUSPEND) {
 		usb_pm_increament++;
-		usb_auto_pm_disable(ar);
+		pm_disable_result = usb_auto_pm_disable(ar);
 	}
 
 	spin_lock_bh(&ar->usb_pm_lock);
 	if (!list_empty(&p_usb_pm_skb_queue->list) ||
 		(ar->state == ATH6KL_STATE_WOW) ||
-		(ar->state == ATH6KL_STATE_DEEPSLEEP)) {
+		(ar->state == ATH6KL_STATE_DEEPSLEEP) ||
+		(pm_disable_result != 0)) {
 
-		ath6kl_dbg(ATH6KL_DBG_USB, "usb_send sleep Q  %d  queue len =%d\n",
-			ar->state,
-			get_queue_depth(&(p_usb_pm_skb_queue->list)));
+		ath6kl_dbg(ATH6KL_DBG_USB |
+			   ATH6KL_DBG_EXT_AUTOPM,
+			   "autopm usb_send Q pId %d %s l %d cnt %d/%d\n",
+			   PipeID,
+			   _get_suspend_stat_string(ar->state),
+			   get_queue_depth(&(p_usb_pm_skb_queue->list)),
+			   usb_pm_increament,
+			   pm_disable_result);
+
 		p_pmskb = kmalloc(sizeof(struct usb_pm_skb_queue_t),
 			GFP_ATOMIC);
 		if (p_pmskb == NULL)
-			ath6kl_dbg(ATH6KL_DBG_USB, "p_pmskb = kmalloc fila\n");
+			ath6kl_err("p_pmskb = kmalloc fail!\n");
 
 		p_pmskb->pipeID = PipeID;
 		p_pmskb->ar = ar;
@@ -1730,7 +1853,6 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 
 		list_add_tail(&(p_pmskb->list), &(p_usb_pm_skb_queue->list));
 		qlen = get_queue_depth(&(p_usb_pm_skb_queue->list));
-		ath6kl_dbg(ATH6KL_DBG_USB, "qlen = %d\n", qlen);
 
 		/*
 		msleep_interruptible(3000);
@@ -1742,9 +1864,14 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 			usb_auto_pm_enable(ar);
 		return 0;
 	}
+	ath6kl_dbg(ATH6KL_DBG_USB |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "autopm usb_send pId %d state %s inc %d\n",
+		   PipeID,
+		   _get_suspend_stat_string(ar->state),
+		   usb_pm_increament);
 
 	spin_unlock_bh(&ar->usb_pm_lock);
-	ath6kl_dbg(ATH6KL_DBG_USB, "usb_send 2\n");
 
 #elif defined(CONFIG_ANDROID)
 	if (PipeID != ATH6KL_USB_PIPE_TX_CTRL)
@@ -1797,7 +1924,7 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 	usb_anchor_urb(urb, &pipe->urb_submitted);
 
 	spin_lock_bh(&ar->state_lock);
-#ifndef USB_AUTO_SUSPEND /* QQQQ: double check here	*/
+#ifndef USB_AUTO_SUSPEND
 	if ((ar->state == ATH6KL_STATE_DEEPSLEEP) ||
 	    (ar->state == ATH6KL_STATE_WOW))
 		usb_status = -EINVAL;
@@ -2165,6 +2292,18 @@ static int ath6kl_usb_pipe_stat(struct ath6kl *ar, u8 *buf, int buf_len)
 	if ((!device) || (!buf))
 		return 0;
 
+	len += snprintf(buf + len, buf_len - len, "USB-PM\n");
+	len += snprintf(buf + len, buf_len - len, " suspend_cnt %d\n",
+			device->suspend_cnt);
+	len += snprintf(buf + len, buf_len - len, " resume_cnt %d\n",
+			device->resume_cnt);
+	len += snprintf(buf + len, buf_len - len, " pm_suspend_cnt %d\n",
+			device->pm_suspend_cnt);
+	len += snprintf(buf + len, buf_len - len, " pm_resume_cnt %d\n",
+			device->pm_resume_cnt);
+	len += snprintf(buf + len, buf_len - len, " pm_reset_resume_cnt %d\n\n",
+			device->pm_reset_resume_cnt);
+
 	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
 		if ((i == ATH6KL_USB_PIPE_RX_INT) ||
 		    (i == ATH6KL_USB_PIPE_RX_DATA2))
@@ -2274,7 +2413,12 @@ int ath6kl_usb_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	pm_message_t message;
 	int ret;
 
-	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb suspend\n");
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1 |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "usb suspend: ar->state %s\n",
+		   _get_suspend_stat_string(ar->state));
+
+	device->suspend_cnt++;
 
 #ifdef CONFIG_ANDROID
 	if (ath6kl_android_need_wow_suspend(ar)) {
@@ -2297,7 +2441,12 @@ int ath6kl_usb_resume(struct ath6kl *ar)
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 	struct usb_interface *interface = device->interface;
 
-	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb resume: state %d\n", ar->state);
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1 |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "usb resume: ar->state %s\n",
+		   _get_suspend_stat_string(ar->state));
+
+	device->resume_cnt++;
 
 	return ath6kl_usb_pm_resume(interface);
 }
@@ -2435,19 +2584,21 @@ int ath6kl_usb_diag_warm_reset(struct ath6kl *ar)
 #ifdef ATH6KL_HSIC_RECOVER
 static void ath6kl_recover_war_work(struct work_struct *work)
 {
-	ath6kl_info("%s do HSIC rediscovery\n", __func__);
-	ath6kl_hsic_rediscovery();
+	if (ath6kl_driver_unloaded != 1) {
+		ath6kl_info("%s do HSIC rediscovery\n", __func__);
+		ath6kl_hsic_rediscovery();
+	}
 }
 
+/* schedule ath6kl_recover_war_work */
 int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 {
-	struct ath6kl_usb *ar_usb = ar->hif_priv;
 	struct ath6kl_vif *vif;
 	struct net_device *netdev;
 
 	vif = ath6kl_vif_first(ar);
 
-	usb_disable_autosuspend(ar_usb->udev);
+	set_bit(RECOVER_IN_PROCESS, &ar->flag);
 
 	netdev = vif->ndev;
 #ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -2459,6 +2610,20 @@ int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 	ath6kl_info("%s schedule recover worker thread\n", __func__);
 	schedule_work(&recover_war_work);
 	return 0;
+}
+
+static void ath6kl_reset_war_work(struct work_struct *work)
+{
+	struct ath6kl *ar;
+
+	ar = container_of(work, struct ath6kl, reset_cover_war_work);
+
+	ath6kl_reset_device(ar, ar->target_type, true, true);
+
+	ath6kl_info("%s do HSIC rediscovery\n", __func__);
+	print_to_file("%s do HSIC rediscovery\n", __func__);
+
+	ath6kl_hsic_sw_recover(ar);
 }
 #endif
 
@@ -2595,22 +2760,25 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 #ifdef USB_AUTO_SUSPEND
 	spin_lock_init(&ar->usb_pm_lock);
 	INIT_LIST_HEAD(&ar->usb_pm_skb_queue.list);
-	pm_runtime_set_autosuspend_delay(&dev->dev,
-		USB_SUSPEND_DELAY_MAX);
+	pm_runtime_set_autosuspend_delay(&dev->dev, USB_SUSPEND_DELAY_MAX);
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_USB_AUTO_PM) &&
 		!(ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_TESTMODE_ENABLE) ||
 		ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_EPPING))) {
 			usb_enable_autosuspend(dev);
 	}
 	ar->auto_pm_cnt = 0;
+	ar->auto_pm_fail_cnt = 0;
 	ar->autopm_turn_on = 1;
 	ar->autopm_defer_delay_change_cnt = 0;
+	ar->autopm_curr_delay_time = USB_SUSPEND_DELAY_MAX;
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
 	/* Initialize the worker */
+	INIT_WORK(&ar->reset_cover_war_work,
+			ath6kl_reset_war_work);
 	INIT_WORK(&recover_war_work,
-		  ath6kl_recover_war_work);
+			ath6kl_recover_war_work);
 #endif
 
 	ath6kl_htc_pipe_attach(ar);
@@ -2646,6 +2814,12 @@ static void ath6kl_usb_remove(struct usb_interface *interface)
 
 	usb_put_dev(interface_to_usbdev(interface));
 	ath6kl_usb_device_detached(interface);
+
+#ifdef ATH6KL_HSIC_RECOVER
+	if (ath6kl_driver_unloaded == 0)
+		schedule_work(&recover_war_work);
+#endif
+
 }
 
 #ifdef CONFIG_PM
@@ -2661,6 +2835,13 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 
 	device = (struct ath6kl_usb *)usb_get_intfdata(interface);
 	ar = device->ar;
+
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "usb pm_suspend: ar->state %s\n",
+		   _get_suspend_stat_string(ar->state));
+
+	device->pm_suspend_cnt++;
 
 	vif = ath6kl_vif_first(ar);
 
@@ -2683,11 +2864,18 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 #ifdef USB_AUTO_SUSPEND
 	int ret;
 #endif
+
 	device = (struct ath6kl_usb *)usb_get_intfdata(interface);
 	ar = device->ar;
 
-#ifdef USB_AUTO_SUSPEND
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "usb pm_suspend: ar->state %s\n",
+		   _get_suspend_stat_string(ar->state));
 
+	device->pm_suspend_cnt++;
+
+#ifdef USB_AUTO_SUSPEND
 	if (ath6kl_android_need_wow_suspend(ar))
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
 	else
@@ -2714,6 +2902,16 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 	device = (struct ath6kl_usb *)usb_get_intfdata(interface);
 	ar = device->ar;
 
+#ifdef USB_AUTO_SUSPEND
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND |
+		   ATH6KL_DBG_EXT_AUTOPM,
+		   "usb pm_resume: ar->state %s, delay_cnt %d\n",
+		   _get_suspend_stat_string(ar->state),
+		   ar->autopm_defer_delay_change_cnt);
+#endif
+
+	device->pm_resume_cnt++;
+
 	/* re-post urbs? */
 	if (0) {
 		ath6kl_usb_post_recv_transfers(
@@ -2738,7 +2936,15 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 	ath6kl_cfg80211_resume(ar);
 
 #ifdef USB_AUTO_SUSPEND
+	/* Back to the min. autopm delay when resume count meet delay count. */
 	if (ar->autopm_defer_delay_change_cnt > 0) {
+		ath6kl_dbg(ATH6KL_DBG_USB |
+			   ATH6KL_DBG_EXT_AUTOPM,
+			   "autopm pm_resume state %s delay_cnt/time %d/%d\n",
+			   _get_suspend_stat_string(ar->state),
+			   ar->autopm_defer_delay_change_cnt,
+			   ar->autopm_curr_delay_time);
+
 		if (--ar->autopm_defer_delay_change_cnt == 0) {
 			usb_auto_pm_set_delay(ar,
 				USB_SUSPEND_DELAY_MIN);
@@ -2756,6 +2962,9 @@ static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 
 	device = (struct ath6kl_usb *)usb_get_intfdata(intf);
 	ar = device->ar;
+
+	device->pm_reset_resume_cnt++;
+
 	/*
 	instead of call remove directly, In HSIC mode,
 	we call pm_resume to make usb continue to work
@@ -2852,21 +3061,15 @@ static int ath6kl_usb_init(void)
 	if (ath6kl_platform_has_vreg) {
 		u32 probe_timeout;
 
-		if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
-			probe_timeout = USB_PROBE_WAIT_TIMEOUT;
-		else
-			probe_timeout = USB_PROBE_WAIT_TIMEOUT_ENUM_WAR;
+		probe_timeout = USB_PROBE_WAIT_TIMEOUT_ENUM_WAR;
 
 		/* Waiting for usb probe callback called */
 		if (down_timeout(&usb_probe_sem,
 			msecs_to_jiffies(probe_timeout)) != 0) {
 			ath6kl_info("can't wait for usb probe done\n");
 
-			if (!machine_is_apq8064_dma() &&
-				!machine_is_apq8064_bueller()) {
-				ath6kl_hsic_enum_war_schedule();
-				msleep(1000);
-			}
+			ath6kl_hsic_enum_war_schedule();
+			msleep(1000);
 		}
 	}
 #endif
@@ -2877,7 +3080,9 @@ static int ath6kl_usb_init(void)
 static void ath6kl_usb_exit(void)
 {
 	long timeleft = 0;
-#ifdef ATH6KL_BUS_VOTE
+
+
+#if defined(ATH6KL_BUS_VOTE) || defined(ATH6KL_HSIC_RECOVER)
 	ath6kl_driver_unloaded = 1;
 #endif
 

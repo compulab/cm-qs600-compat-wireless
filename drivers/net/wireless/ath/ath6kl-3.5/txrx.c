@@ -446,15 +446,20 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (cookie == NULL) {
-		spin_unlock_bh(&ar->lock);
+#ifdef ATH6KL_HSIC_RECOVER
 		if (ar->cookie_ctrl.cookie_fail_in_row >
-				MAX_COOKIE_FAIL_IN_ROW) {
+				MAX_COOKIE_FAIL_IN_ROW &&
+				ar->fw_crash_notify) {
 			ath6kl_err("control cookie fail %d time reset!\n",
 				ar->cookie_ctrl.cookie_fail_in_row);
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
-			ath6kl_reset_device(ar, ar->target_type, true, true);
-			ath6kl_fw_crash_trap(ar);
+			if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+				ath6kl_info("%s schedule recover\n", __func__);
+				schedule_work(&ar->reset_cover_war_work);
+			}
 		}
+#endif
+		spin_unlock_bh(&ar->lock);
 		status = -ENOMEM;
 		goto fail_ctrl_tx;
 	}
@@ -508,6 +513,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	u32 wmi_data_flags = 0;
 	int ret, aggr_tx_status = AGGR_TX_UNKNOW;
 	struct ath6kl_sta *conn = NULL;
+	bool cookie_cnt_updated = false;
 
 	/* If target is not associated */
 	if (!test_bit(CONNECTED, &vif->flags) &&
@@ -673,8 +679,10 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 			cookie_run_out = ath6kl_cookie_is_almost_full(ar,
 							COOKIE_TYPE_DATA);
 		}
-		if (cookie)
+		if (cookie) {
+			cookie_cnt_updated = true;
 			vif->data_cookie_count++;
+		}
 	} else
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
@@ -751,6 +759,14 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 
 fail_tx:
 	dev_kfree_skb(skb);
+
+	if (cookie) {
+		spin_lock_bh(&ar->lock);
+		if (cookie_cnt_updated)
+			vif->data_cookie_count--;
+		ath6kl_free_cookie(ar, cookie);
+		spin_unlock_bh(&ar->lock);
+	}
 
 	vif->net_stats.tx_dropped++;
 	vif->net_stats.tx_aborted_errors++;
@@ -913,10 +929,15 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		spin_lock_bh(&ar->lock);
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
-		spin_unlock_bh(&ar->lock);
 		ath6kl_err("wmi ctrl ep is full\n");
-		ath6kl_reset_device(ar, ar->target_type, true, true);
-		ath6kl_fw_crash_trap(ar);
+#ifdef ATH6KL_HSIC_RECOVER
+		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag) &&
+			ar->fw_crash_notify) {
+			ath6kl_info("%s schedule recover work\n", __func__);
+			schedule_work(&ar->reset_cover_war_work);
+		}
+#endif
+		spin_unlock_bh(&ar->lock);
 		return action;
 	}
 
@@ -1128,8 +1149,13 @@ void ath6kl_tx_complete(struct htc_target *target,
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
 		if (ath6kl_cookie->htc_pkt->info.tx.tag ==
-			ATH6KL_DATA_PKT_TAG)
+			ATH6KL_DATA_PKT_TAG) {
 			vif->data_cookie_count--;
+			if (vif->data_cookie_count < 0) {
+				vif->data_cookie_count = 0;
+				ath6kl_err("Error, data_cookie_count unsync\n");
+			}
+		}
 
 		ath6kl_free_cookie(ar, ath6kl_cookie);
 
@@ -2688,7 +2714,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 {
 	struct ath6kl_vif *vif = txtid->vif;
 	struct ath6kl *ar = vif->ar;
-	struct ath6kl_cookie *cookie;
+	struct ath6kl_cookie *cookie = NULL;
 	enum htc_endpoint_id eid;
 	struct wmi_data_hdr *wmi_hdr;
 	struct sk_buff *amsdu_skb, *skb = NULL;
@@ -2824,6 +2850,13 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 fail_tx:
 	dev_kfree_skb(skb);
 
+	if (cookie) {
+		spin_lock_bh(&ar->lock);
+		vif->data_cookie_count--;
+		ath6kl_free_cookie(ar, cookie);
+		spin_unlock_bh(&ar->lock);
+	}
+
 	vif->net_stats.tx_dropped++;
 	vif->net_stats.tx_aborted_errors++;
 
@@ -2865,6 +2898,62 @@ static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn)
 		aggr_tx_tid(txtid, true);
 	}
 	return 0;
+}
+
+void aggr_tx_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info) {
+	u8 *pie, *peie;
+	struct ieee80211_ht_cap *ht_cap_ie = NULL;
+	bool uapsd = false;
+
+	if (vif->nw_type != INFRA_NETWORK)
+		return;
+
+	if ((vif->bssid[0] == 0x00) &&
+	    (vif->bssid[1] == 0x15) &&
+	    (vif->bssid[2] == 0xff)) {
+		/* AssocResp IEs */
+		pie = assoc_info + beacon_ie_len + assoc_req_len +
+			(sizeof(u16) * 3); /* capinfo + status code + associd */
+		peie = assoc_info + beacon_ie_len +
+			assoc_req_len + assoc_resp_len;
+
+		while (pie < peie) {
+			switch (*pie) {
+			case WLAN_EID_HT_CAPABILITY:
+				if (pie[1] >= sizeof(struct ieee80211_ht_cap))
+					ht_cap_ie =
+					(struct ieee80211_ht_cap *)(pie + 2);
+				break;
+			case WLAN_EID_VENDOR_SPECIFIC:
+				if (pie[1] == 24) {
+					if (pie[2] == 0x00 &&
+					     pie[3] == 0x50 &&
+					     pie[4] == 0xf2 &&
+					     pie[5] == 0x02 &&
+					     pie[8] == 0x80)
+						uapsd = true;
+				}
+				break;
+			}
+			pie += pie[1] + 2;
+		}
+
+		if (uapsd && ht_cap_ie) {
+			if ((ht_cap_ie->cap_info & IEEE80211_HT_CAP_SGI_20) &&
+			    !(ht_cap_ie->cap_info & IEEE80211_HT_CAP_SGI_40)) {
+				vif->aggr_cntxt->tx_amsdu_stick_onoff =
+							AGGR_TX_STICK_OFF;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+							"tx amsdu WAR\n");
+			}
+		}
+	}
+
+	return;
 }
 
 /*
@@ -3089,6 +3178,21 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 				}
 			}
 		}
+		if (vif->nw_type == INFRA_NETWORK) {
+			if ((txtid->max_aggr_sz) &&
+			    (vif->aggr_cntxt->tx_amsdu_stick_onoff ==
+							AGGR_TX_STICK_OFF)) {
+				txtid->max_aggr_sz = 0;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+					"Stick tx amsdu from ON to OFF\n");
+			} else if ((txtid->max_aggr_sz == 0) &&
+				   (vif->aggr_cntxt->tx_amsdu_stick_onoff ==
+							AGGR_TX_STICK_ON)) {
+				txtid->max_aggr_sz = 4096;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
+					"Stick tx amsdu from OFF to ON\n");
+			}
+		}
 	}
 }
 
@@ -3185,6 +3289,7 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
 	aggr->tx_amsdu_timeout = AGGR_TX_TIMEOUT;
+	aggr->tx_amsdu_stick_onoff = AGGR_TX_STICK_NONE;
 
 	/* Always enable host-based A-MSDU. */
 	set_bit(AMSDU_ENABLED, &vif->flags);
@@ -3291,6 +3396,10 @@ void aggr_reset_state(struct aggr_conn_info *aggr_conn)
 
 	if (vif->nw_type != AP_NETWORK)
 		aggr_conn->aggr_cntxt->tx_amsdu_enable = false;
+
+	if (vif->nw_type == INFRA_NETWORK)
+		aggr_conn->aggr_cntxt->tx_amsdu_stick_onoff =
+							AGGR_TX_STICK_NONE;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU, "%s: tx_amsdu_enable %d\n",
 		   __func__, aggr_conn->aggr_cntxt->tx_amsdu_enable);
@@ -3436,20 +3545,21 @@ static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx)
 			ath6kl_wmi_abort_scan_cmd(ar->wmi,
 					tmp->fw_vif_idx);
 			cfg80211_scan_done(tmp->scan_req, true);
+
+#ifdef USB_AUTO_SUSPEND
+			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+					   ATH6KL_DBG_EXT_AUTOPM,
+					   "%s: warnning refcnt=0, my=%d/%d\n",
+					   __func__,
+					   ar->auto_pm_cnt,
+					   ar->auto_pm_fail_cnt);
+			} else
+				ath6kl_hif_auto_pm_enable(ar);
+#endif
+
 			tmp->scan_req = NULL;
 			clear_bit(SCANNING, &tmp->flags);
-
-#if defined(USB_AUTO_SUSPEND)
-			if (test_and_clear_bit(SCANNING,
-				&ar->usb_autopm_scan)) {
-				if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-					ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-					"%s: warnning pm_usage_cnt =0\n",
-					__func__);
-				} else
-					ath6kl_hif_auto_pm_enable(ar);
-			}
-#endif
 		}
 	}
 
