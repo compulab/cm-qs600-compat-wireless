@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.451)
+#define __BUILD_VERSION_ (3.5.0.471)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -222,6 +222,7 @@
 #define DELIMITER 0xaaaaaaaa
 #define DUMP_BUF_SIZE 2000
 #define MAX_DUMP_FW_SIZE 18000
+#define MAX_STRDUMP_LEN 200
 
 #ifdef CONFIG_ANDROID
 #define CRASH_DUMP_FILE "/data/connectivity/ath6kl.log"
@@ -337,9 +338,9 @@
  * MAX_HI_COOKIE_NUM are reserved for high priority traffic.
  * Need more cookies for WMM purpose.
  */
-#define MAX_DEF_COOKIE_NUM                400
+#define MAX_DEF_COOKIE_NUM                1600
 #define MAX_HI_COOKIE_NUM                 40	/* 10% of MAX_COOKIE_NUM */
-#define MAX_VIF_COOKIE_NUM                200   /* 50% of MAX_COOKIE_NUM */
+#define MAX_VIF_COOKIE_NUM                800   /* 50% of MAX_COOKIE_NUM */
 #define MAX_RESV_COOKIE_NUM               (MAX_HI_COOKIE_NUM / 2)
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
@@ -759,6 +760,10 @@ enum ath6kl_recovery_mode {
 #define AGGR_TX_PROG_HS_MAX_NUM		22
 #define AGGR_TX_PROG_HS_TIMEOUT		8	/* in ms */
 
+#define AGGR_TX_STICK_NONE	(0)
+#define AGGR_TX_STICK_ON	(1)
+#define AGGR_TX_STICK_OFF	(2)
+
 #define AGGR_GET_TXTID(_p, _x)           (&(_p->tx_tid[(_x)]))
 
 #define WMI_TIMEOUT (2 * HZ)
@@ -917,6 +922,7 @@ struct aggr_info {
 	bool tx_amsdu_seq_pkt;
 	bool tx_amsdu_progressive;
 	bool tx_amsdu_progressive_hispeed;	/* in high speed or not */
+	int tx_amsdu_stick_onoff;		/* Stick On/Off A-MSDU */
 
 	u8 tx_amsdu_max_aggr_num;
 	u32 tx_amsdu_max_aggr_len;
@@ -1481,7 +1487,7 @@ struct ath6kl_vif {
 	struct p2p_pending_connect_info *pending_connect_info;
 
 	struct bss_post_proc *bss_post_proc_ctx;
-	u32 data_cookie_count;
+	int data_cookie_count;
 
 	struct ap_rc_info ap_rc_info_ctx;
 
@@ -1513,6 +1519,7 @@ enum ath6kl_dev_state {
 	EAPOL_HANDSHAKE_PROTECT,
 	REG_COUNTRY_UPDATE,
 	CFG80211_REGDB,
+	RECOVER_IN_PROCESS,
 };
 
 enum ath6kl_state {
@@ -1546,11 +1553,12 @@ enum ath6kl_vap_mode {
 #ifdef USB_AUTO_SUSPEND
 #define USB_SUSPEND_DELAY_MAX                         2000
 #define USB_SUSPEND_DELAY_REENABLE                     500
-#define USB_SUSPEND_DELAY_CONNECTED                    400
+#define USB_SUSPEND_DELAY_CONNECTED                   2000
 #define USB_SUSPEND_DELAY_MIN                          200
 
-#define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT               1
-#define USB_SUSPEND_DEFER_DELAY_FOR_P2P_FIND             2
+#define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT			1
+#define USB_SUSPEND_DEFER_DELAY_FOR_P2P				2
+#define USB_SUSPEND_DEFER_DELAY_FOR_RECOVER			3
 
 struct usb_pm_skb_queue_t {
 	struct list_head list;
@@ -1851,10 +1859,11 @@ struct ath6kl {
 #ifdef USB_AUTO_SUSPEND
 	struct usb_pm_skb_queue_t usb_pm_skb_queue;
 	spinlock_t   usb_pm_lock;
-	unsigned long  usb_autopm_scan;
 	int auto_pm_cnt;
+	int auto_pm_fail_cnt;
 	int autopm_turn_on;
 	int autopm_defer_delay_change_cnt;
+	int autopm_curr_delay_time;
 #endif
 	struct wmi_green_tx_params green_tx_params;
 
@@ -1866,6 +1875,8 @@ struct ath6kl {
 
 	/* set if wow pattern set by debug_fs */
 	bool get_wow_pattern;
+
+	struct work_struct reset_cover_war_work;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -1984,6 +1995,11 @@ void aggr_tx_config(struct ath6kl_vif *vif,
 			u8 tx_amsdu_max_aggr_num,
 			u16 tx_amsdu_max_pdu_len,
 			u16 tx_amsdu_timeout);
+void aggr_tx_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info);
 void aggr_config(struct ath6kl_vif *vif,
 			u16 rx_aggr_timeout);
 struct aggr_info *aggr_init(struct ath6kl_vif *vif);
@@ -2133,5 +2149,15 @@ extern unsigned int ath6kl_ce_flags;
 
 #ifdef CONFIG_ANDROID
 extern unsigned int ath6kl_bt_on;
+#endif
+
+#if defined(CONFIG_CRASH_DUMP) || defined(ATH6KL_HSIC_RECOVER)
+int _readwrite_file(const char *filename, char *rbuf,
+	const char *wbuf, size_t length, int mode);
+#endif
+
+#ifdef CONFIG_CRASH_DUMP
+int print_to_file(const char *fmt, ...);
+int check_dump_file_size(void);
 #endif
 #endif /* CORE_H */

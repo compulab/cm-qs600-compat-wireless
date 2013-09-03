@@ -274,6 +274,7 @@ struct ath6kl_platform_data {
 	struct ath6kl_power_vreg_data *wifi_chip_pwd;
 	struct ath6kl_power_vreg_data *wifi_vddpa;
 	struct ath6kl_power_vreg_data *wifi_vddio;
+	int bt_gpio_sys_rst;
 };
 
 struct ath6kl_platform_data *gpdata;
@@ -512,15 +513,82 @@ chip_pwd_fail:
 }
 
 #ifdef ATH6KL_HSIC_RECOVER
+static void ath6kl_trigger_bt_restart(void)
+{
+	int status = 0;
+	char buf[32];
+	size_t len;
+
+	len = snprintf(buf, sizeof(buf), "%s", "bt_restart");
+	status = _readwrite_file("/data/connectivity/bt_restart", NULL,
+					buf, len, (O_WRONLY | O_CREAT));
+	if (status < 0)
+		ath6kl_info("write failed with status code 0x%x\n", status);
+}
+
+int ath6kl_hsic_is_bt_on(void)
+{
+	int rc;
+	int bt_reset_gpio_val = 0;
+
+	if (gpdata->bt_gpio_sys_rst < 0)
+		return 0;
+
+	rc = gpio_request(gpdata->bt_gpio_sys_rst, "bt_sys_rst_n");
+	if (rc) {
+		ath6kl_err("unable to request gpio %d (%d)\n",
+			gpdata->bt_gpio_sys_rst, rc);
+		bt_reset_gpio_val = gpio_get_value(gpdata->bt_gpio_sys_rst);
+	} else {
+		bt_reset_gpio_val = gpio_get_value(gpdata->bt_gpio_sys_rst);
+		gpio_free(gpdata->bt_gpio_sys_rst);
+	}
+
+	return bt_reset_gpio_val;
+}
+
 void ath6kl_hsic_rediscovery(void)
 {
 #ifdef ATH6KL_BUS_VOTE
-	mdelay(100);
-	ath6kl_hsic_bind(0);
+	int rc = 0;
+	int is_bt_gpio_on = 0;
 
-	/* delay a while */
-	mdelay(1000);
-	ath6kl_hsic_bind(1);
+	if (ath6kl_driver_unloaded == 1)
+		return;
+
+	is_bt_gpio_on = ath6kl_hsic_is_bt_on();
+
+	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
+
+	/* mpq did not use verg reset */
+	if (machine_is_apq8064_dma() ||
+		machine_is_apq8064_bueller()) {
+		mdelay(100);
+		ath6kl_hsic_bind(0);
+
+		/* delay a while */
+		mdelay(1000);
+		ath6kl_hsic_bind(1);
+		return;
+	}
+
+	if (is_bt_gpio_on == 1) {
+		ath6kl_trigger_bt_restart();
+	} else {
+		rc = ath6kl_vreg_disable(gpdata->wifi_chip_pwd);
+		mdelay(100);
+		ath6kl_hsic_bind(0);
+
+		/* delay a while */
+		mdelay(1000);
+		rc = ath6kl_configure_vreg(gpdata->wifi_chip_pwd);
+		if (rc < 0) {
+			ath6kl_err("power on chip_pwd error\n");
+			ath6kl_vreg_disable(gpdata->wifi_chip_pwd);
+		}
+		ath6kl_hsic_bind(1);
+	}
+
 #endif
 }
 
@@ -582,22 +650,31 @@ void ath6kl_hsic_enum_war_schedule(void)
 static void ath6kl_enum_war_work(struct work_struct *work)
 {
 	int ret;
+	int is_bt_gpio_on;
 
 	/* If driver is unloaded, skip the WAR */
 	if (ath6kl_driver_unloaded == 1)
 		return;
 
-	ret = ath6kl_platform_power(gpdata, 0);
+	is_bt_gpio_on = ath6kl_hsic_is_bt_on();
 
-	if (ret == 0 && ath6kl_bt_on == 0)
-		ath6kl_hsic_bind(0);
+	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
 
-	msleep(200);
+	if (is_bt_gpio_on == 1) {
+		ath6kl_trigger_bt_restart();
+	} else {
+		ret = ath6kl_platform_power(gpdata, 0);
 
-	ret = ath6kl_platform_power(gpdata, 1);
+		if (ret == 0 && ath6kl_bt_on == 0)
+			ath6kl_hsic_bind(0);
 
-	if (ret == 0 && ath6kl_bt_on == 0)
-		ath6kl_hsic_bind(1);
+		msleep(200);
+
+		ret = ath6kl_platform_power(gpdata, 1);
+
+		if (ret == 0 && ath6kl_bt_on == 0)
+			ath6kl_hsic_bind(1);
+	}
 }
 
 static int ath6kl_hsic_probe(struct platform_device *pdev)
@@ -646,6 +723,13 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 			goto err;
 		}
 
+		pdata->bt_gpio_sys_rst = of_get_named_gpio(pdev->dev.of_node,
+				"qca,bt-reset-gpio", 0);
+		if (pdata->bt_gpio_sys_rst < 0) {
+			ath6kl_err("%s: bt-reset-gpio not"
+				"provided in device tree\n", __func__);
+		}
+
 		pdata->pdev = pdev;
 		platform_set_drvdata(pdev, pdata);
 		gpdata = pdata;
@@ -658,10 +742,10 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 
 			*platform_has_vreg = 1;
 		}
-
-		/* Initialize the worker */
-		INIT_WORK(&enum_war_work, ath6kl_enum_war_work);
 	}
+
+	/* Initialize the worker */
+	INIT_WORK(&enum_war_work, ath6kl_enum_war_work);
 
 	return ret;
 
