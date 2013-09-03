@@ -3381,9 +3381,6 @@ int ath6kl_wmi_set_wow_mode_cmd(struct wmi *wmi, u8 if_idx,
 	if (!skb)
 		return -ENOMEM;
 
-	wmi->parent_dev->last_wow_fliter = filter;
-	wmi->parent_dev->last_host_req_delay = host_req_delay;
-
 	cmd = (struct wmi_set_wow_mode_cmd *) skb->data;
 	cmd->enable_wow = cpu_to_le32(wow_mode);
 	cmd->filter = cpu_to_le32(filter);

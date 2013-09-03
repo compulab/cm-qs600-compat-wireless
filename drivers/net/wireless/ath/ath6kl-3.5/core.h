@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.470)
+#define __BUILD_VERSION_ (3.5.0.471)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1877,9 +1877,6 @@ struct ath6kl {
 	bool get_wow_pattern;
 
 	struct work_struct reset_cover_war_work;
-
-	u16 last_host_req_delay;
-	u32 last_wow_fliter;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)

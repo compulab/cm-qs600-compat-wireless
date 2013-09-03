@@ -448,7 +448,8 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	if (cookie == NULL) {
 #ifdef ATH6KL_HSIC_RECOVER
 		if (ar->cookie_ctrl.cookie_fail_in_row >
-				MAX_COOKIE_FAIL_IN_ROW) {
+				MAX_COOKIE_FAIL_IN_ROW &&
+				ar->fw_crash_notify) {
 			ath6kl_err("control cookie fail %d time reset!\n",
 				ar->cookie_ctrl.cookie_fail_in_row);
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
@@ -930,7 +931,8 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
 #ifdef ATH6KL_HSIC_RECOVER
-		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag) &&
+			ar->fw_crash_notify) {
 			ath6kl_info("%s schedule recover work\n", __func__);
 			schedule_work(&ar->reset_cover_war_work);
 		}

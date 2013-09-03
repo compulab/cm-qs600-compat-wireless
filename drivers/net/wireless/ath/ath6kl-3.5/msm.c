@@ -558,7 +558,19 @@ void ath6kl_hsic_rediscovery(void)
 
 	is_bt_gpio_on = ath6kl_hsic_is_bt_on();
 
-	printk(KERN_INFO "%s,BT_RESET:%d\n", __func__,  is_bt_gpio_on);
+	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
+
+	/* mpq did not use verg reset */
+	if (machine_is_apq8064_dma() ||
+		machine_is_apq8064_bueller()) {
+		mdelay(100);
+		ath6kl_hsic_bind(0);
+
+		/* delay a while */
+		mdelay(1000);
+		ath6kl_hsic_bind(1);
+		return;
+	}
 
 	if (is_bt_gpio_on == 1) {
 		ath6kl_trigger_bt_restart();
@@ -646,7 +658,7 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 
 	is_bt_gpio_on = ath6kl_hsic_is_bt_on();
 
-	printk(KERN_INFO "%s,BT_RESET:%d\n", __func__,  is_bt_gpio_on);
+	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
 
 	if (is_bt_gpio_on == 1) {
 		ath6kl_trigger_bt_restart();
