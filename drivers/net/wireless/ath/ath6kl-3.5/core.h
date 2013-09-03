@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.471)
+#define __BUILD_VERSION_ (3.5.0.472)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1877,6 +1877,9 @@ struct ath6kl {
 	bool get_wow_pattern;
 
 	struct work_struct reset_cover_war_work;
+
+	u16 last_host_req_delay;
+	u32 last_wow_fliter;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -2114,7 +2117,7 @@ extern u8 ath6kl_driver_unloaded;
 
 int ath6kl_hsic_init_msm(u8 *has_vreg);
 void ath6kl_hsic_exit_msm(void);
-int ath6kl_hsic_bind(int bind);
+int ath6kl_hsic_bind(int bind, bool recover);
 void ath6kl_hsic_enum_war_schedule(void);
 #endif
 

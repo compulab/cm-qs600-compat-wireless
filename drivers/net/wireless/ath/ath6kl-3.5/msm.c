@@ -35,6 +35,8 @@
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/of_platform.h>
+#include <linux/of_device.h>
 #include <linux/regulator/consumer.h>
 #include <linux/regulator/driver.h>
 #include <linux/usb/msm_hsusb.h>
@@ -560,24 +562,12 @@ void ath6kl_hsic_rediscovery(void)
 
 	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
 
-	/* mpq did not use verg reset */
-	if (machine_is_apq8064_dma() ||
-		machine_is_apq8064_bueller()) {
-		mdelay(100);
-		ath6kl_hsic_bind(0);
-
-		/* delay a while */
-		mdelay(1000);
-		ath6kl_hsic_bind(1);
-		return;
-	}
-
 	if (is_bt_gpio_on == 1) {
 		ath6kl_trigger_bt_restart();
 	} else {
 		rc = ath6kl_vreg_disable(gpdata->wifi_chip_pwd);
 		mdelay(100);
-		ath6kl_hsic_bind(0);
+		ath6kl_hsic_bind(0, true);
 
 		/* delay a while */
 		mdelay(1000);
@@ -586,7 +576,7 @@ void ath6kl_hsic_rediscovery(void)
 			ath6kl_err("power on chip_pwd error\n");
 			ath6kl_vreg_disable(gpdata->wifi_chip_pwd);
 		}
-		ath6kl_hsic_bind(1);
+		ath6kl_hsic_bind(1, true);
 	}
 
 #endif
@@ -613,25 +603,73 @@ static int ath6kl_toggle_radio(void *data, int on)
 	return ret;
 }
 
-int ath6kl_hsic_bind(int bind)
+#ifdef CONFIG_USE_OF
+int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
+{
+	struct device_node *ehci_hsic_node;
+	struct platform_device *ehci_hsic_pdev;
+
+	ehci_hsic_node = of_find_node_by_name(NULL, "hsic");
+	if (ehci_hsic_node) {
+		ehci_hsic_pdev = of_find_device_by_node(ehci_hsic_node);
+		if (ehci_hsic_pdev == NULL) {
+			ath6kl_err("%s: rebind fail\n", __func__);
+			return -ENODEV;
+		}
+	} else {
+		ath6kl_err("%s: can't find node\n", __func__);
+		return -ENODEV;
+	}
+
+	if (bind) {
+		/* make sure to hold a rederence to the kobj */
+		of_dev_get(ehci_hsic_pdev);
+
+		/* remove device */
+		of_device_del(ehci_hsic_pdev);
+
+		/* for safety, we put a longer delay */
+		if (recover == true)
+			msleep(3000);
+
+		/* release the reference after finishing */
+		of_dev_put(ehci_hsic_pdev);
+
+		/* add device */
+		of_device_add(ehci_hsic_pdev);
+	}
+
+	return 0;
+}
+#endif
+
+int ath6kl_hsic_bind(int bind, bool recover)
 {
 	char buf[16];
 	int length;
+	int ret;
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "%s, bind: %d\n", __func__, bind);
 
 	if (bind) {
 		length = snprintf(buf, sizeof(buf), "%s\n", "msm_hsic_host");
 
-		android_readwrite_file(
+		ret = android_readwrite_file(
 			"/sys/bus/platform/drivers/msm_hsic_host/bind",
 			NULL, buf, length);
+#ifdef CONFIG_USE_OF
+		if (ret == -ENODEV)
+			ath6kl_rebind_hsic_by_device_op(bind, recover);
+#endif
 	} else {
 		length = snprintf(buf, sizeof(buf), "%s\n", "msm_hsic_host");
-
-		android_readwrite_file(
+		ret = android_readwrite_file(
 			"/sys/bus/platform/drivers/msm_hsic_host/unbind",
 			NULL, buf, length);
+#ifdef CONFIG_USE_OF
+		if (ret == -ENODEV)
+			ath6kl_rebind_hsic_by_device_op(bind, recover);
+#endif
 	}
 
 	return 0;
@@ -666,14 +704,14 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 		ret = ath6kl_platform_power(gpdata, 0);
 
 		if (ret == 0 && ath6kl_bt_on == 0)
-			ath6kl_hsic_bind(0);
+			ath6kl_hsic_bind(0, true);
 
 		msleep(200);
 
 		ret = ath6kl_platform_power(gpdata, 1);
 
 		if (ret == 0 && ath6kl_bt_on == 0)
-			ath6kl_hsic_bind(1);
+			ath6kl_hsic_bind(1, true);
 	}
 }
 
@@ -738,7 +776,7 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 			ret = ath6kl_platform_power(pdata, 1);
 
 			if (ret == 0 && ath6kl_bt_on == 0)
-				ath6kl_hsic_bind(1);
+				ath6kl_hsic_bind(1, false);
 
 			*platform_has_vreg = 1;
 		}
@@ -782,7 +820,7 @@ static int ath6kl_hsic_remove(struct platform_device *pdev)
 				regulator_put(pdata->wifi_vddio->reg);
 
 			if (ret == 0 && ath6kl_bt_on == 0)
-				ath6kl_hsic_bind(0);
+				ath6kl_hsic_bind(0, false);
 		}
 	}
 

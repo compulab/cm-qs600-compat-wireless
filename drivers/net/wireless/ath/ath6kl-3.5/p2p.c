@@ -2301,8 +2301,7 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 			} else if (vif->wdev.iftype ==
 						NL80211_IFTYPE_P2P_CLIENT) {
 				/* SCC/P2P-GC - Set to PS OFF if need. */
-				if ((ar->p2p_war_p2p_client_awake) &&
-				    connected) {
+				if (ar->p2p_war_p2p_client_awake) {
 					set_bit(PS_STICK, &vif->flags);
 					pwr_mode = MAX_PERF_POWER;
 				} else {
