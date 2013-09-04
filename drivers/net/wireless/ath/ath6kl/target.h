@@ -297,6 +297,11 @@ struct host_interest {
 	/* Number of packet log buffers */
 	u32 hi_pktlog_num_buffers;                     /* 0xe8 */
 
+	/* wow extension configuration */
+	u32 hi_wow_ext_config;                         /* 0xec */
+
+	u32 hi_pwr_save_flags;                        /*  0xf0 */
+
 } __packed;
 
 #define HI_ITEM(item)  offsetof(struct host_interest, item)
@@ -345,6 +350,14 @@ struct host_interest {
 #define HI_OPTION_AP_CLIENT_CNT_MASK	0xF
 /* Enable Multichannel Concurrency (MCC) */
 #define HI_OPTION_MCC_ENABLE            0x80000000
+
+/*power save flag bit definitions*/
+#define HI_PWR_SAVE_LPL_ENABLED        0x1
+
+/* power save mode - reduced power listen */
+#define HI_PWR_SAVE_LPL_DEV_MASK	0x3
+#define HI_PWR_SAVE_LPL_DEV0_LSB	4
+
 
 /* Convert a Target virtual address into a Target physical address */
 #define AR6003_VTOP(vaddr) ((vaddr) & 0x001fffff)
