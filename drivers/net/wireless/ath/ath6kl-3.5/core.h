@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.472)
+#define __BUILD_VERSION_ (3.5.0.476)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -188,6 +188,17 @@
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #endif
+#endif
+
+#ifdef ATH6KL_HSIC_RECOVER
+enum ath6kl_hsic_recover_state {
+	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
+	ATH6KL_RECOVER_STATE_IN_PROGRESS,
+	ATH6KL_RECOVER_STATE_DONE,
+};
+
+extern wait_queue_head_t ath6kl_hsic_recover_wq;
+extern atomic_t ath6kl_recover_state;
 #endif
 
 /*

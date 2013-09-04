@@ -701,6 +701,9 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 	if (is_bt_gpio_on == 1) {
 		ath6kl_trigger_bt_restart();
 	} else {
+		atomic_set(&ath6kl_recover_state,
+			ATH6KL_RECOVER_STATE_IN_PROGRESS);
+
 		ret = ath6kl_platform_power(gpdata, 0);
 
 		if (ret == 0 && ath6kl_bt_on == 0)
@@ -712,6 +715,10 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 
 		if (ret == 0 && ath6kl_bt_on == 0)
 			ath6kl_hsic_bind(1, true);
+
+		/* change the state and wakeup event queue */
+		atomic_set(&ath6kl_recover_state, ATH6KL_RECOVER_STATE_DONE);
+		wake_up(&ath6kl_hsic_recover_wq);
 	}
 }
 
