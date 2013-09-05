@@ -137,16 +137,14 @@ out:
 u16 l1c_reset_mac(struct alx_hw *hw)
 {
 	u32 val, mrst_val;
-	u16 ret;
 	u16 i;
 
 	/* disable all interrupts, RXQ/TXQ */
 	alx_mem_w32(hw, L1C_IMR, 0);
 	alx_mem_w32(hw, L1C_ISR, L1C_ISR_DIS);
 
-	ret = l1c_enable_mac(hw, false, 0);
-	if (ret != 0)
-		return ret;
+	l1c_enable_mac(hw, false, 0);
+
 	/* reset whole mac safely. OOB is meaningful for L1D only  */
 	alx_mem_r32(hw, L1C_MASTER, &mrst_val);
 	mrst_val |= L1C_MASTER_OOB_DIS;
@@ -248,7 +246,7 @@ u16 l1c_reset_phy(struct alx_hw *hw, bool pws_en, bool az_en, bool ptp_en)
 		l1c_write_phydbg(hw, true, L1C_MIIDBG_LEGCYPS,
 				 (hw->pci_devid == L1D_DEV_ID ||
 				  hw->pci_devid == L1D2_DEV_ID) ?
-				 L1D_LEGCYPS_DEF : L1C_LEGCYPS_DEF);
+				 L1D_LEGCYPS_DEF : L1C_LEGCYPS_DEF_MPQ);
 		/* hib */
 		l1c_write_phydbg(hw, true, L1C_MIIDBG_SYSMODCTRL,
 				 L1C_SYSMODCTRL_IECHOADJ_DEF);
@@ -520,7 +518,7 @@ u16 l1c_enable_mac(struct alx_hw *hw, bool en, u16 en_ctrl)
 				    L1C_MAC_STS_RXQ_BUSY)) == 0) {
 				break;
 			}
-			udelay(20);
+			msleep(1);
 		}
 		if (L1C_DMA_MAC_RST_TO == i)
 			return LX_ERR_RSTMAC;
@@ -532,7 +530,7 @@ u16 l1c_enable_mac(struct alx_hw *hw, bool en, u16 en_ctrl)
 			alx_mem_r32(hw, L1C_MAC_STS, &val);
 			if ((val & L1C_MAC_STS_IDLE) == 0)
 				break;
-			udelay(10);
+			msleep(1);
 		}
 		if (L1C_DMA_MAC_RST_TO == i)
 			return LX_ERR_RSTMAC;
@@ -1084,3 +1082,27 @@ u16 l1c_get_phy_config(struct alx_hw *hw)
 	return LX_DRV_PHY_UNKNOWN;
 }
 
+u16 l1c_apply_phy_hib_patch(struct alx_hw * hw)
+{
+	u16 Control;
+	l1c_read_phydbg(hw, false, 0xc, & Control);
+
+	// bit 11: 0 means in hibernation, 1 means not
+	if(Control & BIT(11)) {
+		hw->bInHibMode = false;
+	} else {
+		hw->bInHibMode = true;
+	}
+
+	if( (hw->bInHibMode) && (!hw->bHibPatched)) {
+
+		l1c_write_phy(hw, false, 0, false, MII_BMCR, 0x2100);
+		hw->bHibPatched = true;
+	}
+	if(!hw->bInHibMode && hw->bHibPatched) {
+
+		l1c_write_phy(hw, false, 0, false, MII_BMCR, 0x9000);
+		hw->bHibPatched = false;
+	}
+	return 0;
+}

@@ -284,6 +284,7 @@ struct alx_hw_callbacks {
 	int (*reset_phy)(struct alx_hw *);
 	int (*read_phy_reg)(struct alx_hw *, u16, u16 *);
 	int (*write_phy_reg)(struct alx_hw *, u16, u16);
+	int (*apply_phy_hib_patch)(struct alx_hw *);
 	/* Link */
 	int (*setup_phy_link)(struct alx_hw *, u32, bool, bool);
 	int (*setup_phy_link_speed)(struct alx_hw *, u32, bool, bool);
@@ -352,6 +353,10 @@ struct alx_hw {
 	u32             link_speed;
 	bool            link_up;
 	spinlock_t      mdio_lock;
+	bool            bHibBug;
+    bool            bInHibMode;
+    bool            bHibPatched;
+
 
 	/* MAC parameter */
 	enum alx_mac_type mac_type;

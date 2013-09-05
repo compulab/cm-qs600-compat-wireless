@@ -1112,6 +1112,7 @@
 #define L1C_LEGCYPS_ECNC_PS_EN              BIT(0)
 #define L1D_LEGCYPS_DEF                     0x129D
 #define L1C_LEGCYPS_DEF                     0x36DD
+#define L1C_LEGCYPS_DEF_MPQ                 0x30DD
 
 #define L1C_MIIDBG_TST100BTCFG              0x36
 #define L1C_TST100BTCFG_NORMAL_BW_EN        BIT(15)
@@ -1307,6 +1308,8 @@ u16 l1c_write_phydbg(struct alx_hw *hw, bool fast, u16 reg, u16 data);
 /* check the configuration of the PHY */
 u16 l1c_get_phy_config(struct alx_hw *hw);
 
+/* phy hib patch */
+u16 l1c_apply_phy_hib_patch(struct alx_hw * hw);
 /*
  * initialize mac basically
  *  most of hi-feature no init
