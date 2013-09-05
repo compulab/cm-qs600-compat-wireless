@@ -616,6 +616,18 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 			return -ENOTSUPP;
 	}
 
+	/* WAR: in extremely loud environment */
+	if (machine_is_apq8064_bueller()) {
+		if ((fw_vif_idx == 0) &&
+		    (vif->nw_type == INFRA_NETWORK)) {
+			ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
+				"Longer BMISS time for fixed device.");
+			ath6kl_wmi_set_bmiss_time(ar->wmi,
+						vif->fw_vif_idx,
+						50);
+		}
+	}
+
 	return 0;
 }
 
@@ -2289,7 +2301,11 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
-			if (mcc) {
+			if (test_bit(PS_DISABLED_ALWAYS, &ar->flag)) {
+				/* No support PS always */
+				set_bit(PS_STICK, &vif->flags);
+				pwr_mode = MAX_PERF_POWER;
+			} else if (mcc) {
 				/* MCC/AnyVIF - Set all VIFs to PS OFF. */
 				set_bit(PS_STICK, &vif->flags);
 				pwr_mode = MAX_PERF_POWER;

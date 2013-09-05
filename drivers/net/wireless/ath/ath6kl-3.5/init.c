@@ -55,6 +55,7 @@ unsigned int ath6kl_ce_flags = 1;
 #endif
 unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
 unsigned short reg_domain = NULL_REG_CODE;
+unsigned int ath6kl_ps_disabled = ATH6KL_MODULE_DEF_PS_DISABLED;
 
 #ifdef ATH6KL_DIAGNOSTIC
 unsigned int diag_local_test;
@@ -100,6 +101,7 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 module_param(reg_domain, ushort, 0644);
+module_param(ath6kl_ps_disabled, uint, 0644);
 
 #ifdef CONFIG_ANDROID
 module_param(ath6kl_bt_on, uint, 0644);
@@ -3065,10 +3067,19 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 		if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
 			ar->roam_mode = ATH6KL_SDIO_DEFAULT_ROAM_MODE;
-		else
-			ar->roam_mode = ATH6KL_USB_DEFAULT_ROAM_MODE;
+		else {
+#ifdef CONFIG_ANDROID
+			if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
+				ar->roam_mode = ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN;
+			else
+#endif
+				ar->roam_mode = ATH6KL_USB_DEFAULT_ROAM_MODE;
+		}
 
 	}
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: roam_mode 0x%x\n",
+		__func__, ar->roam_mode);
 
 	/*
 	 * Always use internal-regdb by default.
@@ -3244,6 +3255,12 @@ int ath6kl_core_init(struct ath6kl *ar)
 			ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
 #endif
 
+	if (ath6kl_ps_disabled ||
+	    machine_is_apq8064_bueller()) {
+		set_bit(PS_DISABLED_ALWAYS, &ar->flag);
+		ath6kl_info("Disabled PS always.\n");
+	}
+
 	/* Defer some tasks to worker after driver init. */
 	if (!ret) {
 		init_waitqueue_head(&ar->init_defer_wait_wq);
@@ -3280,7 +3297,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 #endif
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY)) {
-		ath6kl_info("Enable Firmware crash notiry.\n");
+		ath6kl_info("Enable Firmware crash notify.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 

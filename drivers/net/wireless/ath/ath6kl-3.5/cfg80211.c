@@ -6720,11 +6720,6 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
 
-#ifdef CONFIG_ANDROID
-	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
-		ath6kl_roam_mode = ATH6KL_MODULEROAM_DISABLE;
-#endif
-
 	ar->roam_mode = ath6kl_roam_mode;
 
 	if (ar->sche_scan &&

@@ -197,10 +197,16 @@ struct semaphore usb_probe_sem;
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
+enum ath6kl_hsic_recover_state {
+	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
+	ATH6KL_RECOVER_STATE_IN_PROGRESS,
+	ATH6KL_RECOVER_STATE_DONE,
+};
+
 #define ATH6KL_RECOVER_WAIT_TIMEOUT        (8*HZ)
 
-wait_queue_head_t ath6kl_hsic_recover_wq;
-atomic_t ath6kl_recover_state;
+static wait_queue_head_t ath6kl_hsic_recover_wq;
+static atomic_t ath6kl_recover_state;
 struct work_struct recover_war_work;
 
 #endif
@@ -2871,13 +2877,25 @@ err_usb_put:
 
 static void ath6kl_usb_remove(struct usb_interface *interface)
 {
+	int war_in_progress;
+	struct ath6kl_usb *ar_usb;
+	struct ath6kl *ar;
+
+	ar_usb = usb_get_intfdata(interface);
+	if (ar_usb == NULL)
+		return;
+
+	ar = ar_usb->ar;
+
+	war_in_progress = test_bit(RECOVER_IN_PROCESS, &ar->flag);
+
 	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb card removed\n");
 
 	usb_put_dev(interface_to_usbdev(interface));
 	ath6kl_usb_device_detached(interface);
 
 #ifdef ATH6KL_HSIC_RECOVER
-	if (ath6kl_driver_unloaded == 0)
+	if (ath6kl_driver_unloaded == 0 && war_in_progress == 0)
 		schedule_work(&recover_war_work);
 #endif
 

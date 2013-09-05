@@ -558,6 +558,18 @@ void ath6kl_hsic_rediscovery(void)
 	if (ath6kl_driver_unloaded == 1)
 		return;
 
+	/* mpq did not use verg reset */
+	if (machine_is_apq8064_dma() ||
+		machine_is_apq8064_bueller()) {
+		mdelay(100);
+		ath6kl_hsic_bind(0, true);
+
+		/* delay a while */
+		mdelay(1000);
+		ath6kl_hsic_bind(1, true);
+		return;
+	}
+
 	is_bt_gpio_on = ath6kl_hsic_is_bt_on();
 
 	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
@@ -694,6 +706,19 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 	if (ath6kl_driver_unloaded == 1)
 		return;
 
+	/* mpq did not use verg reset */
+	if (machine_is_apq8064_dma() ||
+		machine_is_apq8064_bueller()) {
+		ath6kl_toggle_radio(gpdata->pdev->dev.platform_data, 0);
+		ath6kl_hsic_bind(0, true);
+
+		/* delay a while */
+		mdelay(1000);
+		ath6kl_toggle_radio(gpdata->pdev->dev.platform_data, 1);
+		ath6kl_hsic_bind(1, true);
+		return;
+	}
+
 	is_bt_gpio_on = ath6kl_hsic_is_bt_on();
 
 	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
@@ -701,9 +726,6 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 	if (is_bt_gpio_on == 1) {
 		ath6kl_trigger_bt_restart();
 	} else {
-		atomic_set(&ath6kl_recover_state,
-			ATH6KL_RECOVER_STATE_IN_PROGRESS);
-
 		ret = ath6kl_platform_power(gpdata, 0);
 
 		if (ret == 0 && ath6kl_bt_on == 0)
@@ -715,10 +737,6 @@ static void ath6kl_enum_war_work(struct work_struct *work)
 
 		if (ret == 0 && ath6kl_bt_on == 0)
 			ath6kl_hsic_bind(1, true);
-
-		/* change the state and wakeup event queue */
-		atomic_set(&ath6kl_recover_state, ATH6KL_RECOVER_STATE_DONE);
-		wake_up(&ath6kl_hsic_recover_wq);
 	}
 }
 
@@ -728,24 +746,25 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	int ret = 0;
 
+	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
+	if (!pdata) {
+		ath6kl_err("%s: Could not allocate memory for platform data\n",
+			__func__);
+		return -ENOMEM;
+	}
+
 	if (machine_is_apq8064_dma()) {
 		ath6kl_dbg(ATH6KL_DBG_BOOT, "%s\n", __func__);
 		previous = 0;
 		ath6kl_toggle_radio(pdev->dev.platform_data, 1);
+		pdata->pdev = pdev;
+		gpdata = pdata;
 	} else {
 		ath6kl_bus_scale_pdata = msm_bus_cl_get_pdata(pdev);
 		bus_perf_client =
 			msm_bus_scale_register_client(
 				ath6kl_bus_scale_pdata);
 		msm_bus_scale_client_update_request(bus_perf_client, 4);
-
-		pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-
-		if (!pdata) {
-			ath6kl_err("%s: Could not allocate memory for platform data\n",
-				__func__);
-			return -ENOMEM;
-		}
 
 		if (ath6kl_dt_parse_vreg_info(dev, &pdata->wifi_chip_pwd,
 				"qca,wifi-chip-pwd") != 0) {
