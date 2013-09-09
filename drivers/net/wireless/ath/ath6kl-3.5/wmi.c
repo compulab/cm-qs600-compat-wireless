@@ -1420,7 +1420,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 
 	/* STA/IBSS mode connection event */
 
-	ath6kl_dbg(ATH6KL_DBG_WMI,
+	ath6kl_dbg(ATH6KL_DBG_WMI |
+		ATH6KL_DBG_EXT_INFO1 |
+		ATH6KL_DBG_EXT_DEF,
 		   "wmi event connect freq %d bssid %pM listen_intvl %d "
 		   "beacon_intvl %d type %d\n",
 		   le16_to_cpu(ev->u.sta.ch), ev->u.sta.bssid,
@@ -1884,6 +1886,9 @@ static int ath6kl_wmi_error_event_rx(struct wmi *wmi, u8 *datap, int len)
 static int ath6kl_wmi_stats_event_rx(struct wmi *wmi, u8 *datap, int len,
 				     struct ath6kl_vif *vif)
 {
+	fw_ping_count = ATH6KL_FW_PING_MAX;
+	del_timer(&fw_ping_timer);
+
 	ath6kl_tgt_stats_event(vif, datap, len);
 
 	return 0;
@@ -3380,6 +3385,9 @@ int ath6kl_wmi_set_wow_mode_cmd(struct wmi *wmi, u8 if_idx,
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cmd));
 	if (!skb)
 		return -ENOMEM;
+
+	wmi->parent_dev->last_wow_fliter = filter;
+	wmi->parent_dev->last_host_req_delay = host_req_delay;
 
 	cmd = (struct wmi_set_wow_mode_cmd *) skb->data;
 	cmd->enable_wow = cpu_to_le32(wow_mode);

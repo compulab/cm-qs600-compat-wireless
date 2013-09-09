@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.477)
+#define __BUILD_VERSION_ (3.5.0.482)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -96,6 +96,7 @@
 
 /* ce and not ce are seperate */
 #ifndef CE_SUPPORT
+#define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT		(BIT(31))
 #ifdef CONFIG_ANDROID
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
@@ -129,8 +130,8 @@
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(0)
 #endif
 
-#ifndef ATH6KL_MODULE_DEF_PS_DISABLED
-#define ATH6KL_MODULE_DEF_PS_DISABLED	(0)
+#ifndef ATH6KL_MODULE_DEF_DEBUG_MASK_EXT
+#define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT	(0)
 #endif
 
 #ifndef ATH6KL_DEVNAME_DEF_P2P
@@ -192,6 +193,17 @@
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_4
 #endif
+#endif
+
+#ifdef ATH6KL_HSIC_RECOVER
+enum ath6kl_hsic_recover_state {
+	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
+	ATH6KL_RECOVER_STATE_IN_PROGRESS,
+	ATH6KL_RECOVER_STATE_DONE,
+};
+
+extern wait_queue_head_t ath6kl_hsic_recover_wq;
+extern atomic_t ath6kl_recover_state;
 #endif
 
 /*
@@ -349,7 +361,7 @@
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 #define MAX_COOKIE_CTRL_NUM	(64 + 2)
-#define MAX_COOKIE_FAIL_IN_ROW		  20
+#define MAX_COOKIE_FAIL_IN_ROW		  10
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL MAX_COOKIE_CTRL_NUM
@@ -404,6 +416,10 @@
 * event in certain platform
 */
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
+
+#define ATH6KL_FW_PING_MAX (MAX_COOKIE_CTRL_NUM + MAX_COOKIE_FAIL_IN_ROW + 1)
+
+#define ATH6KL_FW_PING_PERIOD		(msecs_to_jiffies(100))
 
 /*
  * 1250 ms. = RX EAPOL +
@@ -1524,7 +1540,6 @@ enum ath6kl_dev_state {
 	REG_COUNTRY_UPDATE,
 	CFG80211_REGDB,
 	RECOVER_IN_PROCESS,
-	PS_DISABLED_ALWAYS,
 };
 
 enum ath6kl_state {
@@ -1882,6 +1897,9 @@ struct ath6kl {
 	bool get_wow_pattern;
 
 	struct work_struct reset_cover_war_work;
+
+	u16 last_host_req_delay;
+	u32 last_wow_fliter;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -2165,4 +2183,8 @@ int _readwrite_file(const char *filename, char *rbuf,
 int print_to_file(const char *fmt, ...);
 int check_dump_file_size(void);
 #endif
+
+extern struct timer_list fw_ping_timer;
+extern int fw_ping_count;
+
 #endif /* CORE_H */

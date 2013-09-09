@@ -20,6 +20,7 @@
 #include "cfg80211.h"
 #include "target.h"
 #include "debug.h"
+#include <linux/vmalloc.h>
 #ifdef ATHTST_SUPPORT
 #include "ieee80211_ioctl.h"
 #include "ce_athtst.h"
@@ -967,27 +968,39 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	cookie_pool->cookie_count = 0;
 
 	mem_size = sizeof(struct ath6kl_cookie) * cookie_num;
-	cookie_pool->cookie_mem = kzalloc(mem_size, GFP_ATOMIC);
+	cookie_pool->cookie_mem = vmalloc(mem_size);
 	if (!cookie_pool->cookie_mem) {
+		cookie_pool->cookie_num = 0;
 		ath6kl_err("unable to allocate cookie, type %d num %d\n",
 				cookie_type,
 				cookie_num);
 		return -ENOMEM;
 	}
 
+	memset(cookie_pool->cookie_mem, 0, mem_size);
+
 	for (i = 0; i < cookie_num; i++) {
 		/* Assign the parent then insert to free queue */
 		cookie_pool->cookie_mem[i].cookie_pool = cookie_pool;
 		cookie_pool->cookie_mem[i].htc_pkt =
-			kzalloc(sizeof(struct htc_packet), GFP_ATOMIC);
+			vmalloc(sizeof(struct htc_packet));
+		memset(cookie_pool->cookie_mem[i].htc_pkt, 0,
+			sizeof(struct htc_packet));
 		if (cookie_pool->cookie_mem[i].htc_pkt)
 			ath6kl_free_cookie(ar, &cookie_pool->cookie_mem[i]);
 		else {
 			ath6kl_err("unable to allocate htc_pkt\n");
 
-			for (j = 0 ; j < i ; j++)
-				kfree(cookie_pool->cookie_mem[j].htc_pkt);
-			kfree(cookie_pool->cookie_mem);
+			for (j = 0 ; j < i ; j++) {
+				vfree(cookie_pool->cookie_mem[j].htc_pkt);
+				cookie_pool->cookie_mem[j].htc_pkt = NULL;
+			}
+			vfree(cookie_pool->cookie_mem);
+			cookie_pool->cookie_mem = NULL;
+		
+			cookie_pool->cookie_count = 0;
+			cookie_pool->cookie_num = 0;
+
 			return -ENOMEM;
 		}
 	}
@@ -1023,11 +1036,13 @@ static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
 	cookie_pool->cookie_list = NULL;
 	cookie_pool->cookie_count = 0;
 
-	for (i = 0; i < cookie_pool->cookie_num; i++)
-		kfree(cookie_pool->cookie_mem[i].htc_pkt);
+	if (cookie_pool->cookie_mem) {
+		for (i = 0; i < cookie_pool->cookie_num; i++)
+			vfree(cookie_pool->cookie_mem[i].htc_pkt);
 
-	kfree(cookie_pool->cookie_mem);
-	cookie_pool->cookie_mem = NULL;
+		vfree(cookie_pool->cookie_mem);
+		cookie_pool->cookie_mem = NULL;
+	}
 
 	cookie_pool->cookie_alloc_cnt = 0;
 	cookie_pool->cookie_alloc_fail_cnt = 0;
@@ -2546,6 +2561,44 @@ static int ath6kl_ioctl_ap_acl(struct ath6kl_vif *vif,
 	return ret;
 }
 
+static int ath6kl_ioctl_set_suspend(struct ath6kl_vif *vif,
+				char *user_cmd,
+				int len)
+{
+	int ret = 0;
+	int host_req_delay;
+
+	/* SET::SUSSUSPENDMODE {on/off} */
+	if (len > 1) {
+		if (!test_bit(WLAN_WOW_ENABLE, &vif->flags) ||
+		    (vif->ar->last_host_req_delay == 0))
+			return -ENOTSUPP;
+
+		if (down_interruptible(&vif->ar->sem)) {
+			ath6kl_err("busy, couldn't get access\n");
+			return -EIO;
+		}
+
+		host_req_delay = ((user_cmd[0] - '0') ? 2000 : 300);
+		ath6kl_dbg(ATH6KL_DBG_EXT_AUTOPM,
+			"%s: Set filter: 0x%x host_req_delay %d -> %d",
+				__func__,
+				vif->ar->last_wow_fliter,
+				vif->ar->last_host_req_delay,
+				host_req_delay);
+		if (ath6kl_wmi_set_wow_mode_cmd(vif->ar->wmi, vif->fw_vif_idx,
+						ATH6KL_WOW_MODE_ENABLE,
+						vif->ar->last_wow_fliter,
+						host_req_delay))
+			ret = -EIO;
+
+		up(&vif->ar->sem);
+	} else
+		ret = -EFAULT;
+
+	return ret;
+}
+
 bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
 {
 	struct ath6kl *ar = vif->ar;
@@ -2629,6 +2682,10 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 						(android_cmd.used_len - 4));
 				else if (strstr(user_cmd, "SET_AP_WPS_P2P_IE"))
 					ret = 0; /* To avoid AP/GO up stuck. */
+				else if (strstr(user_cmd, "SETSUSPENDMODE "))
+					ret = ath6kl_ioctl_set_suspend(vif,
+						(user_cmd + 15),
+						(android_cmd.used_len - 15));
 #ifdef CONFIG_ANDROID
 				else if (strstr(user_cmd, "SET_BT_ON ")) {
 					ath6kl_bt_on =

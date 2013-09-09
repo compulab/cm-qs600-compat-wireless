@@ -207,6 +207,7 @@ enum ATH6K_DEBUG_MASK_EXT {
 	ATH6KL_DBG_EXT_BSS_PROC	= BIT_OFFSET32(3),	/* BSS post-proc */
 	ATH6KL_DBG_EXT_AUTOPM	= BIT_OFFSET32(4),	/* Auto Power-Management */
 
+	ATH6KL_DBG_EXT_DEF	= BIT_OFFSET32(31),	/* keep last */
 	ATH6KL_DBG_EXT_ANY	= 0xffffffff00000000ULL  /* enable all logs */
 };
 

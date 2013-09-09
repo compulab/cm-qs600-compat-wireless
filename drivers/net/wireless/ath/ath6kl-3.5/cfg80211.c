@@ -34,6 +34,8 @@
 #include "rttm.h"
 
 unsigned int debug_quirks = ATH6KL_MODULE_DEF_DEBUG_QUIRKS;
+struct timer_list fw_ping_timer;
+int fw_ping_count;
 
 
 module_param(debug_quirks, uint, 0644);
@@ -1340,11 +1342,14 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
 	vif->nw_type = vif->next_mode;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
-		   "%s: connect called with authmode %d dot11 auth %d"
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+			ATH6KL_DBG_EXT_INFO1 |
+			ATH6KL_DBG_EXT_DEF,
+		   "%s: connect called with ssid [%s] authmode %d dot11 auth %d"
 		   " PW crypto %d PW crypto len %d GRP crypto %d"
 		   " GRP crypto len %d channel hint %u\n",
 		   __func__,
+		   vif->ssid,
 		   vif->auth_mode, vif->dot11_auth_mode, vif->prwise_crypto,
 		   vif->prwise_crypto_len, vif->grp_crypto,
 		   vif->grp_crypto_len, vif->ch_hint);
@@ -1574,7 +1579,8 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 	u8 *assoc_resp_ie = assoc_info + beacon_ie_len + assoc_req_len +
 	    assoc_resp_ie_offset;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: bssid %pM\n", __func__, bssid);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1,
+		"%s: bssid %pM\n", __func__, bssid);
 
 	assoc_req_len -= assoc_req_ie_offset;
 	assoc_resp_len -= assoc_resp_ie_offset;
@@ -1675,7 +1681,10 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int ret;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1, "%s: reason=%u\n",
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+		ATH6KL_DBG_EXT_INFO1 |
+		ATH6KL_DBG_EXT_DEF,
+			"%s: reason=%u\n",
 			__func__, reason_code);
 
 	if (!ath6kl_cfg80211_ready(vif))
@@ -1744,7 +1753,9 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 {
 	struct ath6kl *ar = vif->ar;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1,
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+		ATH6KL_DBG_EXT_INFO1 |
+		ATH6KL_DBG_EXT_DEF,
 		"%s: reason=%u, proto_reason %u\n",
 		__func__, reason, proto_reason);
 
@@ -1896,6 +1907,11 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 
 		vif->scan_req = NULL;
 		clear_bit(SCANNING, &vif->flags);
+	}
+	if (!test_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+		fw_ping_count = 0;
+		mod_timer(&fw_ping_timer,
+				jiffies + ATH6KL_FW_PING_PERIOD);
 	}
 }
 
@@ -3585,6 +3601,11 @@ static void _get_sta_info(struct ath6kl_vif *vif,
 		sinfo->bss_param.beacon_interval = vif->assoc_bss_beacon_int;
 	}
 
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
+		"%s: signal %d\n",
+		__func__,
+		sinfo->signal);
+
 	return;
 }
 
@@ -4281,6 +4302,22 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 	return ret;
 }
 
+void ath6kl_fw_ping_timeout_handler(unsigned long ptr)
+{
+	struct ath6kl *ar = (struct ath6kl *)ptr;
+
+	if (test_bit(RECOVER_IN_PROCESS, &ar->flag))
+		return;
+
+	ath6kl_wmi_get_stats_cmd(ar->wmi, 0);
+	if (fw_ping_count <= ATH6KL_FW_PING_MAX) {
+		mod_timer(&fw_ping_timer,
+			jiffies + ATH6KL_FW_PING_PERIOD);
+		fw_ping_count++;
+	} else
+		fw_ping_count = 0;
+}
+
 static char *_get_suspend_mode_string(enum ath6kl_cfg_suspend_mode mode)
 {
 	if (mode == ATH6KL_CFG_SUSPEND_DEEPSLEEP)
@@ -4344,6 +4381,11 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 #ifdef USB_AUTO_SUSPEND
 			ar->state = ATH6KL_STATE_WOW;
 #endif
+			if (!test_bit(RECOVER_IN_PROCESS, &ar->flag)) {
+				fw_ping_count = 0;
+				mod_timer(&fw_ping_timer,
+						jiffies + ATH6KL_FW_PING_PERIOD);
+			}
 			return ret;
 		}
 		spin_lock_bh(&ar->state_lock);
@@ -6696,6 +6738,10 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 			ath6kl_eapol_shprotect_timer_handler,
 			(unsigned long) ar);
 
+	setup_timer(&fw_ping_timer,
+			ath6kl_fw_ping_timeout_handler,
+			(unsigned long) ar);
+
 	clear_bit(WMI_ENABLED, &ar->flag);
 	clear_bit(SKIP_SCAN, &ar->flag);
 	clear_bit(DESTROY_IN_PROGRESS, &ar->flag);
@@ -6719,6 +6765,11 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	    (ar->p2p_dedicate))
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
+
+#ifdef CONFIG_ANDROID
+	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
+		ath6kl_roam_mode = ATH6KL_MODULEROAM_DISABLE;
+#endif
 
 	ar->roam_mode = ath6kl_roam_mode;
 

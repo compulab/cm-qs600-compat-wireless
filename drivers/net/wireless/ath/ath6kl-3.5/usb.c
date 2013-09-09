@@ -197,16 +197,10 @@ struct semaphore usb_probe_sem;
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
-enum ath6kl_hsic_recover_state {
-	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
-	ATH6KL_RECOVER_STATE_IN_PROGRESS,
-	ATH6KL_RECOVER_STATE_DONE,
-};
-
 #define ATH6KL_RECOVER_WAIT_TIMEOUT        (8*HZ)
 
-static wait_queue_head_t ath6kl_hsic_recover_wq;
-static atomic_t ath6kl_recover_state;
+wait_queue_head_t ath6kl_hsic_recover_wq;
+atomic_t ath6kl_recover_state;
 struct work_struct recover_war_work;
 
 #endif
@@ -2839,9 +2833,6 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	INIT_WORK(&recover_war_work,
 			ath6kl_recover_war_work);
 
-	/* Initialize the wait queue */
-	init_waitqueue_head(&ath6kl_hsic_recover_wq);
-
 	/* Initialize the state */
 	atomic_set(&ath6kl_recover_state,
 			ATH6KL_RECOVER_STATE_INITIALIZED);
@@ -3116,6 +3107,11 @@ static int ath6kl_usb_init(void)
 	init_waitqueue_head(&ath6kl_usb_unload_event_wq);
 	atomic_set(&ath6kl_usb_unload_state, ATH6KL_USB_UNLOAD_STATE_NULL);
 	usb_register_notify(&ath6kl_usb_dev_nb);
+
+#ifdef ATH6KL_HSIC_RECOVER
+	/* Initialize the wait queue */
+	init_waitqueue_head(&ath6kl_hsic_recover_wq);
+#endif
 
 #ifdef ATH6KL_BUS_VOTE
 	sema_init(&usb_probe_sem, 1);
