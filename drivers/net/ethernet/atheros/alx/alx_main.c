@@ -16,11 +16,13 @@
 
 #include "alx.h"
 #include "alx_hwcom.h"
+#include <linux/moduleparam.h>
 
 char alx_drv_name[] = "alx";
 static const char alx_drv_description[] =
 	"Qualcomm Atheros(R) "
 	"AR813x/AR815x/AR816x PCI-E Ethernet Network Driver";
+
 
 /* alx_pci_tbl - PCI Device ID Table
  *
@@ -50,6 +52,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 static int alx_open_internal(struct alx_adapter *adpt, u32 ctrl);
 static void alx_stop_internal(struct alx_adapter *adpt, u32 ctrl);
+static void alx_init_ring_ptrs(struct alx_adapter *adpt);
 
 int alx_cfg_r16(const struct alx_hw *hw, int reg, u16 *pval)
 {
@@ -449,10 +452,10 @@ static void alx_receive_skb(struct alx_adapter *adpt,
 	netif_receive_skb(skb);
 }
 
-
-static bool alx_get_rrdesc(struct alx_rx_queue *rxque,
-			   union alx_sw_rrdesc *srrd)
+static bool alx_get_rrdesc(struct alx_adapter *adpt, struct alx_rx_queue *rxque,
+				union alx_sw_rrdesc *srrd)
 {
+	u32 cnt = 0;
 	union alx_hw_rrdesc *hrrd =
 			ALX_RRD(rxque, rxque->rrq.consume_idx);
 
@@ -464,13 +467,40 @@ static bool alx_get_rrdesc(struct alx_rx_queue *rxque,
 	if (!srrd->genr.update)
 		return false;
 
-	if (likely(srrd->genr.nor != 1)) {
+	/* Workaround for the PCIe DMA write issue */
+	/* Please make sure hrrd->dmt.dw0 is set to 0 after handling, please refer to the later line in the same function alx_get_rrdesc: hrrd->dfmt.dw0 = 0;*/
+	if (srrd->dfmt.dw0 == 0) {
+		volatile u32 *flag = (volatile u32 *)&hrrd->dfmt.dw0;
+		while (*flag == 0) { /* while the dword0 of the rrd is still 0 which means it's not updated yet, read it again */
+						if (++cnt >= 10) { /* 10 more times should be enough, actually should NOT get here */
+							alx_err(adpt, "ERROR, RRD update timeout\n");
+							return false;
+						}
+		}
+		/* read the rrd descriptor from hardware again after all four dwords of the rrd are synced by DMA engine */
+		srrd->dfmt.dw0 = le32_to_cpu(hrrd->dfmt.dw0);
+		srrd->dfmt.dw1 = le32_to_cpu(hrrd->dfmt.dw1);
+		srrd->dfmt.dw2 = le32_to_cpu(hrrd->dfmt.dw2);
+		srrd->dfmt.dw3 = le32_to_cpu(hrrd->dfmt.dw3);
+	}
+
+	if (unlikely(srrd->genr.nor != 1)) {
 		/* TODO support mul rfd*/
 		printk(KERN_EMERG "Multi rfd not support yet!\n");
+		alx_err(adpt, "Please make sure PCIe DMA Write workaroud has been applied\n");
+		alx_err(adpt, "SRRD 0/1/2/3:0x%08x/0x%08x/0x%08x/0x%08x\n",
+			srrd->dfmt.dw0, srrd->dfmt.dw1, srrd->dfmt.dw2, srrd->dfmt.dw3);
+		alx_err(adpt, "HRRD 0/1/2/3:0x%08x/0x%08x/0x%08x/0x%08x\n",
+			hrrd->dfmt.dw0, hrrd->dfmt.dw1, hrrd->dfmt.dw2, hrrd->dfmt.dw3);
 	}
 
 	srrd->genr.update = 0;
-	hrrd->dfmt.dw3 = cpu_to_le32(srrd->dfmt.dw3);
+	hrrd->dfmt.dw3 = cpu_to_le32(srrd->dfmt.dw3); /* clear the update bit in hardware */
+
+	/* Workaround for the PCIe DMA write issue */
+	/* Note: for intensive verification to set it 0 */
+	hrrd->dfmt.dw0 = 0;
+
 	if (++rxque->rrq.consume_idx == rxque->rrq.count)
 		rxque->rrq.consume_idx = 0;
 
@@ -598,6 +628,80 @@ static void alx_clean_rfdesc(struct alx_rx_queue *rxque,
 	rxque->rfq.consume_idx = consume_idx;
 }
 
+#if 0 /* If compiler doesn't allow warning, these 3 functions are not used any more */
+#define ROLL_BK_NUM 16
+
+static void alx_dump_rrd(struct alx_adapter *adpt, struct alx_rx_queue *rxque)
+{
+	union alx_sw_rrdesc srrd;
+	union alx_hw_rrdesc *hrrd;
+	u16 begin, end;
+
+	alx_err(adpt, "PATCH v5, dumpping RRD .... consumer idx=%x\n",
+			rxque->rrq.consume_idx);
+	begin = (rxque->rrq.consume_idx - ROLL_BK_NUM) % rxque->rrq.count;
+	end = (rxque->rrq.consume_idx + ROLL_BK_NUM) % rxque->rrq.count;
+
+  while (begin != end) {
+		hrrd = ALX_RRD(rxque, begin);
+		srrd.dfmt.dw0 = le32_to_cpu(hrrd->dfmt.dw0);
+		srrd.dfmt.dw1 = le32_to_cpu(hrrd->dfmt.dw1);
+		srrd.dfmt.dw2 = le32_to_cpu(hrrd->dfmt.dw2);
+		srrd.dfmt.dw3 = le32_to_cpu(hrrd->dfmt.dw3);
+		alx_err(adpt, "Index:%x\n", begin);
+		alx_err(adpt, "rrd->word0/1/2/3:0x%08x/0x%08x/0x%08x/0x%08x\n",
+			srrd.dfmt.dw0, srrd.dfmt.dw1, srrd.dfmt.dw2, srrd.dfmt.dw3);
+
+		if (++begin == rxque->rrq.count)
+			begin = 0;
+	}
+}
+
+static void alx_dump_rfd(struct alx_adapter *adpt, struct alx_rx_queue *rxque, u16 idx)
+{
+	struct alx_buffer *rfbuf;
+	u16 begin, end;
+
+	alx_err(adpt, "RFD:%x\n", idx);
+
+	//begin = (idx - 3) % rxque->rfq.count;
+	//end = (idx + 3) % rxque->rfq.count;
+	begin = 0;
+	end = rxque->rfq.count - 1;
+
+	while (begin != end) {
+		rfbuf = GET_RF_BUFFER(rxque, begin);
+		alx_err(adpt, "IDX(%x): addr=0x%llx\n", begin, (u64)rfbuf->dma);
+        if (++begin == rxque->rfq.count)
+            begin = 0;
+	}
+}
+
+static void alx_dump_register(struct alx_adapter *adpt)
+{
+	struct alx_hw *hw = &adpt->hw;
+	u16 reg, count;
+	u32 val;
+
+	for (reg = 0x40, count = 0; count < 0x20; count++, reg++) {
+		val = alx_read_dbg_reg(hw, reg);
+		alx_err(adpt, "DBG-reg(%x)=%08X\n", reg, val);
+	}
+
+}
+#endif
+
+u32 alx_read_dbg_reg(struct alx_hw *hw, u16 reg)
+{
+	u32 val;
+
+	alx_mem_w32(hw, 0x1900, reg);
+	alx_mem_r32(hw, 0x1904, &val);
+
+	return val;
+}
+
+
 
 static bool alx_dispatch_rx_irq(struct alx_msix_param *msix,
 				struct alx_rx_queue *rxque)
@@ -617,7 +721,7 @@ static bool alx_dispatch_rx_irq(struct alx_msix_param *msix,
 	u16 count = 0;
 
 	while (1) {
-		if (!alx_get_rrdesc(rxque, &srrd))
+		if (!alx_get_rrdesc(adpt, rxque, &srrd))
 			break;
 
 		if (srrd.genr.res || srrd.genr.lene) {
@@ -640,7 +744,7 @@ static bool alx_dispatch_rx_irq(struct alx_msix_param *msix,
 				   skb->data, rfbuf->length);
 		} else {
 			/* TODO */
-			alx_err(adpt, "Multil rfd not support yet!\n");
+			alx_err(adpt, "alx_dispatch_rx_irq: Multi rfd not support yet!\n");
 			break;
 		}
 		alx_clean_rfdesc(rxque, &srrd);
@@ -733,7 +837,7 @@ static bool alx_handle_rx_irq(struct alx_msix_param *msix,
 		if (!num_consume_pkts)
 			break;
 
-		if (!alx_get_rrdesc(rxque, &srrd))
+		if (!alx_get_rrdesc(adpt, rxque, &srrd))
 			break;
 
 		if (srrd.genr.res || srrd.genr.lene) {
@@ -753,7 +857,7 @@ static bool alx_handle_rx_irq(struct alx_msix_param *msix,
 			skb = rfbuf->skb;
 		} else {
 			/* TODO */
-			alx_err(adpt, "Multil rfd not support yet!\n");
+			alx_err(adpt, "alx_hande_rx_irq: Multi rfd not support yet!\n");
 			break;
 		}
 		alx_clean_rfdesc(rxque, &srrd);
@@ -2968,6 +3072,10 @@ static void alx_link_task_routine(struct alx_adapter *adpt)
 	struct net_device *netdev = adpt->netdev;
 	struct alx_hw *hw = &adpt->hw;
 	char *link_desc;
+	int i;
+
+	if(hw->cbs.apply_phy_hib_patch)
+		hw->cbs.apply_phy_hib_patch(hw);
 
 	if (!CHK_ADPT_FLAG(0, TASK_LSC_REQ))
 		return;
@@ -3022,11 +3130,26 @@ static void alx_link_task_routine(struct alx_adapter *adpt)
 		netif_info(adpt, timer, adpt->netdev, "NIC Link is Down\n");
 		netif_carrier_off(netdev);
 		netif_tx_stop_all_queues(netdev);
-
-		hw->cbs.stop_mac(hw);
+		if(hw->cbs.reset_mac(hw) !=0 )
+			netif_info(adpt, hw, adpt->netdev, "reset mac failed\n");
+		alx_disable_intr(adpt);
+		/* clean pending tx/rx buffer */
+		alx_clean_all_tx_queues(adpt);
+		alx_clean_all_rx_queues(adpt);
+		/* R/W Ptr Initialize without dma */
+		alx_init_ring_ptrs(adpt);
+		/* Refresh RX buffer */
+		for(i = 0; i < adpt->num_hw_rxques; i ++) 
+			alx_refresh_rx_buffer(adpt->rx_queue[i]);
+		/* Re-config mac */
+		if(hw->cbs.config_mac) {
+			hw->cbs.config_mac(hw, adpt->rxbuf_size, adpt->num_hw_rxques, \
+                        adpt->num_rxdescs, adpt->num_txques, adpt->num_txdescs);
+		}
 		hw->cbs.config_aspm(hw, false, true);
 		hw->cbs.setup_phy_link(hw, hw->autoneg_advertised, true,
 				!hw->disable_fc_autoneg);
+		alx_enable_intr(adpt);
 	}
 }
 
@@ -3637,6 +3760,7 @@ static int __devinit alx_init(struct pci_dev *pdev,
 		eth_hw_addr_random(netdev);
 		memcpy(hw->mac_perm_addr, netdev->dev_addr, netdev->addr_len);
 	}
+
 
 	memcpy(hw->mac_addr, hw->mac_perm_addr, netdev->addr_len);
 	if (hw->cbs.set_mac_addr)
