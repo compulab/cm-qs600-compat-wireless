@@ -30,9 +30,10 @@ struct ath6kl_coex_dev_ctx {
 
 struct ath6kl_lte_coex_priv {
 	struct wmi_set_lte_coex_state_cmd wmi_lte_data;
-	uint8_t ap_acs_ch;
+	uint16_t ap_acs_ch;
 	uint8_t wwan_band;
 	uint32_t wwan_freq;
+	uint8_t wwan_bw;
 	uint8_t wwan_operational;
 	struct ath6kl *ar;
 	struct ath6kl_coex_dev_ctx dev_ctx[NUM_DEV];
@@ -42,5 +43,5 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan);
 void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf);
 int ath6kl_lte_coex_init(struct ath6kl *ar);
 void ath6kl_lte_coex_deinit(struct ath6kl *ar);
-bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint8_t *ap_acs_ch);
+bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint16_t *ap_acs_ch);
 #endif
