@@ -1083,6 +1083,17 @@ void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 	}
 }
 
+void ath6kl_get_rsn_cap_event(struct ath6kl_vif *vif, u16 rsn_cap)
+{
+	struct ath6kl *ar = vif->ar;
+	vif->rsn_cap = rsn_cap;
+
+	if (test_bit(STATS_UPDATE_PEND, &vif->flags)) {
+		clear_bit(STATS_UPDATE_PEND, &vif->flags);
+		wake_up(&ar->event_wq);
+	}
+}
+
 void ath6kl_wakeup_event(void *dev)
 {
 	struct ath6kl *ar = (struct ath6kl *) dev;
