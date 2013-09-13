@@ -1152,6 +1152,7 @@ static void ath6kl_wep_auth_auto(struct ath6kl_vif *vif)
 static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 				   struct cfg80211_connect_params *sme)
 {
+#define MAX_SCAN_PERIOD (ATH6KL_SCAN_FG_MAX_PERIOD * HZ)
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	int status, left;
@@ -1174,6 +1175,23 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	if (down_interruptible(&ar->sem)) {
 		ath6kl_err("busy, couldn't get access\n");
 		return -ERESTARTSYS;
+	}
+
+	/* If already ongoing scan then wait it finish. */
+	if (test_bit(SCANNING, &vif->flags)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_INFO1,
+			"Wait scan done then conn, vif %d\n", vif->fw_vif_idx);
+
+		wait_event_interruptible_timeout(ar->event_wq,
+					!test_bit(SCANNING, &vif->flags),
+					MAX_SCAN_PERIOD);
+
+		if (signal_pending(current)) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+				"last scan not yet finish?\n");
+			up(&ar->sem);
+			return -EBUSY;
+		}
 	}
 
 #ifdef USB_AUTO_SUSPEND
@@ -1374,15 +1392,15 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 					vif->req_bssid, vif->ch_hint,
 					vif->connect_ctrl_flags);
 
-	up(&ar->sem);
-
 	if (status == -EINVAL) {
 		memset(vif->ssid, 0, sizeof(vif->ssid));
 		vif->ssid_len = 0;
 		ath6kl_err("invalid request\n");
+		up(&ar->sem);
 		return -ENOENT;
 	} else if (status) {
 		ath6kl_err("ath6kl_wmi_connect_cmd failed\n");
+		up(&ar->sem);
 		return -EIO;
 	}
 
@@ -1394,9 +1412,13 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	vif->connect_ctrl_flags &= ~CONNECT_DO_WPA_OFFLOAD;
+
 	set_bit(CONNECT_PEND, &vif->flags);
 
+	up(&ar->sem);
+
 	return 0;
+#undef MAX_SCAN_PERIOD
 }
 
 static struct cfg80211_bss *ath6kl_add_bss_if_needed(struct ath6kl_vif *vif,
@@ -2163,12 +2185,6 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -EIO;
 	}
 
-	if (vif->sme_state == SME_CONNECTING) {
-		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
-			"Connection on-going, reject scan\n");
-		return -EBUSY;
-	}
-
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
@@ -2177,8 +2193,18 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -ERESTARTSYS;
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
-		"%s\n", __func__);
+	if (test_bit(CONNECT_PEND, &vif->flags)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_INFO1,
+			"Connection on-going, reject scan, vif %d\n",
+			vif->fw_vif_idx);
+		up(&ar->sem);
+		return -EBUSY;
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+			ATH6KL_DBG_EXT_SCAN |
+			ATH6KL_DBG_EXT_INFO1,
+		"%s: vif %d\n", __func__, vif->fw_vif_idx);
 
 	/*
 	 * Last Cancel-RoC not yet finished. To update vif->last_cancel_roc_id
@@ -4163,6 +4189,21 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						 ATH6KL_HOST_MODE_AWAKE);
+
+	/* Sync replay_counter back to the user. */
+	if (!ret) {
+		if ((vif->nw_type == INFRA_NETWORK) &&
+		    test_bit(CONNECTED, &vif->flags) &&
+		    (vif->ar->last_wow_fliter &
+				WOW_FILTER_OPTION_8021X_4WAYHS) &&
+		    (vif->auth_mode == WPA2_AUTH_CCKM ||
+		     vif->auth_mode == WPA2_PSK_AUTH ||
+		     vif->auth_mode == WPA_AUTH_CCKM ||
+		     vif->auth_mode == WPA_PSK_AUTH))
+			ret = ath6kl_wmi_get_gtk_offload(ar->wmi,
+							vif->fw_vif_idx);
+	}
+
 	return ret;
 }
 
@@ -5971,17 +6012,24 @@ static void ath6kl_mgmt_frame_register(struct wiphy *wiphy,
 }
 #endif
 
-int	ath6kl_set_gtk_rekey_offload(struct wiphy *wiphy,
+int ath6kl_set_gtk_rekey_offload(struct wiphy *wiphy,
 		struct net_device *dev, struct cfg80211_gtk_rekey_data *data)
 {
 	int ret = 0;
 	struct ath6kl *ar = (struct ath6kl *)wiphy_priv(wiphy);
 	struct wmi_gtk_offload_op cmd;
-	struct ath6kl_vif *vif = ath6kl_vif_first(ar);
+	struct ath6kl_vif *vif = netdev_priv(dev);
 
-	ath6kl_dbg(ATH6KL_DBG_TRC, "+++\n");
+	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: vif %d\n",
+			__func__,
+			vif->fw_vif_idx);
+
 	if (!vif)
 		return -EIO;
+
+	/* Only support GTK offload for 1st interface now. */
+	if (vif->fw_vif_idx != 0)
+		return 0;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -5989,14 +6037,13 @@ int	ath6kl_set_gtk_rekey_offload(struct wiphy *wiphy,
 	if (!data)
 		return ret;
 
-
 	memset(&cmd, 0, sizeof(struct wmi_gtk_offload_op));
 
 	memcpy(cmd.kek, data->kek, GTK_OFFLOAD_KEK_BYTES);
 	memcpy(cmd.kck, data->kck, GTK_OFFLOAD_KCK_BYTES);
 	memcpy(cmd.replay_counter, data->replay_ctr, GTK_REPLAY_COUNTER_BYTES);
 
-	ret = ath6kl_wm_set_gtk_offload(ar->wmi, vif->fw_vif_idx, cmd.kek,
+	ret = ath6kl_wmi_set_gtk_offload(ar->wmi, vif->fw_vif_idx, cmd.kek,
 		cmd.kck, cmd.replay_counter);
 
 	return ret;

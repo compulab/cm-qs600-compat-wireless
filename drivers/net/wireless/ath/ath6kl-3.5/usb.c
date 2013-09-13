@@ -2917,9 +2917,17 @@ static int ath6kl_usb_pm_suspend(struct usb_interface *interface,
 
 	if (ath6kl_android_need_wow_suspend(ar))
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_WOW, NULL);
-	else
+	else {
+		/* WAR : Seems sometimes autopm not follow our busy delay. */
+		if (vif &&
+		    (vif->nw_type == INFRA_NETWORK) &&
+		    test_bit(CONNECT_PEND, &vif->flags))
+			return -EBUSY;
+
 		ret = ath6kl_cfg80211_suspend(ar, ATH6KL_CFG_SUSPEND_DEEPSLEEP,
 						NULL);
+	}
+
 	if (ret == 0)
 		ath6kl_usb_flush_all(device);
 

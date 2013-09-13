@@ -231,6 +231,7 @@ u8 *platform_has_vreg;
 #define VDD_IO_MIN_VOLTAGE         1800000
 #define VDD_PA_CURRENT              720000
 #define VDD_IO_CURRENT               30000
+#define VDD_PA_CURRENT_MIN           60000
 
 struct ath6kl_power_vreg_data {
 	/* voltage regulator handle */
@@ -491,7 +492,7 @@ static int ath6kl_platform_power(struct ath6kl_platform_data *pdata, int on)
 			regulator_set_voltage(pdata->wifi_vddpa->reg,
 				VDD_PA_MIN_VOLTAGE, VDD_PA_MAX_VOLTAGE);
 			regulator_set_optimum_mode(pdata->wifi_vddpa->reg,
-				0);
+				VDD_PA_CURRENT_MIN);
 			rc = ath6kl_vreg_disable(pdata->wifi_vddpa);
 		}
 
@@ -500,8 +501,6 @@ static int ath6kl_platform_power(struct ath6kl_platform_data *pdata, int on)
 			!IS_ERR(pdata->wifi_vddio->reg)) {
 			regulator_set_voltage(pdata->wifi_vddio->reg,
 				VDD_IO_MIN_VOLTAGE, VDD_IO_MAX_VOLTAGE);
-			regulator_set_optimum_mode(pdata->wifi_vddio->reg,
-				0);
 			rc = ath6kl_vreg_disable(pdata->wifi_vddio);
 		}
 	}
