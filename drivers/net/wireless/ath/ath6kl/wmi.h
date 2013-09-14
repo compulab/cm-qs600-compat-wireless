@@ -772,6 +772,12 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_SET_CHAIN_MASK_CMDID,
     WMI_SET_SCAN_CHAN_PLAN_CMDID,
     WMI_SET_MCC_EVENT_MODE_CMDID,
+    WMI_GET_CTL,
+
+    /* 802.11p */
+    WMI_SET_OCB_FLAG_CMDID,
+    WMI_SET_OCB_CHANNEL_CMDID,
+    WMI_SET_LEGACY_OPT_CMDID,
 };
 
 /* WMI_SETPMKID_CMDID */
@@ -1948,6 +1954,17 @@ struct wmi_setinterbss_cmd {
 struct wmi_set_max_num_cmd {
 	u32 max_num_sta;
 } __packed;
+
+struct wmi_set_legacy_opt_mode {
+	u8 legacy_opt_mode;
+} __packed;
+
+enum legacy_opt_modes {
+	OPT_DISABLED = 0,
+	ONLY_11B_OPT_ENABLED,
+	ALL_LEGACY_OPT_ENABLED,
+};
+
 
 #define AP_11BG_RATESET1        1
 #define AP_11BG_RATESET2        2
