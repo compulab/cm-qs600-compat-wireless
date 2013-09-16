@@ -1805,7 +1805,7 @@ static const char *ath6kl_init_get_hif_name(enum ath6kl_hif_type type)
 	return NULL;
 }
 
-int ath6kl_init_hw_start(struct ath6kl *ar)
+int __ath6kl_init_hw_start(struct ath6kl *ar)
 {
 	long timeleft;
 	int ret, i;
@@ -1921,8 +1921,6 @@ int ath6kl_init_hw_start(struct ath6kl *ar)
 
 	}
 
-	ar->state = ATH6KL_STATE_ON;
-
 	return 0;
 
 err_htc_stop:
@@ -1935,7 +1933,18 @@ err_power_off:
 	return ret;
 }
 
-int ath6kl_init_hw_stop(struct ath6kl *ar)
+int ath6kl_init_hw_start(struct ath6kl *ar)
+{
+	int err;
+
+	err = __ath6kl_init_hw_start(ar);
+	if (err)
+		return err;
+	ar->state = ATH6KL_STATE_ON;
+	return 0;
+}
+
+int __ath6kl_init_hw_stop(struct ath6kl *ar)
 {
 	int ret;
 
@@ -1948,12 +1957,57 @@ int ath6kl_init_hw_stop(struct ath6kl *ar)
 	ath6kl_bmi_reset(ar);
 
 	ret = ath6kl_hif_power_off(ar);
-	if (ret)
+	if (ret) {
 		ath6kl_warn("failed to power off hif: %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+int ath6kl_init_hw_stop(struct ath6kl *ar)
+{
+	int err;
+
+	err = __ath6kl_init_hw_stop(ar);
+	if (err)
+		return err;
 
 	ar->state = ATH6KL_STATE_OFF;
 
-	return 0;
+	return err;
+}
+EXPORT_SYMBOL(ath6kl_init_hw_stop);
+
+void ath6kl_init_hw_restart(struct ath6kl *ar)
+{
+	clear_bit(WMI_READY, &ar->flag);
+	ath6kl_cfg80211_stop_all(ar);
+
+	if (__ath6kl_init_hw_stop(ar)) {
+		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to stop during"
+				"fw error recovery\n");
+		return;
+	}
+
+	if (__ath6kl_init_hw_start(ar)) {
+		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to restart during"
+				"fw error recovery\n");
+		return;
+	}
+}
+
+void ath6kl_init_hw_cold_restart(struct ath6kl *ar)
+{
+	ath6kl_cfg80211_stop_all(ar);
+
+	if (__ath6kl_init_hw_stop(ar)) {
+		ath6kl_dbg(ATH6KL_DBG_RECOVERY, "Failed to stop during"
+				"fw error recovery\n");
+		return;
+	}
+
+	ath6kl_reset_device(ar, ar->target_type, true, true);
 }
 
 /* FIXME: move this to cfg80211.c and rename to ath6kl_cfg80211_vif_stop() */
@@ -2039,6 +2093,9 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	clear_bit(WMI_READY, &ar->flag);
 
 	del_timer(&mcc_flowctrl->mcc_event_ctrl_timer);
+
+	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
+		del_timer_sync(&ar->fw_recovery->hb_timer);
 
 	/*
 	 * After wmi_shudown all WMI events will be dropped. We
