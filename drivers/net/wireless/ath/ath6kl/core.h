@@ -170,6 +170,12 @@ enum ath6kl_fw_capability {
 	*/
 	ATH6KL_FW_CAPABILITY_MAC_ACL,
 
+	/*
+	 * Firmware capability for hang detection through
+	 * heart beat challenge messsages.
+	 */
+	ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
+
 	/* this needs to be last */
 	ATH6KL_FW_CAPABILITY_MAX,
 };
@@ -755,6 +761,33 @@ enum ath6kl_state {
 	ATH6KL_STATE_SCHED_SCAN,
 };
 
+/* Fw error recovery */
+#define ATH6KL_HB_RESP_MISS_THRES      5
+
+enum ath6kl_fw_recovery_state {
+	ATH6KL_FW_RECOVERY_NONE,
+	ATH6KL_FW_RECOVERY_INPROGRESS,
+	ATH6KL_FW_RECOVERY_CLEANUP,
+};
+
+struct ath6kl_fw_err_recovery {
+	struct ath6kl *ar;
+	struct work_struct recovery_work;
+	enum ath6kl_fw_recovery_state state;
+	unsigned long err_reason;
+	unsigned long hb_poll;
+	struct timer_list hb_timer;
+	u32 seq_num;
+	bool hb_pending;
+	u8 hb_misscnt;
+};
+
+enum ath6kl_fw_err {
+	ATH6KL_FW_ASSERT,
+	ATH6KL_FW_HB_RESP_FAILURE,
+	ATH6KL_FW_EP_FULL,
+};
+
 struct ath6kl_fw_conn_list
 {
 	struct list_head conn_queue;
@@ -940,6 +973,8 @@ struct ath6kl {
 
 	u32 debug_quirks;
 
+	struct ath6kl_fw_err_recovery *fw_recovery;
+
 #ifdef CONFIG_ATH6KL_DEBUG
 	struct {
 		struct sk_buff_head fwlog_queue;
@@ -978,7 +1013,10 @@ struct ath6kl {
 	bool sta_bh_override;
 	struct wmi_scan_params_cmd scan_params;
 	u16 scan_params_mask;
+	u16 pas_chdwell_time;
+	u32 bootstrap_mode;
 };
+
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 /*! Fixed header configuration required in IPA end-point
@@ -1194,6 +1232,17 @@ void ath6kl_core_cleanup(struct ath6kl *ar);
 void ath6kl_core_destroy(struct ath6kl *ar);
 void ath6kl_ap_restart_timer(unsigned long ptr);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+
+/* Fw error recovery */
+void ath6kl_recovery_work(struct work_struct *work);
+void ath6kl_recovery_init(struct ath6kl *ar);
+void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);
+void ath6kl_recovery_hb_event(struct ath6kl *ar, u32 cookie);
+void ath6kl_init_hw_restart(struct ath6kl *ar);
+void ath6kl_init_hw_cold_restart(struct ath6kl *ar);
+void ath6kl_recovery_cleanup(struct ath6kl *ar);
+void ath6kl_recovery_suspend(struct ath6kl *ar);
+void ath6kl_recovery_resume(struct ath6kl *ar);
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 /* IPA configuration related APIs */
