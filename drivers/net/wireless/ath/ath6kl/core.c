@@ -217,11 +217,12 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	for (i = 0; i < ar->vif_max; i++)
 		ar->avail_idx_map |= BIT(i);
 
-	rtnl_lock();
-
 	ret = ath6kl_lte_coex_init(ar);
 	if (ret)
 		goto err_rxbuf_cleanup;
+
+	rtnl_lock();
+
 	/* Add an initial station interface */
 	ndev = ath6kl_interface_add(ar, "wlan%d", NL80211_IFTYPE_STATION, 0,
 				    INFRA_NETWORK);
