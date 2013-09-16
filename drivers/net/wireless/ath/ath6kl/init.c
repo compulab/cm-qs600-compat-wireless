@@ -36,8 +36,10 @@
 
 /* Used to override the default MAC of MAC from softmac.bin file*/
 char *ath6kl_wifi_mac = NULL;
+static u32 refclk_hz;
 
 module_param(ath6kl_wifi_mac, charp, 0000);
+module_param(refclk_hz, uint, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -1772,12 +1774,9 @@ int ath6kl_init_hw_params(struct ath6kl *ar)
 
 	ar->hw = *hw;
 
-	/* For SDIO we need to use 26Mhz reference clock, by default HSIC
-	 * interface uses 40MHz reference clock */
-	if (ar->target_type == TARGET_TYPE_AR6004 &&
-			ar->hif_type == ATH6KL_HIF_TYPE_SDIO) {
-		ar->hw.refclk_hz = 26000000;
-	}
+	/* Update the reference clock passed by the module parameter */
+	if (refclk_hz)
+		ar->hw.refclk_hz = refclk_hz;
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT,
 		   "target_ver 0x%x target_type 0x%x dataset_patch 0x%x app_load_addr 0x%x\n",
