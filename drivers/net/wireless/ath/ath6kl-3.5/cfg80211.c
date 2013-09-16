@@ -4422,10 +4422,21 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 #ifdef USB_AUTO_SUSPEND
 			ar->state = ATH6KL_STATE_WOW;
 #endif
+
+#ifdef ATH6KL_HSIC_RECOVER
+			if (test_bit(RESET_RESUME_IN_PROGRESS, &ar->flag))
+				if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+					ath6kl_hif_sw_recover(ar);
+					clear_bit(RESET_RESUME_IN_PROGRESS,
+						&ar->flag);
+						return ret;
+				}
+#endif
+
 			if (!test_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 				fw_ping_count = 0;
 				mod_timer(&fw_ping_timer,
-						jiffies + ATH6KL_FW_PING_PERIOD);
+					jiffies + ATH6KL_FW_PING_PERIOD);
 			}
 			return ret;
 		}

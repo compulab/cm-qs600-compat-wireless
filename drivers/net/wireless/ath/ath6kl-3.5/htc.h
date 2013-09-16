@@ -335,6 +335,8 @@ struct htc_packet {
 	u8 recycle_count;
 
 	struct ath6kl_vif *vif;
+
+	bool alloc_from_vmalloc;
 };
 
 enum htc_send_full_action {

@@ -5415,7 +5415,7 @@ int ath6kl_wmi_gtk_offload_status_event_rx(struct ath6kl_vif *vif,
 
 		swap_replay = be64_to_cpu(*evt->replay_counter);
 		memcpy(dup_replay, (u8 *)&swap_replay, NL80211_REPLAY_CTR_LEN);
-		
+
 		cfg80211_gtk_rekey_notify(vif->ndev, vif->bssid,
 					dup_replay, GFP_ATOMIC);
 	}

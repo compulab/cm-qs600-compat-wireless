@@ -90,10 +90,10 @@ module_param(ath6kl_roam_mode, uint, 0644);
 module_param(recovery_enable_mode, uint, 0644);
 module_param(fwpath, charp, 0644);
 module_param(ath6kl_ath0_name, uint, 0644);
-#ifdef CE_SUPPORT
-module_param(ath6kl_ce_flags, uint, 0644);
 char *bdatapath;
 module_param(bdatapath, charp, 0644);
+#ifdef CE_SUPPORT
+module_param(ath6kl_ce_flags, uint, 0644);
 char *fwdatapath;
 module_param(fwdatapath, charp, 0644);
 #endif
@@ -1508,14 +1508,10 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 	if (WARN_ON(ar->hw.fw_board == NULL))
 		return -EINVAL;
 
-#ifdef CE_SUPPORT
 	if (bdatapath != NULL)
 		filename = bdatapath;
 	else
 		filename = ar->hw.fw_board;
-#else
-	filename = ar->hw.fw_board;
-#endif
 
 	ret = ath6kl_get_fw(ar, filename, &ar->fw_board,
 			    &ar->fw_board_len);

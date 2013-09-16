@@ -3033,6 +3033,16 @@ static int ath6kl_usb_pm_resume(struct usb_interface *interface)
 	return 0;
 }
 
+static void ath6kl_usb_reset_out_dma(struct ath6kl *ar)
+{
+	ath6kl_usb_diag_write32(ar, USB_DMA_RESET_CHANNEL_ADDR,
+		USB_DMA_RESET_OUT_MASK);
+	ath6kl_usb_diag_write32(ar, USB_EP1_OUT_DMA_CTRL_ADDR,
+		USB_OUT_DMA_RESTART_MASK);
+	ath6kl_usb_diag_write32(ar, USB_EP2_OUT_DMA_CTRL_ADDR,
+		USB_OUT_DMA_RESTART_MASK);
+}
+
 static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 {
 	struct ath6kl_usb *device;
@@ -3049,6 +3059,12 @@ static int ath6kl_usb_pm_reset_resume(struct usb_interface *intf)
 	*/
 	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
 		ath6kl_info("ath6kl_usb_pm_reset_resume\n");
+
+		set_bit(RESET_RESUME_IN_PROGRESS, &ar->flag);
+
+		/* reset Cast OUT DMA */
+		ath6kl_usb_reset_out_dma(ar);
+
 		ath6kl_usb_pm_resume(intf);
 	} else {
 		if (usb_get_intfdata(intf))

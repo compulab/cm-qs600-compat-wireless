@@ -617,20 +617,22 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 	}
 
 #ifdef CONFIG_ANDROID
-        /* WAR: in extremely loud environment */
-        if ((fw_vif_idx == 0) &&
-                (vif->nw_type == INFRA_NETWORK)) {
-                ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
-                                "Prolong BMISS time");
-                if (machine_is_apq8064_bueller())
-                        ath6kl_wmi_set_bmiss_time(ar->wmi,
-                                        vif->fw_vif_idx,
-                                        50);
-                else
-                        ath6kl_wmi_set_bmiss_time(ar->wmi,
-                                        vif->fw_vif_idx,
-                                        30);
-        }
+
+	if ((fw_vif_idx == 0) &&
+		(vif->nw_type == INFRA_NETWORK)) {
+		/* WAR: in extremely loud environment. */
+
+		 ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
+						"Prolong BMISS time");
+		if (machine_is_apq8064_bueller())
+			ath6kl_wmi_set_bmiss_time(ar->wmi,
+				vif->fw_vif_idx,
+				 50);
+		 else
+			ath6kl_wmi_set_bmiss_time(ar->wmi,
+				vif->fw_vif_idx,
+				30);
+	}
 #endif
 
 	return 0;

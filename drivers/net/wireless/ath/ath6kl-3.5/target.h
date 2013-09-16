@@ -150,6 +150,17 @@
 #define ATH6KL_AR6006_HI_START_ADDR           0x00428800
 
 /*
+ * USB Cast Core address
+ */
+#define USB_DMA_RESET_CHANNEL_ADDR            0x000841d4
+
+#define USB_EP1_OUT_DMA_CTRL_ADDR             0x0008442c
+#define USB_EP2_OUT_DMA_CTRL_ADDR             0x0008444c
+
+#define USB_DMA_RESET_OUT_MASK                0xfffe0000
+#define USB_OUT_DMA_RESTART_MASK              0x00140000
+
+/*
  * These are items that the Host may need to access
  * via BMI or via the Diagnostic Window. The position
  * of items in this structure must remain constant.
