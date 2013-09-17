@@ -286,7 +286,6 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar->num_vif = 0;
 	ar->inter_bss = true;
 	ar->max_norm_iface = 1;
-	ar->pas_chdwell_time = 0;
 	ar->sta_bh_override = 0;
 	ar->acs_in_prog = 0;
 
@@ -332,6 +331,12 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	skb_queue_head_init(&ar->mcastpsq);
 
 	memcpy(ar->ap_country_code, DEF_AP_COUNTRY_CODE, 3);
+
+	memset(&ar->scan_params, 0, sizeof(struct wmi_scan_params_cmd));
+	ar->scan_params.scan_ctrl_flags = DEFAULT_SCAN_CTRL_FLAGS;
+	ar->scan_params.short_scan_ratio = WMI_SHORTSCANRATIO_DEFAULT;
+
+	ar->scan_params_mask = 0;
 
 	return ar;
 }
