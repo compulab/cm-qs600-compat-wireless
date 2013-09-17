@@ -14,7 +14,6 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
 #include <linux/module.h>
 #include <linux/usb.h>
 #include <linux/atomic.h>
@@ -27,6 +26,7 @@
 #include "core.h"
 #include "cfg80211.h"
 #include "platform.h"
+#include "hif-ops.h"
 
 /* constants */
 #define TX_URB_COUNT 		32
@@ -255,6 +255,14 @@ static struct bam_inf {
 	/* non-bam pipe */
 	{0}
 };
+
+void ath6kl_hsic_restart(struct ath6kl *ar)
+{
+	mdelay(100);
+	ath6kl_hsic_bind(0);
+	mdelay(1000);
+	ath6kl_hsic_bind(1);
+}
 
 static inline void ath6kl_put_context(struct sk_buff *skb,
 		struct ath6kl_urb_context *context)
@@ -2216,6 +2224,7 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.disable_autopm  = ath6kl_usb_disable_autopm,
 	.enable_autopm  = ath6kl_usb_enable_autopm,
 #endif
+	.restart = ath6kl_hsic_restart,
 };
 
 /* ath6kl usb driver registered functions */
