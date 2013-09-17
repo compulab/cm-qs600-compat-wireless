@@ -164,6 +164,9 @@ static bool __ath6kl_cfg80211_sscan_stop(struct ath6kl_vif *vif)
 
 	del_timer_sync(&vif->sched_scan_timer);
 
+	if (ar->fw_recovery->state == ATH6KL_FW_RECOVERY_INPROGRESS)
+		return true;
+
 	ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 					   ATH6KL_HOST_MODE_AWAKE);
 
@@ -2712,18 +2715,27 @@ static int __ath6kl_cfg80211_suspend(struct wiphy *wiphy,
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
 
+	ath6kl_recovery_suspend(ar);
+
 	return ath6kl_hif_suspend(ar, wow);
 }
 
 static int __ath6kl_cfg80211_resume(struct wiphy *wiphy)
 {
 	struct ath6kl *ar = wiphy_priv(wiphy);
+	int err;
 
-	return ath6kl_hif_resume(ar);
+	err = ath6kl_hif_resume(ar);
+
+	if (err)
+		return err;
+
+	ath6kl_recovery_resume(ar);
+	return 0;
 }
 
-/*
- * FIXME: WOW suspend mode is selected if the host sdio controller supports
+
+/* FIXME: WOW suspend mode is selected if the host sdio controller supports
  * both sdio irq wake up and keep power. The target pulls sdio data line to
  * wake up the host when WOW pattern matches. This causes sdio irq handler
  * is being called in the host side which internally hits ath6kl's RX path.
@@ -3947,17 +3959,23 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 		break;
 	}
 
-	if (test_bit(CONNECTED, &vif->flags) ||
-	    test_bit(CONNECT_PEND, &vif->flags))
+	if ((test_bit(CONNECTED, &vif->flags) ||
+	    test_bit(CONNECT_PEND, &vif->flags)) &&
+	    vif->ar->fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS)
 		ath6kl_wmi_disconnect_cmd(vif->ar->wmi, vif->fw_vif_idx);
 
 	vif->sme_state = SME_DISCONNECTED;
 	ath6kl_lte_coex_update_wlan_data(vif, 0);
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
+	/* Stop netdev queues, needed during recovery */
+	netif_stop_queue(vif->ndev);
+	netif_carrier_off(vif->ndev);
 
 	/* disable scanning */
-	if (test_bit(WMI_READY, &vif->ar->flag)) {
+	if (test_bit(WMI_READY, &vif->ar->flag) &&
+			vif->ar->fw_recovery->state !=
+			ATH6KL_FW_RECOVERY_INPROGRESS) {
 		if (ath6kl_wmi_scanparams_cmd(vif->ar->wmi, vif->fw_vif_idx,
 					0xFFFF, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 			ath6kl_warn("failed to disable scan during stop\n");
@@ -3971,7 +3989,7 @@ void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 	struct ath6kl_vif *vif;
 
 	vif = ath6kl_vif_first(ar);
-	if (!vif) {
+	if (!vif && ar->fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
 		/* save the current power mode before enabling power save */
 		ar->wmi->saved_pwr_mode = ar->wmi->pwr_mode;
 
@@ -3996,6 +4014,11 @@ static int ath6kl_cfg80211_reg_notify(struct wiphy *wiphy,
 	u32 rates[IEEE80211_NUM_BANDS];
 	int ret, i;
 	struct ath6kl_vif *vif;
+
+	if (!test_bit(WMI_READY, &ar->flag)) {
+		ath6kl_err("wmi is not ready\n");
+		return -EIO;
+	}
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 		   "cfg reg_notify %c%c%s%s initiator %d\n",

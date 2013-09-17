@@ -269,6 +269,7 @@ struct ath6kl_hif_ops {
 
 	int (*disable_autopm)(struct ath6kl *ar);
 	int (*enable_autopm)(struct ath6kl *ar);
+	void (*restart)(struct ath6kl *ar);
 };
 
 int ath6kl_hif_setup(struct ath6kl_device *dev);

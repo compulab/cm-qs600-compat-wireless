@@ -392,3 +392,89 @@ void ath6kl_platform_driver_unregister(void) {
 }
 
 EXPORT_SYMBOL(ath6kl_platform_driver_unregister);
+
+#define GET_INODE_FROM_FILEP(filp) ((filp)->f_path.dentry->d_inode)
+
+static int ath6kl_read_write_file(const char *filename, char *rbuf,
+		char *wbuf, size_t length)
+{
+	int ret = 0;
+	struct file *filp = (struct file *)-ENOENT;
+	struct inode *inode;
+	mm_segment_t oldfs;
+	int mode = (wbuf) ? O_WRONLY : O_RDONLY;
+
+	mode = (wbuf) ? O_WRONLY : O_RDONLY;
+	oldfs = get_fs();
+	set_fs(KERNEL_DS);
+
+	filp = filp_open(filename, mode, S_IRUSR);
+
+	if (IS_ERR(filp) || !filp->f_op) {
+		ath6kl_err("File pointer error in %s\n", __func__);
+		ret = -ENOENT;
+		goto close_fs;
+	}
+
+	if (!filp->f_op->write || !filp->f_op->read) {
+		ath6kl_err("Read/Write callbacks not supported %s\n", __func__);
+		filp_close(filp, NULL);
+		ret = -ENOENT;
+		goto close_fs;
+	}
+
+	if (length == 0) {
+		inode = GET_INODE_FROM_FILEP(filp);
+
+		if (!inode) {
+			ath6kl_err("Inode is NULL in %s\n", __func__);
+			ret = -ENOENT;
+			goto close_fs;
+		}
+
+		ret = i_size_read(inode->i_mapping->host);
+		goto close_fs;
+	}
+
+	if (wbuf) {
+		ret = filp->f_op->write(filp, wbuf, length, &filp->f_pos);
+
+		if (ret < 0) {
+			ath6kl_err("File write operation"
+					"failed in %s\n", __func__);
+			goto close_fs;
+		}
+	} else {
+		ret = filp->f_op->read(filp, rbuf, length, &filp->f_pos);
+		if (ret < 0) {
+			ath6kl_err("File read operation"
+					"failed in %s\n", __func__);
+			goto close_fs;
+		}
+	}
+close_fs:
+	if (!IS_ERR(filp))
+		filp_close(filp, NULL);
+
+	set_fs(oldfs);
+	return ret;
+}
+
+void ath6kl_hsic_bind(int bind)
+{
+	char buf[16];
+	int length;
+	length = snprintf(buf, sizeof(buf), "%s\n", "msm_hsic_host");
+	if (bind) {
+		ath6kl_read_write_file(
+				"/sys/bus/platform/drivers/msm_hsic_host/bind",
+				NULL, buf, length);
+	} else {
+		ath6kl_read_write_file(
+				"/sys/bus/platform/drivers/msm_hsic_host/unbind",
+				NULL, buf, length);
+	}
+
+	return;
+}
+EXPORT_SYMBOL(ath6kl_hsic_bind);

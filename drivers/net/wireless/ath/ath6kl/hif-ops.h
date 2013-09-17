@@ -229,4 +229,15 @@ static inline int ath6kl_hif_enable_autopm(struct ath6kl *ar)
 
 	return ar->hif_ops->enable_autopm(ar);
 }
+
+static inline void ath6kl_hif_restart(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif restart\n");
+
+	if (ar->hif_ops->restart == NULL)
+		return;
+
+	ar->hif_ops->restart(ar);
+}
+
 #endif
