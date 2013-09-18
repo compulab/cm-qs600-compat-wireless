@@ -2323,6 +2323,9 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -EBUSY;
 	}
 
+	/* Disable DFS channel scan */
+	vif->sc_params.scan_ctrl_flags |= ENABLE_DFS_SKIP_CTRL_FLAGS;
+
 	ret = ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
 				vif->sc_params.fg_start_period,
 				vif->sc_params.fg_end_period,
