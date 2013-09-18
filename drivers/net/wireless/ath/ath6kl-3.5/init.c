@@ -55,6 +55,7 @@ unsigned int ath6kl_ce_flags = 1;
 #endif
 unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
 unsigned short reg_domain = NULL_REG_CODE;
+unsigned int ath6kl_ps_disabled = ATH6KL_MODULE_DEF_PS_DISABLED;
 
 #ifdef ATH6KL_DIAGNOSTIC
 unsigned int diag_local_test;
@@ -100,6 +101,7 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 module_param(reg_domain, ushort, 0644);
+module_param(ath6kl_ps_disabled, uint, 0644);
 
 #ifdef CONFIG_ANDROID
 module_param(ath6kl_bt_on, uint, 0644);
@@ -3243,6 +3245,11 @@ int ath6kl_core_init(struct ath6kl *ar)
 			WMI_MCC_PROFILE_STA50 | WMI_MCC_CTS_ENABLE))
 			ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
 #endif
+
+	if (ath6kl_ps_disabled) {
+		set_bit(PS_DISABLED_ALWAYS, &ar->flag);
+		ath6kl_info("Disabled PS always.\n");
+	}
 
 	/* Defer some tasks to worker after driver init. */
 	if (!ret) {
