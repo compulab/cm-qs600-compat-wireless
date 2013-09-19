@@ -1065,7 +1065,9 @@ static bool is_ht40_not_allowed(struct ieee80211_channel *chan)
 {
 	if (!chan)
 		return true;
-	if (chan->flags & IEEE80211_CHAN_DISABLED)
+	if (chan->flags & (IEEE80211_CHAN_DISABLED |
+				IEEE80211_CHAN_PASSIVE_SCAN |
+				IEEE80211_CHAN_NO_IBSS | IEEE80211_CHAN_RADAR))
 		return true;
 	/* This would happen when regulatory rules disallow HT40 completely */
 	if (IEEE80211_CHAN_NO_HT40 == (chan->flags & (IEEE80211_CHAN_NO_HT40)))
