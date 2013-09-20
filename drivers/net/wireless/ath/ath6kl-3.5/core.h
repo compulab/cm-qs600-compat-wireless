@@ -129,6 +129,10 @@
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS	(0)
 #endif
 
+#ifndef ATH6KL_MODULE_DEF_PS_DISABLED
+#define ATH6KL_MODULE_DEF_PS_DISABLED  (1)
+#endif
+
 #ifndef ATH6KL_DEVNAME_DEF_P2P
 #define ATH6KL_DEVNAME_DEF_P2P		"p2p%d"
 #endif
@@ -1520,6 +1524,7 @@ enum ath6kl_dev_state {
 	REG_COUNTRY_UPDATE,
 	CFG80211_REGDB,
 	RECOVER_IN_PROCESS,
+	PS_DISABLED_ALWAYS,
 };
 
 enum ath6kl_state {
