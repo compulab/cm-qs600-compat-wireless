@@ -2810,13 +2810,25 @@ err_usb_put:
 
 static void ath6kl_usb_remove(struct usb_interface *interface)
 {
+	int war_in_progress;
+	struct ath6kl_usb *ar_usb;
+	struct ath6kl *ar;
+
+	ar_usb = usb_get_intfdata(interface);
+	if (ar_usb == NULL)
+		return;
+
+	ar = ar_usb->ar;
+
+	war_in_progress = test_bit(RECOVER_IN_PROCESS, &ar->flag);
+
 	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb card removed\n");
 
 	usb_put_dev(interface_to_usbdev(interface));
 	ath6kl_usb_device_detached(interface);
 
 #ifdef ATH6KL_HSIC_RECOVER
-	if (ath6kl_driver_unloaded == 0)
+	if (ath6kl_driver_unloaded == 0 && war_in_progress == 0)
 		schedule_work(&recover_war_work);
 #endif
 
