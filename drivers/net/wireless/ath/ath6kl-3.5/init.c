@@ -3280,7 +3280,7 @@ int ath6kl_core_init(struct ath6kl *ar)
 	}
 #endif
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY)) {
-		ath6kl_info("Enable Firmware crash notiry.\n");
+		ath6kl_info("Enable Firmware crash notify.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
 
