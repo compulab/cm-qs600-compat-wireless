@@ -1161,7 +1161,7 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		return -EIO;
 
 	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
-		ath6kl_err("destroy in progress\n");
+		ath6kl_err("%s destroy in progress %lu\n", __func__, ar->flag);
 		return -EBUSY;
 	}
 
@@ -1706,14 +1706,14 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 		ATH6KL_DBG_EXT_INFO1 |
 		ATH6KL_DBG_EXT_DEF,
-			"%s: reason=%u\n",
-			__func__, reason_code);
+			"%s:vif=%d reason=%u\n",
+			__func__, vif->fw_vif_idx, reason_code);
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
 	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
-		ath6kl_err("busy, destroy in progress\n");
+		ath6kl_err("%s destroy in progress %lu\n", __func__ , ar->flag);
 		return -EBUSY;
 	}
 
@@ -1778,8 +1778,14 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 		ATH6KL_DBG_EXT_INFO1 |
 		ATH6KL_DBG_EXT_DEF,
-		"%s: reason=%u, proto_reason %u\n",
-		__func__, reason, proto_reason);
+		"%s:vif %d reason=%u, proto_reason %u, flag %lu\n",
+		__func__, vif->fw_vif_idx, reason, proto_reason, ar->flag);
+
+	/* avoid wmi event be processed while driver unloading */
+	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
+		ath6kl_err("%s destroy in progress %lu\n", __func__, ar->flag);
+		return;
+	}
 
 	if (vif->scan_req) {
 		del_timer(&vif->vifscan_timer);
@@ -2203,7 +2209,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 			ATH6KL_DBG_EXT_SCAN |
-			ATH6KL_DBG_EXT_INFO1,
+			ATH6KL_DBG_EXT_INFO1 |
+			ATH6KL_DBG_EXT_DEF,
 		"%s: vif %d\n", __func__, vif->fw_vif_idx);
 
 	/*
@@ -2438,7 +2445,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	struct ath6kl *ar = vif->ar;
 	int i;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_DEF,
 		"%s: status%s\n", __func__,
 		aborted ? " aborted" : " complete");
 

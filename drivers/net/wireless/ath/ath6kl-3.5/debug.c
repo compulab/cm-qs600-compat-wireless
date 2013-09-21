@@ -6137,6 +6137,56 @@ static const struct file_operations fops_bss_proc = {
 	.llseek = default_llseek,
 };
 
+/* File operation for P2P WAR */
+static ssize_t ath6kl_p2p_war_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _P2P_WAR_BRCM_GO	(1 << 0)
+#define _P2P_WAR_INTL_GO	(1 << 1)
+#define _P2P_WAR_GC_AWAKE	(1 << 2)
+	struct ath6kl *ar = file->private_data;
+	unsigned int war_mask = 0;
+	int ret;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &war_mask);
+	if (ret)
+		return ret;
+
+	if (war_mask & _P2P_WAR_BRCM_GO)
+		ar->p2p_war_bad_broadcom_go = true;
+	else
+		ar->p2p_war_bad_broadcom_go = false;
+
+	if (war_mask & _P2P_WAR_INTL_GO)
+		ar->p2p_war_bad_intel_go = true;
+	else
+		ar->p2p_war_bad_intel_go = false;
+
+	if (war_mask & _P2P_WAR_GC_AWAKE)
+		ar->p2p_war_p2p_client_awake = true;
+	else
+		ar->p2p_war_p2p_client_awake = false;	
+
+	ath6kl_info("p2p_war %d %d %d\n",
+			ar->p2p_war_bad_broadcom_go,
+			ar->p2p_war_bad_intel_go,
+			ar->p2p_war_p2p_client_awake);
+
+	return count;
+#undef _P2P_WAR_BRCM_GO
+#undef _P2P_WAR_INTL_GO
+#undef _P2P_WAR_GC_AWAKE
+}
+
+/* debug fs for P2P WAR. */
+static const struct file_operations fops_p2p_war = {
+	.write = ath6kl_p2p_war_write,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -6384,6 +6434,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("bss_proc", S_IWUSR,
 				ar->debugfs_phy, ar, &fops_bss_proc);
+
+	debugfs_create_file("p2p_war", S_IWUSR,
+				ar->debugfs_phy, ar, &fops_p2p_war);
 
 	return 0;
 }

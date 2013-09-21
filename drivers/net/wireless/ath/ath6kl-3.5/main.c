@@ -614,6 +614,15 @@ static void bss_proc_post_flush(struct bss_post_proc *post_proc, bool force)
 		   aging_cnt,
 		   bss_cnt);
 
+	if (bss_cnt == 0 ||
+		bss_cnt == aging_cnt) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_DEF,
+		   "bss_proc flush %s, %d/%d\n",
+		   (force ? "force" : "aging"),
+		   aging_cnt,
+		   bss_cnt);
+	}
+
 	return;
 }
 
@@ -2202,6 +2211,8 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 		}
 
 		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+				ATH6KL_DBG_EXT_DEF, "AP down %d\n", reason);
 			vif->bss_ch = 0;
 			vif->phymode = ATH6KL_PHY_MODE_UNKNOWN;
 			vif->chan_type = ATH6KL_CHAN_TYPE_NONE;

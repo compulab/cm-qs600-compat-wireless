@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.500)
+#define __BUILD_VERSION_ (3.5.0.508)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -383,7 +383,7 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_SCAN_PAS_DEWELL_TIME_WITHOUT_ROAM 100 /* in ms. */
 
 /* Remain-on-channel */
-#define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
+#define ATH6KL_ROC_MAX_PERIOD		(1)	/* in sec. */
 
 /* scan time out */
 #define ATH6KL_SCAN_TIMEOUT_LONG (9 * HZ)  /* in sec. */
