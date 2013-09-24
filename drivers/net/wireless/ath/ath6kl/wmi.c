@@ -3474,6 +3474,7 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 	int res;
 	u16 ap_acs_ch = 0;
 	bool apap_override = 0;
+	struct ath6kl_vif *vif = NULL;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cm));
 	if (!skb)
@@ -3488,6 +3489,11 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 		if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch))
 			cm->ch = ap_acs_ch;
 	}
+
+	vif = ath6kl_get_vif_by_index(wmip->parent_dev, if_idx);
+	if (vif)
+		ath6kl_wmi_set_ch_params(ar->wmi, vif->fw_vif_idx,
+					 vif->phy_mode);
 	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_CONFIG_COMMIT_CMDID,
 				  NO_SYNC_WMIFLAG);
 	ath6kl_dbg(ATH6KL_DBG_WMI,
