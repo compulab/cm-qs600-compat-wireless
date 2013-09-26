@@ -375,6 +375,9 @@ static const char *_reg_find_iso_name(u16 reg_code,
 	else
 		name = &ath6kl_region_code_to_name[0];
 	while (name) {
+		if (name->reg_code == NULL_REG_CODE)
+			break;
+
 		if ((name->reg_code == reg_code) &&
 			(name->iso_name)) {
 			if (reg2Ctry)
@@ -447,8 +450,9 @@ static struct ieee80211_regdomain *ath6kl_reg_get_regd(struct reg_info *reg,
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
-			"reg code 0x%0x, %s code, WWR %s --> %c%c, %d rules\n",
+			"reg code 0x%0x%s, %sCode, WWR %s --> %c%c, %d rules\n",
 			reg_code,
+			(reg ? "" : " from user"),
 			(code_type & ATH6KL_COUNTRY_ERD_FLAG) ?
 					"Country" : "Region",
 			(code_type & ATH6KL_WORLDWIDE_ROAMING_FLAG) ?
@@ -1158,10 +1162,20 @@ int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
 	u32 bd_addr = 0;
 	int ret;
 	u32 rd_offset, bd_offset;
+	struct ieee80211_regdomain *regd;
+	u32 reg_code;
 
-	/* TODO: check rdcode invalid or not? */
 	if (rdcode == NULL_REG_CODE)
 		return -EINVAL;
+
+	/* check the rdcode is valid or not */
+	reg_code = ((rdcode & 0xf000) << 16) | (rdcode & 0x0fff);
+	regd = ath6kl_reg_get_regd(NULL, reg_code);
+	if (regd == &ath6kl_regd_NA) {
+		ath6kl_err("Non-support code 0x%x, use tgt default code\n",
+				rdcode);
+		return 0;
+	}
 
 	switch (ar->target_type) {
 	case TARGET_TYPE_AR6004:
@@ -1200,8 +1214,9 @@ int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
 	memcpy((u8 *)&o_rd_next, buf + rd_offset + 2, 2);
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
-		   "reg set rd_code 0x%x ver 0x%x ori 0x%x-%x\n",
+		   "reg set rd_code 0x%x reg_code 0x%x ver 0x%x ori 0x%x-%x\n",
 		   rdcode,
+		   reg_code,
 		   o_ver,
 		   o_rd_next,
 		   o_rd);
