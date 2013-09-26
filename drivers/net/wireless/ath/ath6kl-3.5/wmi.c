@@ -3381,6 +3381,9 @@ int ath6kl_wmi_set_wow_mode_cmd(struct wmi *wmi, u8 if_idx,
 	if (!skb)
 		return -ENOMEM;
 
+	wmi->parent_dev->last_wow_fliter = filter;
+	wmi->parent_dev->last_host_req_delay = host_req_delay;
+
 	cmd = (struct wmi_set_wow_mode_cmd *) skb->data;
 	cmd->enable_wow = cpu_to_le32(wow_mode);
 	cmd->filter = cpu_to_le32(filter);
@@ -4878,6 +4881,10 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		ret = ath6kl_wmi_ce_get_ctl_event_rx(vif, datap, len);
 		break;
 #endif
+	case WMI_GTK_OFFLOAD_STATUS_EVENTID:
+		ath6kl_dbg(ATH6KL_DBG_WMI, "WMI_GTK_OFFLOAD_STATUS_EVENTID\n");
+		ret = ath6kl_wmi_gtk_offload_status_event_rx(vif, datap, len);
+		break;
 	default:
 		ath6kl_dbg(ATH6KL_DBG_WMI, "unknown cmd id 0x%x\n", id);
 		ret = -EINVAL;
@@ -5291,7 +5298,7 @@ int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 			filter_list_id, WOW_EXT_FILTER_ID_CLEAR_ALL);
 }
 
-int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
+int ath6kl_wmi_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 		u8 *kek, u8 *kck, u8 *replay_ctr)
 {
 	int ret = 0;
@@ -5319,11 +5326,96 @@ int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 
 	cmd->opcode = WMI_GTK_OFFLOAD_OPCODE_SET;
 
+	ath6kl_dbg(ATH6KL_DBG_WOWLAN | ATH6KL_DBG_WMI,
+		"set_gtk_offload: %d %02x%02x%02x%02x%02x%02x%02x%02x 0x%x\n",
+		if_idx,
+		cmd->replay_counter[0],
+		cmd->replay_counter[1],
+		cmd->replay_counter[2],
+		cmd->replay_counter[3],
+		cmd->replay_counter[4],
+		cmd->replay_counter[5],
+		cmd->replay_counter[6],
+		cmd->replay_counter[7],
+		wmi->parent_dev->last_wow_fliter);
+
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 			WMI_GTK_OFFLOAD_OP_CMDID, NO_SYNC_WMIFLAG);
 
 	return ret;
 }
+
+int ath6kl_wmi_get_gtk_offload(struct wmi *wmi, u8 if_idx)
+{
+	int ret = 0;
+	struct sk_buff *skb;
+	struct wmi_gtk_offload_op *cmd;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(struct wmi_gtk_offload_op));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_gtk_offload_op *)skb->data;
+
+	memset(cmd, 0, sizeof(struct wmi_gtk_offload_op));
+
+	cmd->opcode = WMI_GTK_OFFLOAD_OPCODE_STATUS;
+
+	ath6kl_dbg(ATH6KL_DBG_WOWLAN | ATH6KL_DBG_WMI,
+		"get_gtk_offload: last_wow_filter 0x%x\n",
+		wmi->parent_dev->last_wow_fliter);
+
+	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
+			WMI_GTK_OFFLOAD_OP_CMDID, NO_SYNC_WMIFLAG);
+
+	return ret;
+}
+
+int ath6kl_wmi_gtk_offload_status_event_rx(struct ath6kl_vif *vif,
+					u8 *datap,
+					int len)
+{
+	struct wmi_gtk_offload_status_event *evt =
+			(struct wmi_gtk_offload_status_event *)datap;
+
+	ath6kl_dbg(ATH6KL_DBG_WOWLAN | ATH6KL_DBG_WMI,
+		"gtk_offload_evt: nw_type %d auth %d last_wow_fliter 0x%x",
+		vif->nw_type,
+		vif->auth_mode,
+		vif->ar->last_wow_fliter);
+
+	ath6kl_dbg(ATH6KL_DBG_WOWLAN | ATH6KL_DBG_WMI,
+		"flags 0x%x cnt %d %02x%02x%02x%02x%02x%02x%02x%02x\n",
+		evt->flags,
+		evt->refresh_cnt,
+		evt->replay_counter[0],
+		evt->replay_counter[1],
+		evt->replay_counter[2],
+		evt->replay_counter[3],
+		evt->replay_counter[4],
+		evt->replay_counter[5],
+		evt->replay_counter[6],
+		evt->replay_counter[7]);
+
+	if ((vif->nw_type == INFRA_NETWORK) &&
+	    test_bit(CONNECTED, &vif->flags) &&
+	    (vif->auth_mode == WPA2_AUTH_CCKM ||
+	     vif->auth_mode == WPA2_PSK_AUTH ||
+	     vif->auth_mode == WPA_AUTH_CCKM ||
+	     vif->auth_mode == WPA_PSK_AUTH)) {
+		u64 swap_replay;
+		u8 dup_replay[8];
+
+		swap_replay = be64_to_cpu(*evt->replay_counter);
+		memcpy(dup_replay, (u8 *)&swap_replay, NL80211_REPLAY_CTR_LEN);
+
+		cfg80211_gtk_rekey_notify(vif->ndev, vif->bssid,
+					dup_replay, GFP_ATOMIC);
+	}
+
+	return 0;
+}
+
 
 int ath6kl_wmi_set_tx_select_rates_on_all_mode(struct wmi *wmi,
 	u8 if_idx, u64 mask)
