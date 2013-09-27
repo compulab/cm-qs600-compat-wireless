@@ -1882,6 +1882,9 @@ struct ath6kl {
 	bool get_wow_pattern;
 
 	struct work_struct reset_cover_war_work;
+
+	u16 last_host_req_delay;
+	u32 last_wow_fliter;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)

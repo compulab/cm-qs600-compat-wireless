@@ -4145,6 +4145,21 @@ static int ath6kl_wow_resume(struct ath6kl *ar)
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						 ATH6KL_HOST_MODE_AWAKE);
+
+	/* Sync replay_counter back to the user. */
+	if (!ret) {
+		if ((vif->nw_type == INFRA_NETWORK) &&
+		    test_bit(CONNECTED, &vif->flags) &&
+		    (vif->ar->last_wow_fliter &
+				WOW_FILTER_OPTION_8021X_4WAYHS) &&
+		    (vif->auth_mode == WPA2_AUTH_CCKM ||
+		     vif->auth_mode == WPA2_PSK_AUTH ||
+		     vif->auth_mode == WPA_AUTH_CCKM ||
+		     vif->auth_mode == WPA_PSK_AUTH))
+			ret = ath6kl_wmi_get_gtk_offload(ar->wmi,
+							vif->fw_vif_idx);
+	}
+
 	return ret;
 }
 
@@ -5938,11 +5953,18 @@ int	ath6kl_set_gtk_rekey_offload(struct wiphy *wiphy,
 	int ret = 0;
 	struct ath6kl *ar = (struct ath6kl *)wiphy_priv(wiphy);
 	struct wmi_gtk_offload_op cmd;
-	struct ath6kl_vif *vif = ath6kl_vif_first(ar);
+	struct ath6kl_vif *vif = netdev_priv(dev);
 
-	ath6kl_dbg(ATH6KL_DBG_TRC, "+++\n");
+	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: vif %d\n",
+			__func__,
+			vif->fw_vif_idx);
+
 	if (!vif)
 		return -EIO;
+
+	/* Only support GTK offload for 1st interface now. */
+	if (vif->fw_vif_idx != 0)
+		return 0;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -5950,14 +5972,13 @@ int	ath6kl_set_gtk_rekey_offload(struct wiphy *wiphy,
 	if (!data)
 		return ret;
 
-
 	memset(&cmd, 0, sizeof(struct wmi_gtk_offload_op));
 
 	memcpy(cmd.kek, data->kek, GTK_OFFLOAD_KEK_BYTES);
 	memcpy(cmd.kck, data->kck, GTK_OFFLOAD_KCK_BYTES);
 	memcpy(cmd.replay_counter, data->replay_ctr, GTK_REPLAY_COUNTER_BYTES);
 
-	ret = ath6kl_wm_set_gtk_offload(ar->wmi, vif->fw_vif_idx, cmd.kek,
+	ret = ath6kl_wmi_set_gtk_offload(ar->wmi, vif->fw_vif_idx, cmd.kek,
 		cmd.kck, cmd.replay_counter);
 
 	return ret;

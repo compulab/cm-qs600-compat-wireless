@@ -3416,8 +3416,12 @@ int ath6kl_wmi_add_wow_ext_pattern_cmd(struct wmi *wmi, u8 if_idx,
 				   u8 *filter, u8 *mask);
 int ath6kl_wmi_del_all_wow_ext_patterns_cmd(struct wmi *wmi, u8 if_idx,
 				__le16 filter_list_id);
-int ath6kl_wm_set_gtk_offload(struct wmi *wmi, u8 if_idx,
+int ath6kl_wmi_set_gtk_offload(struct wmi *wmi, u8 if_idx,
 				u8 *kek, u8 *kck, u8 *replay_ctr);
+int ath6kl_wmi_get_gtk_offload(struct wmi *wmi, u8 if_idx);
+int ath6kl_wmi_gtk_offload_status_event_rx(struct ath6kl_vif *vif,
+					u8 *datap,
+					int len);
 
 int ath6kl_wmi_set_roam_ctrl_cmd(struct wmi *wmi,
 	u8 fw_vif_idx,	u16  lowrssi_scan_period, u16  lowrssi_scan_threshold,
