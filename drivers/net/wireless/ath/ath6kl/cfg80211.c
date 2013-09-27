@@ -3362,10 +3362,6 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			return res;
 	}
 
-        res = ath6kl_wmi_set_ch_params(ar->wmi, vif->fw_vif_idx, vif->phy_mode);
-        if (res)
-                return res;
-
 	memcpy(&vif->profile, &p, sizeof(p));
 
 	if (!vif->ap_hold_conn) {
