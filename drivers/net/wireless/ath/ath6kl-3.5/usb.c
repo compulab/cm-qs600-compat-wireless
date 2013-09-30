@@ -2485,6 +2485,14 @@ static void ath6kl_usb_early_suspend(struct ath6kl *ar)
 		}
 		usb_enable_autosuspend(device->udev);
 	}
+#else
+	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+        if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+		struct usb_device *udev = device->udev;
+                pm_runtime_set_autosuspend_delay(&udev->dev,
+                                                USB_SUSPEND_DELAY_MAX);
+                }
+                usb_enable_autosuspend(device->udev);
 #endif
 }
 
@@ -2496,6 +2504,9 @@ static void ath6kl_usb_late_resume(struct ath6kl *ar)
 	if (!ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND))
 		usb_disable_autosuspend(device->udev);
+#else
+          struct ath6kl_usb *device = ath6kl_usb_priv(ar);
+           usb_disable_autosuspend(device->udev);
 #endif /* define USB_AUTO_SUSPEND */
 }
 
