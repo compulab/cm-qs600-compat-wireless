@@ -691,7 +691,7 @@ struct ath6kl_vif {
 	u16 ch_hint;
 	u16 bss_ch;
 	struct ath6kl_wep_key wep_key_list[WMI_MAX_KEY_INDEX + 1];
-	struct ath6kl_key keys[WMI_MAX_SUPPORT_11W_KEY_INDEX + 1];
+	struct ath6kl_key keys[WMI_MAX_KEY_INDEX + 1];
 	struct aggr_info *aggr_cntxt;
 	struct ath6kl_htcap htcap[IEEE80211_NUM_BANDS];
 
@@ -713,7 +713,6 @@ struct ath6kl_vif {
 	struct net_device_stats net_stats;
 	struct target_stats target_stats;
 	struct wmi_connect_cmd profile;
-	u16 rsn_cap;  /* for 802.11w */
 
 	struct list_head mc_filter;
 	enum wmi_phy_mode phy_mode;
@@ -1159,7 +1158,6 @@ void ath6kl_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid, bool ismcast);
 void ath6kl_txpwr_rx_evt(void *devt, u8 tx_pwr);
 void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status);
 void ath6kl_tgt_stats_event(struct ath6kl_vif *vif, u8 *ptr, u32 len);
-void ath6kl_get_rsn_cap_event(struct ath6kl_vif *vif, u16 rsn_cap);
 void ath6kl_indicate_tx_activity(void *devt, u8 traffic_class, bool active);
 enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac);
 

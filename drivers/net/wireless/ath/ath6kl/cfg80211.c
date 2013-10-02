@@ -56,8 +56,6 @@
 }
 
 #define DEFAULT_BG_SCAN_PERIOD 60
-#define RSN_IE_MFP_REQUIRED 0xc0
-#define RSN_IE_MFP_OPTIONAL 0x80
 
 struct ath6kl_cfg80211_match_probe_ssid {
 	struct cfg80211_ssid ssid;
@@ -289,22 +287,6 @@ static void ath6kl_set_key_mgmt(struct ath6kl_vif *vif, u32 key_mgmt)
 			vif->auth_mode = WPA_AUTH_CCKM;
 		else if (vif->auth_mode == WPA2_AUTH)
 			vif->auth_mode = WPA2_AUTH_CCKM;
-	} else if (key_mgmt == WLAN_AKM_SUITE_8021X_SHA256) {
-		if (vif->auth_mode == WPA_AUTH) {
-			ath6kl_err("%s: auth_mode %x not supported key_mgmt"
-					" %x\n", __func__, vif->auth_mode, key_mgmt);
-			return;
-		} else if (vif->auth_mode == WPA2_AUTH) {
-			vif->auth_mode = WPA2_AUTH_SHA256;
-		}
-	} else if (key_mgmt == WLAN_AKM_SUITE_PSK_SHA256) {
-		if (vif->auth_mode == WPA_AUTH) {
-			ath6kl_err("%s: auth_mode %x not supported key_mgmt"
-					" %x\n", __func__, vif->auth_mode, key_mgmt);
-			return;
-		} else if (vif->auth_mode == WPA2_AUTH) {
-			vif->auth_mode = WPA2_PSK_AUTH_SHA256;
-		}
 	} else if (key_mgmt != WLAN_AKM_SUITE_8021X) {
 		vif->auth_mode = NONE_AUTH;
 	}
@@ -471,7 +453,6 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	int status;
 	u8 nw_subtype = (ar->p2p) ? SUBTYPE_P2PDEV : SUBTYPE_NONE;
 	u16 interval;
-	u16 rsn_cap = 0;
 
 	ath6kl_cfg80211_sscan_disable(vif);
 
@@ -558,16 +539,6 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	memset(vif->req_bssid, 0, sizeof(vif->req_bssid));
 	if (sme->bssid && !is_broadcast_ether_addr(sme->bssid))
 		memcpy(vif->req_bssid, sme->bssid, sizeof(vif->req_bssid));
-
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "sme->mfp = %d\n", sme->mfp);
-
-	if ( sme->mfp == NL80211_MFP_REQUIRED ) {
-		rsn_cap = RSN_IE_MFP_REQUIRED;
-	} else if ( sme->mfp == NL80211_MFP_OPTIONAL ) {
-		rsn_cap = RSN_IE_MFP_OPTIONAL;
-	}
-
-	ath6kl_wmi_set_rsn_cap_cmd(ar->wmi, vif->fw_vif_idx, rsn_cap);
 
 	ath6kl_set_wpa_version(vif, sme->crypto.wpa_versions);
 
@@ -1253,7 +1224,6 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 	int seq_len;
 	u8 key_usage;
 	u8 key_type;
-	u8 max_key_index;
 
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
@@ -1264,12 +1234,8 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 		return ath6kl_wmi_add_krk_cmd(ar->wmi, vif->fw_vif_idx,
 					      params->key);
 	}
-	if (WLAN_CIPHER_SUITE_AES_CMAC == params->cipher)
-		max_key_index = WMI_MAX_SUPPORT_11W_KEY_INDEX;
-	else
-		max_key_index = WMI_MAX_KEY_INDEX;
 
-	if (key_index > max_key_index) {
+	if (key_index > WMI_MAX_KEY_INDEX) {
 		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
 			   "%s: key index %d out of bounds\n", __func__,
 			   key_index);
@@ -1316,9 +1282,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 	case WLAN_CIPHER_SUITE_SMS4:
 		key_type = WAPI_CRYPT;
 		break;
-	case WLAN_CIPHER_SUITE_AES_CMAC:
-		key_type = AES_128_CMAC_CRYPT;
-		break;
+
 	default:
 		return -ENOTSUPP;
 	}
@@ -1367,21 +1331,11 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 		return 0;
 	}
 
-	if (AES_128_CMAC_CRYPT == key_type) {
-		return ath6kl_wmi_addigtk_cmd(ar->wmi, vif->fw_vif_idx,
-					      key_index, key_type, key_usage,
-					      key->key_len, key->seq,
-					      key->seq_len, key->key,
-					      KEY_OP_INIT_VAL, (u8 *) mac_addr,
-					      NO_SYNC_WMIFLAG);
-	} else {
-		return ath6kl_wmi_addkey_cmd(ar->wmi, vif->fw_vif_idx,
-					key_index, key_type, key_usage,
-					key->key_len, key->seq, key->seq_len,
-					key->key, KEY_OP_INIT_VAL,
-					(u8 *) mac_addr, NO_SYNC_WMIFLAG);
-	}
-
+	return ath6kl_wmi_addkey_cmd(ar->wmi, vif->fw_vif_idx, key_index,
+				     key_type, key_usage, key->key_len,
+				     key->seq, key->seq_len, key->key,
+				     KEY_OP_INIT_VAL,
+				     (u8 *) mac_addr, NO_SYNC_WMIFLAG);
 }
 
 static int ath6kl_cfg80211_del_key(struct wiphy *wiphy, struct net_device *ndev,
@@ -1835,7 +1789,6 @@ static const u32 cipher_suites[] = {
 	WLAN_CIPHER_SUITE_CCMP,
 	CCKM_KRK_CIPHER_SUITE,
 	WLAN_CIPHER_SUITE_SMS4,
-	WLAN_CIPHER_SUITE_AES_CMAC,
 };
 
 static bool is_rate_legacy(s32 rate)
