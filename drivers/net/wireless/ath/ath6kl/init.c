@@ -784,24 +784,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 			return status;
 	}
 
-	if (ath6kl_debug_quirks(ar, AT6HKL_MODULE_LPL_ENABLE)) {
-
-		param = 0;
-		if (ath6kl_bmi_read_hi32(ar, hi_pwr_save_flags, &param) != 0) {
-			ath6kl_err("Unable to read LPL power save flags\n");
-			return -EIO;
-		}
-
-		param |= HI_PWR_SAVE_LPL_ENABLED ;
-		for (i = 0; i < ar->vif_max; i++)
-			param |= (HI_PWR_SAVE_LPL_DEV_MASK
-					<< (HI_PWR_SAVE_LPL_DEV0_LSB + i*2));
-
-		status = ath6kl_bmi_write_hi32(ar, hi_pwr_save_flags, param);
-		if (status)
-			return status;
-	}
-
 	return 0;
 }
 
