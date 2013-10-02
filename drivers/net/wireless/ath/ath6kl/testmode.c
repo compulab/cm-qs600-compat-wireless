@@ -44,7 +44,6 @@ enum ATH6KL_TM_CMD_CFGS {
 	ATH6KL_TM_CMD_DRV_CFG_ACS,
 	ATH6KL_TM_CMD_DRV_CFG_LTE,
 	ATH6kl_TM_CMD_DRV_CFG_INTER_BSS,
-	ATH6KL_TM_CMD_DRV_CFG_SCAN_PARAMS,
 	ATH6KL_TM_CMD_DRV_CFG_LAST
 };
 
@@ -177,66 +176,6 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, struct net_device *dev, void *data,
 			struct wmi_setinterbss_cmd *cmd =
 				(struct wmi_setinterbss_cmd *)(buf + 4);
 			ar->inter_bss = cmd->enable;
-			return 0;
-		} else if (*cfg_cmd == ATH6KL_TM_CMD_DRV_CFG_SCAN_PARAMS) {
-			struct wmi_scan_params_cmd *cmd =
-				(struct wmi_scan_params_cmd *)(buf + 4);
-
-			u16 scan_params_mask = *((u16*)(buf + 4 + sizeof(struct wmi_scan_params_cmd)));
-
-			if (scan_params_mask & ATH6KL_FG_START_PERIOD_MASK)
-				ar->scan_params.fg_start_period =
-					cmd->fg_start_period;
-
-			if (scan_params_mask & ATH6KL_FG_END_PERIOD_MASK)
-				ar->scan_params.fg_end_period =
-					cmd->fg_end_period;
-
-			if (scan_params_mask & ATH6KL_BG_PERIOD_MASK)
-                                ar->scan_params.bg_period = cmd->bg_period;
-
-			if (scan_params_mask & ATH6KL_MAXACT_CHDWELL_TIME_MASK)
-                                ar->scan_params.maxact_chdwell_time =
-					cmd->maxact_chdwell_time;
-
-			if (scan_params_mask & ATH6KL_PAS_CHDWELL_TIME_MASK)
-                                ar->scan_params.pas_chdwell_time =
-					cmd->pas_chdwell_time;
-
-			if (scan_params_mask & ATH6KL_SHORT_SCAN_RATIO_MASK)
-                                ar->scan_params.short_scan_ratio =
-					cmd->short_scan_ratio;
-
-			if (scan_params_mask & ATH6KL_SCAN_CTRL_FLAGS_MASK)
-                                ar->scan_params.scan_ctrl_flags =
-					cmd->scan_ctrl_flags;
-
-			if (scan_params_mask & ATH6KL_MINACT_CHDWELL_TIME_MASK)
-                                ar->scan_params.minact_chdwell_time =
-					cmd->minact_chdwell_time;
-
-			if (scan_params_mask & ATH6KL_MAXACT_SCAN_PER_SSID_MASK)
-                                ar->scan_params.maxact_scan_per_ssid =
-					cmd->maxact_scan_per_ssid;
-
-			if (scan_params_mask & ATH6KL_MAX_DFSCH_ACT_TIME_MASK)
-				ar->scan_params.max_dfsch_act_time =
-					cmd->max_dfsch_act_time;
-
-			ar->scan_params_mask |= scan_params_mask;
-
-			ath6kl_wmi_scanparams_cmd(ar->wmi,0,
-				ar->scan_params.fg_start_period,
-				ar->scan_params.fg_end_period,
-				ar->scan_params.bg_period,
-				ar->scan_params.minact_chdwell_time,
-				ar->scan_params.maxact_chdwell_time,
-				ar->scan_params.pas_chdwell_time,
-				ar->scan_params.short_scan_ratio,
-				ar->scan_params.scan_ctrl_flags,
-				ar->scan_params.max_dfsch_act_time,
-				ar->scan_params.maxact_scan_per_ssid);
-
 			return 0;
 		}
 		break;

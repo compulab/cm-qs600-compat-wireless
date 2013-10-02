@@ -472,7 +472,6 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	u8 nw_subtype = (ar->p2p) ? SUBTYPE_P2PDEV : SUBTYPE_NONE;
 	u16 interval;
 	u16 rsn_cap = 0;
-	u16 bg_period;
 
 	ath6kl_cfg80211_sscan_disable(vif);
 
@@ -674,22 +673,8 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 	if (sme->bg_scan_period == -1)
 		sme->bg_scan_period = DEFAULT_BG_SCAN_PERIOD;
 
-	if (ar->scan_params_mask & ATH6KL_BG_PERIOD_MASK)
-		bg_period = ar->scan_params.bg_period;
-	else
-		bg_period = sme->bg_scan_period;
-
-	ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
-				ar->scan_params.fg_start_period,
-				ar->scan_params.fg_end_period,
-				bg_period,
-				ar->scan_params.minact_chdwell_time,
-				ar->scan_params.maxact_chdwell_time,
-				ar->scan_params.pas_chdwell_time,
-				ar->scan_params.short_scan_ratio,
-				DEFAULT_SCAN_CTRL_FLAGS,
-				ar->scan_params.max_dfsch_act_time,
-				ar->scan_params.maxact_scan_per_ssid);
+	ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0, 0,
+				  sme->bg_scan_period, 0, 0, 0, 3, 0, 0, 0);
 
 	up(&ar->sem);
 
@@ -2417,17 +2402,7 @@ static int ath6kl_wow_resume_vif(struct ath6kl_vif *vif)
 
 	if (vif->nw_type != AP_NETWORK) {
 		ret = ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
-                                ar->scan_params.fg_start_period,
-                                ar->scan_params.fg_end_period,
-                                ar->scan_params.bg_period,
-                                ar->scan_params.minact_chdwell_time,
-                                ar->scan_params.maxact_chdwell_time,
-                                ar->scan_params.pas_chdwell_time,
-                                ar->scan_params.short_scan_ratio,
-                                DEFAULT_SCAN_CTRL_FLAGS,
-                                ar->scan_params.max_dfsch_act_time,
-                                ar->scan_params.maxact_scan_per_ssid);
-
+					0, 0, 0, 0, 0, 0, 3, 0, 0, 0);
 	if (ret)
 		return ret;
 
@@ -2559,17 +2534,7 @@ static int ath6kl_cfg80211_deepsleep_resume(struct ath6kl *ar)
 
 	/* Reset scan parameter to default values */
 	ret = ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
-                                ar->scan_params.fg_start_period,
-                                ar->scan_params.fg_end_period,
-                                ar->scan_params.bg_period,
-                                ar->scan_params.minact_chdwell_time,
-                                ar->scan_params.maxact_chdwell_time,
-                                ar->scan_params.pas_chdwell_time,
-                                ar->scan_params.short_scan_ratio,
-                                DEFAULT_SCAN_CTRL_FLAGS,
-                                ar->scan_params.max_dfsch_act_time,
-                                ar->scan_params.maxact_scan_per_ssid);
-
+					0, 0, 0, 0, 0, 0, 3, 0, 0, 0);
 	if (ret)
 		return ret;
 
@@ -3671,7 +3636,6 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	u16 interval;
 	int ret, rssi_thold;
-	u32 fg_start_period, fg_end_period, bg_period;
 
 	if (ar->state != ATH6KL_STATE_ON)
 		return -EIO;
@@ -3720,31 +3684,9 @@ static int ath6kl_cfg80211_sscan_start(struct wiphy *wiphy,
 	/* fw uses seconds, also make sure that it's >0 */
 	interval = max_t(u16, 1, request->interval / 1000);
 
-	if (ar->scan_params_mask & ATH6KL_FG_START_PERIOD_MASK)
-		fg_start_period = ar->scan_params.fg_start_period;
-	else
-		fg_start_period = interval;
-
-	if (ar->scan_params_mask & ATH6KL_FG_END_PERIOD_MASK)
-		fg_end_period = ar->scan_params.fg_end_period;
-	else
-		fg_end_period = interval;
-
-	if (ar->scan_params_mask & ATH6KL_BG_PERIOD_MASK)
-		bg_period = ar->scan_params.bg_period;
-	else
-		bg_period = vif->bg_scan_period;
-
-
 	ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx,
-				fg_start_period, fg_end_period,
-				bg_period,ar->scan_params.minact_chdwell_time,
-				ar->scan_params.maxact_chdwell_time,
-				ar->scan_params.pas_chdwell_time,
-				ar->scan_params.short_scan_ratio,
-				DEFAULT_SCAN_CTRL_FLAGS,
-				ar->scan_params.max_dfsch_act_time,
-				ar->scan_params.maxact_scan_per_ssid);
+				  interval, interval,
+				  vif->bg_scan_period, 0, 0, 0, 3, 0, 0, 0);
 
 	ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
 					  ATH6KL_WOW_MODE_ENABLE,

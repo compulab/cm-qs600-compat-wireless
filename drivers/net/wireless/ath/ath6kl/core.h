@@ -976,8 +976,7 @@ struct ath6kl {
 	bool acs_in_prog;
 	u16 mcc_adj_ch_spacing;
 	bool sta_bh_override;
-	struct wmi_scan_params_cmd scan_params;
-	u16 scan_params_mask;
+	u16 pas_chdwell_time;
 };
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
