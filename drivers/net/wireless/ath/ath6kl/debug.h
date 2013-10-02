@@ -72,9 +72,6 @@ enum ATH6KL_MODULE_QUIRKS {
 
 	/* Use TX SW path instead of BAM */
 	ATH6KL_MODULE_BAM_TX_SW_PATH		= BIT(17),
-
-	/*Firmware error recovery */
-	ATH6KL_MODULE_FW_ERROR_RECOVERY		= BIT(18),
 };
 
 #define ATH6KL_DEF_DEBUG_QUIRKS (ATH6KL_MODULE_BAM2BAM |		\
@@ -116,7 +113,6 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_IPA_MSG	= BIT(26),   /* IPA message tracing */
 	ATH6KL_DBG_FLOWCTRL     = BIT(27),
 	ATH6KL_DBG_LTE_COEX	= BIT(28),
-	ATH6KL_DBG_RECOVERY     = BIT(29),
 	ATH6KL_DBG_ANY	        = 0xffffffff  /* enable all logs */
 };
 
