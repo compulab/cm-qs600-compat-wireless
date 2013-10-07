@@ -1400,11 +1400,6 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	struct ath6kl_cookie *cookie = NULL;
 	struct ath6kl_vif *vif;
 
-	if (ar->fw_recovery->state == ATH6KL_FW_RECOVERY_INPROGRESS) {
-		dev_kfree_skb(skb);
-		return -EACCES;
-	}
-
 	spin_lock_bh(&ar->lock);
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
@@ -1846,7 +1841,6 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		 */
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
-		ath6kl_recovery_err_notify(ar, ATH6KL_FW_EP_FULL);
 		return action;
 	}
 

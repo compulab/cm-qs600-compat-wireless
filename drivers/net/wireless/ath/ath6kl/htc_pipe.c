@@ -1095,7 +1095,6 @@ static int ath6kl_htc_pipe_rx_complete(struct ath6kl *ar, struct sk_buff *skb,
 		}
 		dev_kfree_skb(skb);
 		skb = NULL;
-		ath6kl_recovery_err_notify(ar, ATH6KL_FW_ASSERT);
 		goto free_skb;
 	}
 

@@ -34,7 +34,6 @@ static unsigned int ath6kl_p2p;
 static unsigned int devmode = ATH6KL_DEFAULT_DEV_MODE;
 static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
 static unsigned int mcc_adj_ch_spacing = ATH6KL_DEF_MCC_ADJ_CH_SPACING;
-static unsigned int heart_beat_poll;
 
 module_param(debug_mask, uint, 0644);
 module_param(wow_mode, uint, 0644);
@@ -42,9 +41,6 @@ module_param(ath6kl_p2p, uint, 0644);
 module_param(debug_quirks, uint, 0644);
 module_param(devmode, uint, 0644);
 module_param(mcc_adj_ch_spacing, uint, 0644);
-module_param(heart_beat_poll, uint, 0644);
-
-struct ath6kl_fw_err_recovery *fw_recovery;
 
 void ath6kl_core_tx_complete(struct ath6kl *ar, struct sk_buff *skb)
 {
@@ -58,197 +54,11 @@ void ath6kl_core_rx_complete(struct ath6kl *ar, struct sk_buff *skb, u8 pipe)
 }
 EXPORT_SYMBOL(ath6kl_core_rx_complete);
 
-void ath6kl_recovery_hb_event(struct ath6kl *ar, u32 cookie)
-{
-	if (cookie == ar->fw_recovery->seq_num)
-		ar->fw_recovery->hb_pending = false;
-}
-
-static void ath6kl_recovery_hb_timer(unsigned long data)
-{
-	struct ath6kl *ar = (struct ath6kl *) data;
-	int err;
-
-	if (ar->fw_recovery->state != ATH6KL_FW_RECOVERY_NONE)
-		return;
-
-	if (ar->fw_recovery->hb_pending)
-		ar->fw_recovery->hb_misscnt++;
-	else
-		ar->fw_recovery->hb_misscnt = 0;
-
-	if (ar->fw_recovery->hb_misscnt > ATH6KL_HB_RESP_MISS_THRES) {
-		ar->fw_recovery->hb_misscnt = 0;
-		ar->fw_recovery->seq_num = 0;
-		ar->fw_recovery->hb_pending = false;
-		ath6kl_recovery_err_notify(ar, ATH6KL_FW_HB_RESP_FAILURE);
-		return;
-	}
-
-	ar->fw_recovery->seq_num++;
-	ar->fw_recovery->hb_pending = true;
-
-	err = ath6kl_wmi_get_challenge_resp_cmd(ar->wmi,
-			ar->fw_recovery->seq_num, 0);
-
-	if (err)
-		ath6kl_warn("Failed to send hb challenge request, err : %d\n",
-				err);
-
-	mod_timer(&ar->fw_recovery->hb_timer, jiffies +
-			msecs_to_jiffies(ar->fw_recovery->hb_poll));
-}
-
-void ath6kl_recovery_work(struct work_struct *work)
-{
-	struct ath6kl *ar = fw_recovery->ar;
-
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB) {
-		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-			clear_bit(WMI_READY, &ar->flag);
-			ath6kl_cfg80211_stop_all(ar);
-			ath6kl_hif_restart(ar);
-			return;
-		} else
-			ath6kl_init_hw_cold_restart(ar);
-	} else
-		ath6kl_init_hw_restart(ar);
-
-	ar->state = ATH6KL_STATE_ON;
-	ar->fw_recovery->err_reason = 0;
-
-	if (ar->fw_recovery->hb_poll)
-		mod_timer(&ar->fw_recovery->hb_timer, jiffies +
-				msecs_to_jiffies(ar->fw_recovery->hb_poll));
-}
-
-void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason)
-{
-	if (!ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
-		return;
-
-	ath6kl_info("Fw error detected, reason :: %d trying to recover\n",
-			reason);
-
-	if (ar->fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
-		set_bit(reason, &ar->fw_recovery->err_reason);
-		ar->fw_recovery->state = ATH6KL_FW_RECOVERY_INPROGRESS;
-		clear_bit(WMI_CTRL_EP_FULL, &ar->flag);
-		del_timer_sync(&ar->fw_recovery->hb_timer);
-		schedule_work(&fw_recovery->recovery_work);
-	}
-}
-
-void ath6kl_recovery_init(struct ath6kl *ar)
-{
-	struct ath6kl_fw_err_recovery *recovery = ar->fw_recovery;
-
-	if (!ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
-		return;
-
-	if (fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
-		fw_recovery->state = ATH6KL_FW_RECOVERY_NONE;
-		INIT_WORK(&fw_recovery->recovery_work, ath6kl_recovery_work);
-
-		ar->fw_recovery->hb_timer.function = ath6kl_recovery_hb_timer;
-		ar->fw_recovery->hb_timer.data = (unsigned long) ar;
-		init_timer_deferrable(&ar->fw_recovery->hb_timer);
-	}
-
-	recovery->seq_num = 0;
-	recovery->hb_misscnt = 0;
-	ar->fw_recovery->hb_pending = false;
-
-	if (ar->fw_recovery->hb_poll)
-		mod_timer(&ar->fw_recovery->hb_timer, jiffies +
-			msecs_to_jiffies(ar->fw_recovery->hb_poll));
-}
-
-void ath6kl_recovery_cleanup(struct ath6kl *ar)
-{
-	if (!ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
-		return;
-
-	if (fw_recovery->state == ATH6KL_FW_RECOVERY_INPROGRESS)
-		return;
-
-	fw_recovery->state = ATH6KL_FW_RECOVERY_CLEANUP;
-	del_timer_sync(&ar->fw_recovery->hb_timer);
-
-	cancel_work_sync(&fw_recovery->recovery_work);
-}
-
-void ath6kl_recovery_suspend(struct ath6kl *ar)
-{
-	if (!ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
-		return;
-
-	cancel_work_sync(&fw_recovery->recovery_work);
-	if (ar->fw_recovery->hb_poll)
-		del_timer_sync(&ar->fw_recovery->hb_timer);
-
-	/* Check for pending fw error detection */
-	if (!ar->fw_recovery->err_reason)
-		return;
-
-	ar->fw_recovery->err_reason = 0;
-	WARN_ON(ar->state != ATH6KL_STATE_ON);
-	ar->fw_recovery->state = ATH6KL_FW_RECOVERY_INPROGRESS;
-
-	if (ar->hif_type == ATH6KL_HIF_TYPE_USB) {
-		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
-			ath6kl_hif_restart(ar);
-		else
-			ath6kl_init_hw_cold_restart(ar);
-	} else
-		ath6kl_init_hw_restart(ar);
-
-	ar->state = ATH6KL_STATE_ON;
-}
-
-void ath6kl_recovery_resume(struct ath6kl *ar)
-{
-	if (!ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
-		return;
-
-	fw_recovery->state = ATH6KL_FW_RECOVERY_CLEANUP;
-	if (!ar->fw_recovery->hb_poll)
-		return;
-
-	ar->fw_recovery->hb_pending = false;
-	ar->fw_recovery->seq_num = 0;
-	ar->fw_recovery->hb_misscnt = 0;
-	mod_timer(&ar->fw_recovery->hb_timer,
-			jiffies + msecs_to_jiffies(ar->fw_recovery->hb_poll));
-}
-
-static int ath6kl_get_bootstrap_mode(struct ath6kl *ar)
-{
-	u32 address = WLAN_BOOTSTRAP_ADDRESS;
-	u32 bootstrap;
-
-	/*
-	 * check only for AR6004 to differentiate between USB and HSIC
-	 */
-	if (ar->target_type != TARGET_TYPE_AR6004) {
-		ar->bootstrap_mode = 0;
-		return 0;
-	}
-
-	if (ath6kl_diag_read32(ar, address, &bootstrap))
-		return -EIO;
-
-	ath6kl_info("Target bootstrap: 0x%08x\n", bootstrap);
-	ar->bootstrap_mode = bootstrap;
-
-	return 0;
-}
-
 int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 {
 	struct ath6kl_bmi_target_info targ_info;
 	struct net_device *ndev;
-	int ret = 0, i, no_of_vif = 1;
+	int ret = 0, i;
 
 	switch (htc_type) {
 	case ATH6KL_HTC_TYPE_MBOX:
@@ -275,6 +85,7 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 		return -ENOMEM;
 	}
 
+
 	ret = ath6kl_bmi_init(ar);
 	if (ret)
 		goto err_wq;
@@ -295,13 +106,6 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	ar->version.target_ver = le32_to_cpu(targ_info.version);
 	ar->target_type = le32_to_cpu(targ_info.type);
 	ar->wiphy->hw_version = le32_to_cpu(targ_info.version);
-
-	ret = ath6kl_get_bootstrap_mode(ar);
-
-	if (ret) {
-		ath6kl_err("Can't get bootstrap mode");
-		goto err_power_off;
-	}
 
 	ret = ath6kl_init_hw_params(ar);
 	if (ret)
@@ -417,37 +221,23 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	if (ret)
 		goto err_rxbuf_cleanup;
 
-	if (heart_beat_poll &&
-			test_bit(ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
-				ar->fw_capabilities))
-		ar->fw_recovery->hb_poll = heart_beat_poll;
+	rtnl_lock();
 
-	ath6kl_recovery_init(ar);
+	/* Add an initial station interface */
+	ndev = ath6kl_interface_add(ar, "wlan%d", NL80211_IFTYPE_STATION, 0,
+				    INFRA_NETWORK);
 
+	rtnl_unlock();
 
-	if (fw_recovery->state  == ATH6KL_FW_RECOVERY_INPROGRESS)
-		no_of_vif = ar->vif_max;
-
-	for (i = 0; i < no_of_vif; i++) {
-		rtnl_lock();
-
-		/* Add an initial station interface */
-		ndev = ath6kl_interface_add(ar, "wlan%d",
-				NL80211_IFTYPE_STATION, i, INFRA_NETWORK);
-
-		rtnl_unlock();
-
-		if (!ndev) {
-			ath6kl_err("Failed to instantiate a network device\n");
-			ret = -ENOMEM;
-			wiphy_unregister(ar->wiphy);
-			goto err_rxbuf_cleanup;
-		}
-		ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
-				__func__, ndev->name, ndev, ar);
+	if (!ndev) {
+		ath6kl_err("Failed to instantiate a network device\n");
+		ret = -ENOMEM;
+		wiphy_unregister(ar->wiphy);
+		goto err_rxbuf_cleanup;
 	}
 
-	fw_recovery->state = ATH6KL_FW_RECOVERY_NONE;
+	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: name=%s dev=0x%p, ar=0x%p\n",
+		   __func__, ndev->name, ndev, ar);
 
 	return ret;
 
@@ -547,25 +337,6 @@ struct ath6kl *ath6kl_core_create(struct device *dev)
 	ar->scan_params.short_scan_ratio = WMI_SHORTSCANRATIO_DEFAULT;
 
 	ar->scan_params_mask = 0;
-	if (!fw_recovery) {
-		fw_recovery = kmalloc(sizeof(struct ath6kl_fw_err_recovery),
-				GFP_KERNEL);
-
-		if (!fw_recovery) {
-			ath6kl_err("Failed to allocate memory for"
-					" fw_recovery!\n");
-			ath6kl_core_destroy(ar);
-			return NULL;
-		}
-
-		memset(fw_recovery, 0, sizeof(struct ath6kl_fw_err_recovery));
-
-		ar->fw_recovery = fw_recovery;
-		fw_recovery->ar = ar;
-	} else {
-		ar->fw_recovery = fw_recovery;
-		fw_recovery->ar = ar;
-	}
 
 	return ar;
 }
@@ -574,7 +345,6 @@ EXPORT_SYMBOL(ath6kl_core_create);
 void ath6kl_core_cleanup(struct ath6kl *ar)
 {
 	ath6kl_hif_power_off(ar);
-	ath6kl_recovery_cleanup(ar);
 
 	if (ar->ath6kl_wq)
 		destroy_workqueue(ar->ath6kl_wq);
@@ -615,12 +385,6 @@ EXPORT_SYMBOL(ath6kl_core_cleanup);
 
 void ath6kl_core_destroy(struct ath6kl *ar)
 {
-	if (fw_recovery &&
-			fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
-		kfree(fw_recovery);
-		fw_recovery = NULL;
-	}
-
 	ath6kl_cfg80211_destroy(ar);
 }
 EXPORT_SYMBOL(ath6kl_core_destroy);
