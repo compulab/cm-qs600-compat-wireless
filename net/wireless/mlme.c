@@ -356,7 +356,7 @@ int __cfg80211_mlme_assoc(struct cfg80211_registered_device *rdev,
 			  struct ieee80211_channel *chan,
 			  const u8 *bssid, const u8 *prev_bssid,
 			  const u8 *ssid, int ssid_len,
-			  const u8 *ie, int ie_len, enum nl80211_mfp mfp,
+			  const u8 *ie, int ie_len, bool use_mfp,
 			  struct cfg80211_crypto_settings *crypt,
 			  u32 assoc_flags, struct ieee80211_ht_cap *ht_capa,
 			  struct ieee80211_ht_cap *ht_capa_mask)
@@ -386,7 +386,7 @@ int __cfg80211_mlme_assoc(struct cfg80211_registered_device *rdev,
 	req.ie = ie;
 	req.ie_len = ie_len;
 	memcpy(&req.crypto, crypt, sizeof(req.crypto));
-	req.mfp = mfp;
+	req.use_mfp = use_mfp;
 	req.prev_bssid = prev_bssid;
 	req.flags = assoc_flags;
 	if (ht_capa)
@@ -427,7 +427,7 @@ int cfg80211_mlme_assoc(struct cfg80211_registered_device *rdev,
 			struct ieee80211_channel *chan,
 			const u8 *bssid, const u8 *prev_bssid,
 			const u8 *ssid, int ssid_len,
-			const u8 *ie, int ie_len, enum nl80211_mfp mfp,
+			const u8 *ie, int ie_len, bool use_mfp,
 			struct cfg80211_crypto_settings *crypt,
 			u32 assoc_flags, struct ieee80211_ht_cap *ht_capa,
 			struct ieee80211_ht_cap *ht_capa_mask)
@@ -438,7 +438,7 @@ int cfg80211_mlme_assoc(struct cfg80211_registered_device *rdev,
 	mutex_lock(&rdev->devlist_mtx);
 	wdev_lock(wdev);
 	err = __cfg80211_mlme_assoc(rdev, dev, chan, bssid, prev_bssid,
-				    ssid, ssid_len, ie, ie_len, mfp, crypt,
+				    ssid, ssid_len, ie, ie_len, use_mfp, crypt,
 				    assoc_flags, ht_capa, ht_capa_mask);
 	wdev_unlock(wdev);
 	mutex_unlock(&rdev->devlist_mtx);

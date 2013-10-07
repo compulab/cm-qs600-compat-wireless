@@ -830,12 +830,9 @@ enum auth_mode {
 	WPA2_PSK_AUTH = 0x10,
 	WPA_AUTH_CCKM = 0x20,
 	WPA2_AUTH_CCKM = 0x40,
-	WPA2_AUTH_SHA256 = 0x80,
-	WPA2_PSK_AUTH_SHA256 = 0x81,
 };
 
 #define WMI_MAX_KEY_INDEX   3
-#define WMI_MAX_SUPPORT_11W_KEY_INDEX	5
 
 #define WMI_MAX_KEY_LEN     32
 
@@ -948,16 +945,6 @@ struct wmi_add_cipher_key_cmd {
 /* WMI_DELETE_CIPHER_KEY_CMDID */
 struct wmi_delete_cipher_key_cmd {
 	u8 key_index;
-} __packed;
-
-struct wmi_add_igtk_key_cmd {
-	u8 key_index;
-
-	u8 key_len;
-
-	u8 key_rsc[6];/* key replay sequence counter */
-
-	u8 key[WMI_MAX_KEY_LEN];
 } __packed;
 
 #define WMI_KRK_LEN     16
@@ -2642,13 +2629,6 @@ struct wmi_set_mcc_event_mode_cmd {
 	u8 send_event;
 } __packed;
 
-#define RSN_CAP_PREAUTH     0x01
-#define RSN_CAP_MFPR        0x40
-#define RSN_CAP_MFPC        0x80
-
-struct wmi_rsn_cap_cmd {
-	__le16 rsn_cap;
-} __packed;
 
 #ifdef __KERNEL__
 /* WMI_SET_AKMP_PARAMS_CMD */
@@ -3199,13 +3179,6 @@ int ath6kl_wmi_addkey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
 			  u8 *key_material,
 			  u8 key_op_ctrl, u8 *mac_addr,
 			  enum wmi_sync_flag sync_flag);
-int ath6kl_wmi_addigtk_cmd(struct wmi *wmi, u8 if_idx, u8 key_index,
-                           enum crypto_type key_type,
-                           u8 key_usage, u8 key_len,
-                           u8 *key_rsc, unsigned int key_rsc_len,
-                           u8 *key_material,
-                           u8 key_op_ctrl, u8 *mac_addr,
-                           enum wmi_sync_flag sync_flag);
 int ath6kl_wmi_add_krk_cmd(struct wmi *wmi, u8 if_idx, u8 *krk);
 int ath6kl_wmi_deletekey_cmd(struct wmi *wmi, u8 if_idx, u8 key_index);
 int ath6kl_wmi_setpmkid_cmd(struct wmi *wmi, u8 if_idx, const u8 *bssid,
@@ -3215,8 +3188,6 @@ int ath6kl_wmi_get_tx_pwr_cmd(struct wmi *wmi, u8 if_idx);
 int ath6kl_wmi_get_roam_tbl_cmd(struct wmi *wmi);
 
 int ath6kl_wmi_set_wmm_txop(struct wmi *wmi, u8 if_idx, enum wmi_txop_cfg cfg);
-int ath6kl_wmi_get_rsn_cap_cmd(struct wmi *wmi, u8 if_idx);
-int ath6kl_wmi_set_rsn_cap_cmd(struct wmi *wmi, u8 if_idx, u16 rsn_cap);
 int ath6kl_wmi_set_keepalive_cmd(struct wmi *wmi, u8 if_idx,
 				 u8 keep_alive_intvl);
 int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,

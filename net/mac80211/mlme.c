@@ -3374,11 +3374,13 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 	if (req->prev_bssid)
 		memcpy(assoc_data->prev_bssid, req->prev_bssid, ETH_ALEN);
 
-	ifmgd->mfp = req->mfp;
-	if (req->mfp != NL80211_MFP_NO)
+	if (req->use_mfp) {
+		ifmgd->mfp = IEEE80211_MFP_REQUIRED;
 		ifmgd->flags |= IEEE80211_STA_MFP_ENABLED;
-	else
+	} else {
+		ifmgd->mfp = IEEE80211_MFP_DISABLED;
 		ifmgd->flags &= ~IEEE80211_STA_MFP_ENABLED;
+	}
 
 	if (req->crypto.control_port)
 		ifmgd->flags |= IEEE80211_STA_CONTROL_PORT;

@@ -1191,7 +1191,7 @@ enum cfg80211_assoc_req_flags {
  *	cfg80211_send_assoc_timeout())
  * @ie: Extra IEs to add to (Re)Association Request frame or %NULL
  * @ie_len: Length of ie buffer in octets
- * @mfp: indicate whether management frame protection is used
+ * @use_mfp: Use management frame protection (IEEE 802.11w) in this association
  * @crypto: crypto settings
  * @prev_bssid: previous BSSID, if not %NULL use reassociate frame
  * @flags:  See &enum cfg80211_assoc_req_flags
@@ -1204,7 +1204,7 @@ struct cfg80211_assoc_request {
 	const u8 *ie, *prev_bssid;
 	size_t ie_len;
 	struct cfg80211_crypto_settings crypto;
-	enum nl80211_mfp mfp;
+	bool use_mfp;
 	u32 flags;
 	struct ieee80211_ht_cap ht_capa;
 	struct ieee80211_ht_cap ht_capa_mask;
@@ -1306,7 +1306,6 @@ struct cfg80211_ibss_params {
  * @ie: IEs for association request
  * @ie_len: Length of assoc_ie in octets
  * @privacy: indicates whether privacy-enabled APs should be used
- * @mfp: indicate whether management frame protection is used
  * @crypto: crypto settings
  * @key_len: length of WEP key for shared key authentication
  * @key_idx: index of WEP key for shared key authentication
@@ -1327,7 +1326,6 @@ struct cfg80211_connect_params {
 	u8 *ie;
 	size_t ie_len;
 	bool privacy;
-	enum nl80211_mfp mfp;
 	struct cfg80211_crypto_settings crypto;
 	const u8 *key;
 	u8 key_len, key_idx;
