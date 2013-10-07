@@ -1595,18 +1595,8 @@ static ssize_t ath6kl_bgscan_int_write(struct file *file,
 
 	vif->bg_scan_period = bgscan_int;
 
-	ar->scan_params.bg_period = bgscan_int;
-	ar->scan_params_mask |= ATH6KL_BG_PERIOD_MASK;
-
-	ath6kl_wmi_scanparams_cmd(ar->wmi, 0, ar->scan_params.fg_start_period,
-                                ar->scan_params.fg_end_period, bgscan_int,
-                                ar->scan_params.minact_chdwell_time,
-				ar->scan_params.maxact_chdwell_time,
-                                ar->scan_params.pas_chdwell_time,
-                                ar->scan_params.short_scan_ratio,
-                                DEFAULT_SCAN_CTRL_FLAGS,
-                                ar->scan_params.max_dfsch_act_time,
-                                ar->scan_params.maxact_scan_per_ssid);
+	ath6kl_wmi_scanparams_cmd(ar->wmi, 0, 0, 0, bgscan_int, 0, 0, 0, 3,
+				  0, 0, 0);
 
 	return count;
 }
@@ -2080,6 +2070,48 @@ static const struct file_operations fops_mcc_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath6kl_pas_chdwell_time_write(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	struct ath6kl_vif *vif;
+	u16 scan_pass_int;
+	char buf[32];
+	ssize_t len;
+
+	vif = ath6kl_vif_first(ar);
+	if (!vif)
+		return -EIO;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	buf[len] = '\0';
+	if (kstrtou16(buf, 0, &scan_pass_int))
+		return -EINVAL;
+
+	if (scan_pass_int <= 0)
+		scan_pass_int = 100;
+
+	ar->pas_chdwell_time = scan_pass_int;
+
+	ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0, 0,
+			vif->bg_scan_period, 0, 0, ar->pas_chdwell_time, 3,
+			0, 0, 0);
+
+	return count;
+}
+
+
+static const struct file_operations fops_pas_chdwell_time = {
+	.write = ath6kl_pas_chdwell_time_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 /*
  * Initialisation needs to happen in two stages as fwlog events can come
  * before cfg80211 is initialised, and debugfs depends on cfg80211
@@ -2169,6 +2201,9 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 
 	debugfs_create_file("mcc_stats", S_IRUSR | S_IWUSR,
 			ar->debugfs_phy, ar, &fops_mcc_stats);
+
+	debugfs_create_file("pas_chdwell_time", S_IRUSR | S_IWUSR,
+			ar->debugfs_phy, ar, &fops_pas_chdwell_time);
 
 	return 0;
 }

@@ -782,50 +782,6 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
 
 /* WMI_SETPMKID_CMDID */
 #define WMI_PMKID_LEN 16
-/* scan params mask */
-#define ATH6KL_FG_START_PERIOD_MASK      0x0001
-#define ATH6KL_FG_END_PERIOD_MASK        0x0002
-#define ATH6KL_BG_PERIOD_MASK            0x0004
-#define ATH6KL_MAXACT_CHDWELL_TIME_MASK  0x0008
-#define ATH6KL_PAS_CHDWELL_TIME_MASK     0x0010
-#define ATH6KL_SHORT_SCAN_RATIO_MASK     0x0020
-#define ATH6KL_SCAN_CTRL_FLAGS_MASK      0x0040
-#define ATH6KL_MINACT_CHDWELL_TIME_MASK  0x0080
-#define ATH6KL_MAXACT_SCAN_PER_SSID_MASK 0x0100
-#define ATH6KL_MAX_DFSCH_ACT_TIME_MASK   0x0200
-
-/*
- *  Warning: scan control flag value of 0xFF is used to disable
- *  all flags in WMI_SCAN_PARAMS_CMD. Do not add any more
- *  flags here
- */
-enum wmi_scan_ctrl_flags_bits {
-
-	/* set if can scan in the connect cmd */
-	CONNECT_SCAN_CTRL_FLAGS = 0x01,
-
-	/* set if scan for the SSID it is already connected to */
-	SCAN_CONNECTED_CTRL_FLAGS = 0x02,
-
-	/* set if enable active scan */
-	ACTIVE_SCAN_CTRL_FLAGS = 0x04,
-
-	/* set if enable roam scan when bmiss and lowrssi */
-	ROAM_SCAN_CTRL_FLAGS = 0x08,
-
-	/* set if follows customer BSSINFO reporting rule */
-	REPORT_BSSINFO_CTRL_FLAGS = 0x10,
-
-	/* if disabled, target doesn't scan after a disconnect event  */
-	ENABLE_AUTO_CTRL_FLAGS = 0x20,
-
-	/*
-	 * Scan complete event with canceled status will be generated when
-	 * a scan is prempted before it gets completed.
-	 */
-	ENABLE_SCAN_ABORT_EVENT = 0x40
-};
-
 
 #ifdef __KERNEL__
 enum wmi_mgmt_frame_type {
@@ -1091,6 +1047,37 @@ struct wmi_start_scan_cmd {
 	__le16 ch_list[1];
 } __packed;
 
+/*
+ *  Warning: scan control flag value of 0xFF is used to disable
+ *  all flags in WMI_SCAN_PARAMS_CMD. Do not add any more
+ *  flags here
+ */
+enum wmi_scan_ctrl_flags_bits {
+
+	/* set if can scan in the connect cmd */
+	CONNECT_SCAN_CTRL_FLAGS = 0x01,
+
+	/* set if scan for the SSID it is already connected to */
+	SCAN_CONNECTED_CTRL_FLAGS = 0x02,
+
+	/* set if enable active scan */
+	ACTIVE_SCAN_CTRL_FLAGS = 0x04,
+
+	/* set if enable roam scan when bmiss and lowrssi */
+	ROAM_SCAN_CTRL_FLAGS = 0x08,
+
+	/* set if follows customer BSSINFO reporting rule */
+	REPORT_BSSINFO_CTRL_FLAGS = 0x10,
+
+	/* if disabled, target doesn't scan after a disconnect event  */
+	ENABLE_AUTO_CTRL_FLAGS = 0x20,
+
+	/*
+	 * Scan complete event with canceled status will be generated when
+	 * a scan is prempted before it gets completed.
+	 */
+	ENABLE_SCAN_ABORT_EVENT = 0x40
+};
 
 struct wmi_scan_params_cmd {
 	  /* sec */
