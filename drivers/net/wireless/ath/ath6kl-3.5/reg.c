@@ -375,6 +375,9 @@ static const char *_reg_find_iso_name(u16 reg_code,
 	else
 		name = &ath6kl_region_code_to_name[0];
 	while (name) {
+		if (name->reg_code == NULL_REG_CODE)
+			break;
+
 		if ((name->reg_code == reg_code) &&
 			(name->iso_name)) {
 			if (reg2Ctry)
@@ -447,8 +450,9 @@ static struct ieee80211_regdomain *ath6kl_reg_get_regd(struct reg_info *reg,
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
-			"reg code 0x%0x, %s code, WWR %s --> %c%c, %d rules\n",
+			"reg code 0x%0x%s, %sCode, WWR %s --> %c%c, %d rules\n",
 			reg_code,
+			(reg ? "" : " from user"),
 			(code_type & ATH6KL_COUNTRY_ERD_FLAG) ?
 					"Country" : "Region",
 			(code_type & ATH6KL_WORLDWIDE_ROAMING_FLAG) ?
@@ -1150,7 +1154,53 @@ int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName)
 #define AR6006_BOARD_DATA_OFFSET	4
 #define AR6006_RD_OFFSET		20
 
-int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
+static void _reg_remap_rdcode(unsigned short *rdcode_used)
+{
+	unsigned short country_code_ori, country_code_remap;
+
+	/*
+	 * If the customer want to change the channel-set
+	 * for some country and target channel-set already
+	 * exist in certain country and here provide a possible
+	 * recode re-map to avoid firmware patch.
+	 *
+	 * WARN: You moust know what you want to do when insert
+	 *       any code to this function.
+	 */
+
+	country_code_ori = *rdcode_used;
+
+	/* Only support Country-Code w/o WWR remap */
+	if ((country_code_ori & ATH6KL_COUNTRY_ERD_FLAG) &&
+	    !(country_code_ori & ATH6KL_WORLDWIDE_ROAMING_FLAG)) {
+		country_code_ori &= ~(ATH6KL_COUNTRY_ERD_FLAG |
+				      ATH6KL_WORLDWIDE_ROAMING_FLAG);
+		country_code_remap = country_code_ori;
+
+		/* TODO : remap country code here */
+		if (country_code_ori == COUNTRY_CHINA) {
+			/* China allow 5150-5350 after 2013/01/31. */
+			country_code_remap = COUNTRY_INDIA;
+		}
+
+		if (country_code_ori != country_code_remap) {
+			*rdcode_used = (ATH6KL_COUNTRY_ERD_FLAG |
+					country_code_remap);
+
+			ath6kl_dbg(ATH6KL_DBG_REGDB,
+				"reg remap from 0x%x to 0x%x, use 0x%x\n",
+				country_code_ori,
+				country_code_remap,
+				*rdcode_used);
+		}
+	}
+
+	return;
+}
+
+int ath6kl_reg_set_rdcode(struct ath6kl *ar,
+			unsigned short rdcode,
+			unsigned short *rdcode_used)
 {
 	u8 buf[32];
 	u16 o_sum, o_ver, o_rd, o_rd_next;
@@ -1158,10 +1208,30 @@ int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
 	u32 bd_addr = 0;
 	int ret;
 	u32 rd_offset, bd_offset;
+	struct ieee80211_regdomain *regd;
+	u32 reg_code;
 
-	/* TODO: check rdcode invalid or not? */
 	if (rdcode == NULL_REG_CODE)
 		return -EINVAL;
+
+	*rdcode_used = NULL_REG_CODE;
+
+	/* check the rdcode is valid or not */
+	reg_code = ((rdcode & 0xf000) << 16) | (rdcode & 0x0fff);
+	regd = ath6kl_reg_get_regd(NULL, reg_code);
+	if (regd == &ath6kl_regd_NA) {
+		ath6kl_err("Non-support code 0x%x, use tgt default code\n",
+				rdcode);
+		return 0;
+	} else {
+		/* update final used rdcode */
+		*rdcode_used = rdcode;
+
+		/* Remap the rdcode only if internal-regdb support */
+		if ((ar->reg_ctx) &&
+		    (ar->reg_ctx->flags & ATH6KL_REG_FALGS_INTERNAL_REGDB))
+			_reg_remap_rdcode(rdcode_used);
+	}
 
 	switch (ar->target_type) {
 	case TARGET_TYPE_AR6004:
@@ -1200,13 +1270,14 @@ int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
 	memcpy((u8 *)&o_rd_next, buf + rd_offset + 2, 2);
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
-		   "reg set rd_code 0x%x ver 0x%x ori 0x%x-%x\n",
+		   "reg set rdcode/used 0x%x/0x%x ver 0x%x ori 0x%x-%x\n",
 		   rdcode,
+		   (*rdcode_used),
 		   o_ver,
 		   o_rd_next,
 		   o_rd);
 
-	n_rd = (o_rd_next << 16) + rdcode;
+	n_rd = (o_rd_next << 16) + (*rdcode_used);
 	ret = ath6kl_bmi_write(ar,
 				bd_addr + rd_offset,
 				(u8 *)&n_rd,
@@ -1214,7 +1285,7 @@ int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode)
 	if (ret)
 		return ret;
 
-	n_sum = (o_ver << 16) + (o_sum ^ o_rd ^ rdcode);
+	n_sum = (o_ver << 16) + (o_sum ^ o_rd ^ (*rdcode_used));
 	ret = ath6kl_bmi_write(ar,
 				bd_addr + bd_offset,
 				(u8 *)&n_sum,

@@ -381,5 +381,7 @@ void ath6kl_reg_bss_info(struct ath6kl *ar,
 			u8 snr,
 			struct ieee80211_channel *channel);
 int ath6kl_reg_set_country(struct ath6kl *ar, char *isoName);
-int ath6kl_reg_set_rdcode(struct ath6kl *ar, unsigned short rdcode);
+int ath6kl_reg_set_rdcode(struct ath6kl *ar,
+			unsigned short rdcode,
+			unsigned short *rdcode_used);
 #endif /* REG_H */

@@ -26,6 +26,7 @@
 #include "wlan_location_defs.h"
 #include "htc-ops.h"
 #include "hif-ops.h"
+#include <linux/wireless.h>
 #include <net/iw_handler.h>
 
 
@@ -55,18 +56,137 @@ struct ath6kl_fwlog_slot {
 #define ATH6KL_FWGLOG_GET_NUMARGS(arg) \
 	((arg & ATH6KL_FWLOG_NUM_ARGS_MASK) >> ATH6KL_FWLOG_NUM_ARGS_OFFSET)
 
+static struct ath6kl_print_fwd_ctx ath6kl_print_fwd;
+
+static void ath6kl_printk_fwd_send(u8 *mesg, int len)
+{
+#define IWEVCUSTOM_EV_ATH6KL_PRINTK_FWD	(0x13)
+	struct ath6kl_print_fwd_ctx *print_fwd = &ath6kl_print_fwd;
+	unsigned long flags;
+
+	if (len > 256 - 2) {
+		printk(KERN_INFO
+			"ath6kl: print_fwd bypass, [%d]%s\n", len, mesg);
+		return;
+	}
+
+	if (print_fwd->ar &&
+	    print_fwd->ar->num_vif &&
+	    print_fwd->fwd_vif) {
+		bool needSend = false;
+		int sendLen = 0;
+		int bufIdx = -1;
+		u8 *bufStart;
+
+		spin_lock_irqsave(&print_fwd->lock, flags);
+		if (print_fwd->current_len + 1 + 1 + len >
+			ATH6KL_PRINTK_FWD_MAX_BUF_SIZE) {
+			/* send current buf */
+			needSend = true;
+			sendLen = print_fwd->current_len;
+			bufIdx = print_fwd->current_buf_idx;
+
+			/* change to next buf */
+			print_fwd->current_len = 0;
+			print_fwd->current_buf_idx =
+					!print_fwd->current_buf_idx;
+		}
+
+		bufStart = &(print_fwd->fwd_buf[print_fwd->current_buf_idx][0]);
+
+		/* TLV style */
+		*(bufStart + print_fwd->current_len) = 0;
+		*(bufStart + print_fwd->current_len + 1) = len;
+		memcpy(bufStart + print_fwd->current_len + 2,
+			mesg,
+			len);
+		print_fwd->current_len += (2 + len);
+		spin_unlock_irqrestore(&print_fwd->lock, flags);
+
+		if (needSend) {
+			union iwreq_data wreq;
+
+			memset(&wreq, 0, sizeof(union iwreq_data));
+			wreq.data.flags = IWEVCUSTOM_EV_ATH6KL_PRINTK_FWD;
+			wreq.data.length = sendLen;
+
+			wireless_send_event(print_fwd->fwd_vif->ndev,
+						IWEVCUSTOM,
+						&wreq,
+						print_fwd->fwd_buf[bufIdx]);
+		}
+	} else if (print_fwd->ar)
+		print_fwd->fwd_vif = ath6kl_vif_first(print_fwd->ar);
+
+	return;
+#undef IWEVCUSTOM_EV_ATH6KL_PRINTK_FWD
+}
+
+void ath6kl_printk_fwd_setup(struct ath6kl *ar, bool enable)
+{
+	struct ath6kl_print_fwd_ctx *print_fwd = &ath6kl_print_fwd;
+
+	print_fwd->ar = ar;
+	if (ar && enable)
+		print_fwd->flags |= ATH6KL_PRINTK_FWD_MODE_ENABLE;
+	else
+		print_fwd->flags &= ~ATH6KL_PRINTK_FWD_MODE_ENABLE;
+
+	/* Only need to initial once. */
+	if (!(print_fwd->flags & ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE)) {
+		spin_lock_init(&print_fwd->lock);
+		print_fwd->flags |= ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE;
+	}
+
+	return;
+}
+
+void ath6kl_printk_fwd_reset(struct ath6kl *ar)
+{
+	struct ath6kl_print_fwd_ctx *print_fwd = &ath6kl_print_fwd;
+
+	/* Whether printk_fw already turn-on before. */
+	if ((print_fwd->ar) &&
+	    (print_fwd->ar != ar)) {
+		/*
+		 * Hotplug or driver recovery happened.
+		 * Just update ar and clean vif then next printk
+		 * will get new vif again.
+		 */
+		print_fwd->ar = ar;
+		print_fwd->fwd_vif = NULL;
+	}
+
+	return;
+}
+
+static bool ath6kl_printk_fwd_is_enable(void)
+{
+	if (ath6kl_print_fwd.flags & ATH6KL_PRINTK_FWD_MODE_ENABLE)
+		return true;
+	else
+		return false;
+}
+
 int ath6kl_printk(const char *level, const char *fmt, ...)
 {
 	struct va_format vaf;
 	va_list args;
-	int rtn;
+	int rtn = 0;
 
 	va_start(args, fmt);
 
 	vaf.fmt = fmt;
 	vaf.va = &args;
 
-	rtn = printk(KERN_INFO "%sath6kl: %pV", level, &vaf);
+	if (ath6kl_printk_fwd_is_enable()) {
+		u8 mesg[256];
+
+		memset(mesg, 0, 256);
+		snprintf(mesg, 256 - 2, "%pV", &vaf);
+		ath6kl_printk_fwd_send(mesg, strlen(mesg));
+	} else
+		rtn = printk(KERN_INFO "%sath6kl: %pV", level, &vaf);
 
 	va_end(args);
 
@@ -756,6 +876,10 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 			 "Num disconnects", tgt_stats->cs_discon_cnt);
 	len += scnprintf(buf + len, buf_len - len, "%20s %10d\n",
 			 "Beacon avg rssi", tgt_stats->cs_ave_beacon_rssi);
+	len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
+			 "Low rssi count", tgt_stats->cs_low_rssi_cnt);
+	len += scnprintf(buf + len, buf_len - len, "%20s %10d\n",
+			 "Roam count", tgt_stats->cs_roam_cnt);
 
 	len += scnprintf(buf + len, buf_len - len, "%25s\n",
 			 "Wow stats");
@@ -3063,10 +3187,16 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 	u8 *buf;
 	unsigned int i, len = 0;
 	ssize_t ret_cnt;
+	struct timeval cur_time;
 
 	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
 	if (!buf)
 		return -ENOMEM;
+
+	do_gettimeofday(&cur_time);
+	len += scnprintf(buf + len, _BUF_SIZE - len,
+		"NOW %ld\n",
+		cur_time.tv_sec);
 
 	/* HTC cookie stats */
 	cookie_pool = &ar->cookie_data;
@@ -3131,6 +3261,9 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 				i,
 				vif->flags);
 			len += scnprintf(buf + len, _BUF_SIZE - len,
+				" last_connect_time %ld\n",
+				vif->last_connect_time.tv_sec);
+			len += scnprintf(buf + len, _BUF_SIZE - len,
 				" data_cookie_count %d\n",
 				vif->data_cookie_count);
 			len += scnprintf(buf + len, _BUF_SIZE - len,
@@ -3172,6 +3305,11 @@ static ssize_t ath6kl_htc_stat_read(struct file *file,
 				" roc %d roc_cancel %d\n",
 				stat->roc_cnt,
 				stat->roc_cancel_cnt);
+		if (ar->p2p_flowctrl_ctx) {
+			len += scnprintf(buf + len, _BUF_SIZE - len,
+				" flowctrl %d\n",
+				ar->p2p_flowctrl_ctx->p2p_flowctrl_event_cnt);
+		}
 		for (i = 0; i < WMI_STAT_MAX_REC; i++)
 			len += scnprintf(buf + len, _BUF_SIZE - len,
 				" last_cmd 0x%08x %s\n",
@@ -4863,6 +5001,21 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 	buf_len = _BUF_SIZE;
 
 	if (reg->current_regd) {
+		/* If recode is from the user */
+		if (reg_domain != NULL_REG_CODE) {
+			if (reg_domain_used == NULL_REG_CODE)
+				len += scnprintf(p + len, buf_len - len,
+					"\nUser rdcode 0x%x - invalid\n",
+					reg_domain);
+			else
+				len += scnprintf(p + len, buf_len - len,
+					"\nUser rdcode 0x%x - %s 0x%x\n",
+					reg_domain,
+					((reg_domain != reg_domain_used) ?
+						"remap to" : "use"),
+					reg_domain_used);
+		}
+
 		len += scnprintf(p + len, buf_len - len,
 				"\nCurrent Regulatory - %08x %c%c %d rules\n",
 				reg->current_reg_code,
@@ -6166,7 +6319,7 @@ static ssize_t ath6kl_p2p_war_write(struct file *file,
 	if (war_mask & _P2P_WAR_GC_AWAKE)
 		ar->p2p_war_p2p_client_awake = true;
 	else
-		ar->p2p_war_p2p_client_awake = false;	
+		ar->p2p_war_p2p_client_awake = false;
 
 	ath6kl_info("p2p_war %d %d %d\n",
 			ar->p2p_war_bad_broadcom_go,
@@ -6186,6 +6339,35 @@ static const struct file_operations fops_p2p_war = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
+
+/* File operation for Printk Forward */
+static ssize_t ath6kl_printk_fwd(struct file *file,
+				const char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+	struct ath6kl *ar = file->private_data;
+	int enable, ret;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &enable);
+	if (ret)
+		return ret;
+
+	if (enable)
+		ath6kl_printk_fwd_setup(ar, true);
+	else
+		ath6kl_printk_fwd_setup(ar, false);
+
+	return count;
+}
+
+/* debug fs for Printk Forward. */
+static const struct file_operations fops_printk_fwd = {
+	.write = ath6kl_printk_fwd,
+	.open = ath6kl_debugfs_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 
 int ath6kl_debug_init(struct ath6kl *ar)
 {
@@ -6437,6 +6619,9 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("p2p_war", S_IWUSR,
 				ar->debugfs_phy, ar, &fops_p2p_war);
+
+	debugfs_create_file("printk_fwd", S_IWUSR,
+				ar->debugfs_phy, ar, &fops_printk_fwd);
 
 	return 0;
 }

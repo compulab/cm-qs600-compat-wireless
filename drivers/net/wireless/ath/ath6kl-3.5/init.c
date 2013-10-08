@@ -54,7 +54,8 @@ unsigned int ath6kl_ath0_name;
 unsigned int ath6kl_ce_flags = 1;
 #endif
 unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
-unsigned short reg_domain = NULL_REG_CODE;
+unsigned short reg_domain = NULL_REG_CODE;	/* user prefer */
+unsigned short reg_domain_used = NULL_REG_CODE;	/* final used */
 
 #ifdef ATH6KL_DIAGNOSTIC
 unsigned int diag_local_test;
@@ -1158,6 +1159,8 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 	ath6kl_p2p_rc_deinit(ar);
 
 	ath6kl_reg_deinit(ar);
+
+	ath6kl_printk_fwd_reset(ar);
 
 	vfree(ar->fw_board);
 	vfree(ar->fw_otp);
@@ -2737,7 +2740,9 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 
 	/* Overwrite the default rd code */
 	if (reg_domain != NULL_REG_CODE) {
-		ret = ath6kl_reg_set_rdcode(ar, reg_domain);
+		ret = ath6kl_reg_set_rdcode(ar,
+					reg_domain,
+					&reg_domain_used);
 		if (ret)
 			goto err_power_off;
 	}
@@ -3287,6 +3292,8 @@ int ath6kl_core_init(struct ath6kl *ar)
 	else
 		ath6kl_info(" skb copy disable\n");
 
+	ath6kl_printk_fwd_reset(ar);
+
 	return ret;
 
 err_rxbuf_cleanup:
@@ -3388,14 +3395,14 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 		ath6kl_err("down_interruptible failed\n");
 		return;
 	}
-	
+
 	if (down_interruptible(&ar->wmi_evt_sem)) {
 		ath6kl_err("wmi down_interruptible failed\n");
 		return;
 	}
-	
+
 	set_bit(DESTROY_IN_PROGRESS, &ar->flag);
-	
+
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
 		list_del(&vif->list);
@@ -3436,6 +3443,6 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	ath6kl_reset_device(ar, ar->target_type, true, true);
 
 	up(&ar->wmi_evt_sem);
-	
+
 	up(&ar->sem);
 }

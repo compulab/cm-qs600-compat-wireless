@@ -3132,6 +3132,7 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 	u16 amsdu_sz, u8 status)
 {
+	struct ath6kl *ar = vif->ar;
 	struct aggr_conn_info *aggr_conn;
 	struct txtid *txtid;
 	struct ath6kl_sta *conn;
@@ -3161,6 +3162,11 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 			txtid->max_aggr_sz = amsdu_sz;
 		else
 			txtid->max_aggr_sz = 0;
+
+		if (txtid->max_aggr_sz == 0 &&
+			(test_bit(SCC_ENABLED, &ar->flag) ||
+			test_bit(MCC_ENABLED, &ar->flag)))
+			txtid->max_aggr_sz = 4096;
 
 		/* 0 means disable */
 		if (!txtid->max_aggr_sz)

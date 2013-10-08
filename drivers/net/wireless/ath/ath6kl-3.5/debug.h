@@ -232,6 +232,24 @@ enum ath6kl_war {
 	ATH6KL_WAR_INVALID_RATE,
 };
 
+struct ath6kl_print_fwd_ctx {
+#define ATH6KL_PRINTK_FWD_MODE_ENABLE		(1 << 0)
+#define ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE	(1 << 1)
+	u32 flags;
+
+	struct ath6kl *ar;
+	struct ath6kl_vif *fwd_vif;
+	spinlock_t lock;
+
+#define ATH6KL_PRINTK_FWD_MAX_BUF_SIZE	(256)
+	u8 fwd_buf[2][ATH6KL_PRINTK_FWD_MAX_BUF_SIZE];
+	int current_len;
+	int current_buf_idx;
+};
+
+void ath6kl_printk_fwd_setup(struct ath6kl *ar, bool enable);
+void ath6kl_printk_fwd_reset(struct ath6kl *ar);
+
 static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
 	enum ATH6KL_MODULE_QUIRKS mask)
 {

@@ -350,7 +350,8 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 				u8 *assoc_info);
 void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 			bool mcc,
-			bool call_on_disconnect);
+			bool call_on_disconnect,
+			u8 connected_count);
 bool ath6kl_p2p_pending_connect_event(struct ath6kl_vif *vif,
 					const u8 *bssid,
 					const u8 *req_ie,

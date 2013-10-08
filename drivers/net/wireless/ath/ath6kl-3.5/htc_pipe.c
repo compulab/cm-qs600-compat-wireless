@@ -93,7 +93,7 @@ static void send_packet_completion(struct htc_target *target,
 	struct htc_endpoint *ep = &target->endpoint[packet->endpoint];
 	struct list_head container;
 
-	restore_tx_packet(packet);	
+	restore_tx_packet(packet);
 	INIT_LIST_HEAD(&container);
 	list_add_tail(&packet->list, &container);
 	/* do completion */
@@ -2499,54 +2499,49 @@ int ath6kl_htc_pipe_stat(struct htc_target *target,
 		len += snprintf(buf + len, buf_len - len,
 				" seq_no              : %d\n",
 				ep->seqno);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_low_indicate   : %d\n",
-				ep_st->cred_low_indicate);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_rpt_from_rx    : %d\n",
-				ep_st->cred_rpt_from_rx);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_rpt_from_other : %d\n",
-				ep_st->cred_rpt_from_other);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_rpt_ep0        : %d\n",
-				ep_st->cred_rpt_ep0);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_from_rx        : %d\n",
-				ep_st->cred_from_rx);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_from_other     : %d\n",
-				ep_st->cred_from_other);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_from_ep0       : %d\n",
-				ep_st->cred_from_ep0);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_cosumd         : %d\n",
-				ep_st->cred_cosumd);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_retnd          : %d\n",
-				ep_st->cred_retnd);
+		if (ep->tx_credit_flow_enabled) {
+			len += snprintf(buf + len, buf_len - len,
+					" cred_low_indicate   : %d\n",
+					ep_st->cred_low_indicate);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_rpt_from_rx    : %d\n",
+					ep_st->cred_rpt_from_rx);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_rpt_from_other : %d\n",
+					ep_st->cred_rpt_from_other);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_rpt_ep0        : %d\n",
+					ep_st->cred_rpt_ep0);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_from_rx        : %d\n",
+					ep_st->cred_from_rx);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_from_other     : %d\n",
+					ep_st->cred_from_other);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_from_ep0       : %d\n",
+					ep_st->cred_from_ep0);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_cosumd         : %d\n",
+					ep_st->cred_cosumd);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_retnd          : %d\n",
+					ep_st->cred_retnd);
+		}
 		len += snprintf(buf + len, buf_len - len,
 				" tx_issued           : %d\n",
 				ep_st->tx_issued);
 		len += snprintf(buf + len, buf_len - len,
 				" tx_dropped          : %d\n",
 				ep_st->tx_dropped);
-		len += snprintf(buf + len, buf_len - len,
-				" tx_cred_rpt         : %d\n",
-				ep_st->tx_cred_rpt);
+		if (ep->tx_credit_flow_enabled) {
+			len += snprintf(buf + len, buf_len - len,
+					" tx_cred_rpt         : %d\n",
+					ep_st->tx_cred_rpt);
+		}
 		len += snprintf(buf + len, buf_len - len,
 				" rx_pkts             : %d\n",
 				ep_st->rx_pkts);
-		len += snprintf(buf + len, buf_len - len,
-				" rx_lkahds           : %d\n",
-				ep_st->rx_lkahds);
-		len += snprintf(buf + len, buf_len - len,
-				" rx_alloc_thresh_hit : %d\n",
-				ep_st->rx_alloc_thresh_hit);
-		len += snprintf(buf + len, buf_len - len,
-				" rxalloc_thresh_byte : %d\n",
-				ep_st->rxalloc_thresh_byte);
 
 		/* Bundle mode */
 		if (htc_bundle_recv || htc_bundle_send) {

@@ -27,7 +27,7 @@
 
 /* constants */
 #define TX_URB_COUNT		32
-#define TX_URB_COUNT_MCC	10	/* prefer to queue in host side */
+#define TX_URB_COUNT_LIMIT	10	/* prefer to queue in host side */
 #define RX_URB_COUNT		32
 
 #define ATH6KL_USB_RX_BUFFER_SIZE  2048
@@ -1564,7 +1564,8 @@ int usb_auto_pm_disable(struct ath6kl *ar)
 	spin_unlock_bh(&ar->usb_pm_lock);
 
 	refcnt = usb_debugfs_get_pm_usage_cnt(ar);
-	if (refcnt != ar->auto_pm_cnt)
+	if ((ar->autopm_turn_on) &&
+	    (refcnt != ar->auto_pm_cnt))
 		ath6kl_err("autopm unsync, refcnt=%d my=%d/%d ret %d",
 			   refcnt,
 			   ar->auto_pm_cnt,
@@ -1573,10 +1574,11 @@ int usb_auto_pm_disable(struct ath6kl *ar)
 
 	ath6kl_dbg(ATH6KL_DBG_USB |
 		   ATH6KL_DBG_EXT_AUTOPM,
-		   "autopm +1 refcnt=%d my=%d/%d ret %d\n",
+		   "autopm +1 refcnt=%d my=%d/%d %s ret %d\n",
 		   refcnt,
 		   ar->auto_pm_cnt,
 		   ar->auto_pm_fail_cnt,
+		   ((refcnt != ar->auto_pm_cnt) ? "unsync" : ""),
 		   ret);
 
 	return ret;
@@ -1599,7 +1601,8 @@ void usb_auto_pm_enable(struct ath6kl *ar)
 	spin_unlock_bh(&ar->usb_pm_lock);
 
 	refcnt = usb_debugfs_get_pm_usage_cnt(ar);
-	if (refcnt != ar->auto_pm_cnt)
+	if ((ar->autopm_turn_on) &&
+	    (refcnt != ar->auto_pm_cnt))
 		ath6kl_err("autopm unsync, refcnt=%d my=%d/%d",
 			   refcnt,
 			   ar->auto_pm_cnt,
@@ -1607,10 +1610,11 @@ void usb_auto_pm_enable(struct ath6kl *ar)
 
 	ath6kl_dbg(ATH6KL_DBG_USB |
 		   ATH6KL_DBG_EXT_AUTOPM,
-		   "autopm -1 refcnt=%d my=%d/%d\n",
+		   "autopm -1 refcnt=%d my=%d/%d %s\n",
 		   usb_debugfs_get_pm_usage_cnt(ar),
 		   ar->auto_pm_cnt,
-		   ar->auto_pm_fail_cnt);
+		   ar->auto_pm_fail_cnt,
+		   ((refcnt != ar->auto_pm_cnt) ? "unsync" : ""));
 }
 
 void usb_auto_pm_turnoff(struct ath6kl *ar)
@@ -2042,7 +2046,7 @@ static u16 ath6kl_usb_get_max_queue_number(struct ath6kl *ar, u8 PipeID)
 	return device->pipes[PipeID].urb_alloc;
 }
 
-static void ath6kl_usb_set_max_queue_number(struct ath6kl *ar, bool mccEnable)
+static void ath6kl_usb_set_max_queue_number(struct ath6kl *ar, bool limitEnable)
 {
 	struct ath6kl_usb *device = ath6kl_usb_priv(ar);
 	struct ath6kl_usb_pipe *pipe;
@@ -2056,10 +2060,10 @@ static void ath6kl_usb_set_max_queue_number(struct ath6kl *ar, bool mccEnable)
 		    (pipe->ep_address != ATH6KL_USB_EP_ADDR_APP_CTRL_OUT)) {
 			spin_lock_irqsave(&pipe->ar_usb->cs_lock, flags);
 
-			BUG_ON(pipe->urb_alloc < TX_URB_COUNT_MCC);
+			BUG_ON(pipe->urb_alloc < TX_URB_COUNT_LIMIT);
 
-			if (mccEnable)
-				pipe->urb_cnt_thresh_out = TX_URB_COUNT_MCC;
+			if (limitEnable)
+				pipe->urb_cnt_thresh_out = TX_URB_COUNT_LIMIT;
 			else
 				pipe->urb_cnt_thresh_out = 0;
 
@@ -2068,7 +2072,7 @@ static void ath6kl_usb_set_max_queue_number(struct ath6kl *ar, bool mccEnable)
 			ath6kl_dbg(ATH6KL_DBG_USB, "%s, id %d mccEnable %d\n",
 					__func__,
 					i,
-					mccEnable);
+					limitEnable);
 		}
 	}
 

@@ -1270,7 +1270,7 @@ void sdio_auto_pm_set_delay(struct ath6kl *ar, int delay)
 }
 #endif
 
-static void ath6kl_sdio_set_max_queue_number(struct ath6kl *ar, bool mccEnable)
+static void ath6kl_sdio_set_max_queue_number(struct ath6kl *ar, bool limitEnable)
 {
 	/* TBD */
 }

@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.511)
+#define __BUILD_VERSION_ (3.5.0.517)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -411,6 +411,8 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_GTX_MAX_BACK_OFF 6
 #define ATH6KL_GTX_MIN_RSSI 35
 #define ATH6KL_GTX_FORCE_BACKOFF 0
+
+#define  ATH6KL_MCC_PAUSE_AHEAD_PERIOD		(msecs_to_jiffies(40))
 
 /* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
 * event in certain platform
@@ -1206,6 +1208,8 @@ struct target_stats {
 	u32 arp_replied;
 
 	struct timeval update_time;
+
+	u16 cs_roam_cnt;
 };
 
 struct ath6kl_mbox_info {
@@ -1514,6 +1518,8 @@ struct ath6kl_vif {
 
 	int p2p_wise_full_scan;		/* Counter to trigger full P2P scan. */
 	u16 next_conn_status;		/* CR508988 */
+
+	struct timeval last_connect_time;
 };
 
 #define WOW_LIST_ID		0
@@ -1542,6 +1548,7 @@ enum ath6kl_dev_state {
 	CFG80211_REGDB,
 	RECOVER_IN_PROCESS,
 	RESET_RESUME_IN_PROGRESS,
+	SCC_ENABLED,
 };
 
 enum ath6kl_state {
@@ -1890,6 +1897,7 @@ struct ath6kl {
 	struct wmi_green_tx_params green_tx_params;
 
 	struct timer_list eapol_shprotect_timer;
+	struct timer_list mcc_pause_ahead_timer;
 	u32 eapol_shprotect_vif;			/* vif mask */
 
 	/* Force wakeup interval = DTIM * dtim_ext */
@@ -2175,6 +2183,9 @@ extern unsigned int ath6kl_ce_flags;
 #ifdef CONFIG_ANDROID
 extern unsigned int ath6kl_bt_on;
 #endif
+
+extern unsigned short reg_domain;
+extern unsigned short reg_domain_used;
 
 #if defined(CONFIG_CRASH_DUMP) || defined(ATH6KL_HSIC_RECOVER)
 int _readwrite_file(const char *filename, char *rbuf,

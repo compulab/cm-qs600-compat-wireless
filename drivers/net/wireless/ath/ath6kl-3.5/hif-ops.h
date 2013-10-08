@@ -213,11 +213,11 @@ static inline u16 ath6kl_hif_pipe_get_max_queue_number(struct ath6kl *ar,
 }
 
 static inline void ath6kl_hif_pipe_set_max_queue_number(struct ath6kl *ar,
-	bool mccEnable)
+	bool limitEnable)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set max queue number\n");
 
-	ar->hif_ops->pipe_set_max_queue_number(ar, mccEnable);
+	ar->hif_ops->pipe_set_max_queue_number(ar, limitEnable);
 }
 
 static inline u16 ath6kl_hif_pipe_set_max_sche(struct ath6kl *ar,

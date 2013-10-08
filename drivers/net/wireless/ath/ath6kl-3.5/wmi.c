@@ -1353,10 +1353,15 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 		/* AP mode start/STA connected event */
 		struct net_device *dev = vif->ndev;
 		if (memcmp(dev->dev_addr, ev->u.ap_bss.bssid, ETH_ALEN) == 0) {
-			ath6kl_dbg(ATH6KL_DBG_WMI, "%s: freq %d bssid %pM "
+			ath6kl_dbg(ATH6KL_DBG_WMI |
+				   ATH6KL_DBG_EXT_INFO1,
+				   "%s: freq %d bssid %pM "
 				   "(AP started)\n",
 				   __func__, le16_to_cpu(ev->u.ap_bss.ch),
 				   ev->u.ap_bss.bssid);
+
+			do_gettimeofday(&vif->last_connect_time);
+
 			ath6kl_p2p_flowctrl_set_conn_id(vif,
 							ev->u.ap_bss.bssid,
 							ev->u.ap_bss.aid);
@@ -1378,7 +1383,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			/* Report Channel Switch if need. */
 			ath6kl_ap_ch_switch(vif);
 		} else {
-			ath6kl_dbg(ATH6KL_DBG_WMI, "%s: aid %u mac_addr %pM "
+			ath6kl_dbg(ATH6KL_DBG_WMI |
+				   ATH6KL_DBG_EXT_INFO1,
+				   "%s: aid %u mac_addr %pM "
 				   "auth=%u keymgmt=%u cipher=%u apsd_info=%u "
 				   "(STA connected)\n",
 				   __func__, ev->u.ap_sta.aid,
@@ -1429,6 +1436,8 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 		   le16_to_cpu(ev->u.sta.listen_intvl),
 		   le16_to_cpu(ev->u.sta.beacon_intvl),
 		   le32_to_cpu(ev->u.sta.nw_type));
+
+	do_gettimeofday(&vif->last_connect_time);
 
 	/* Start of assoc rsp IEs */
 	pie = ev->assoc_info + ev->beacon_ie_len +
@@ -4522,7 +4531,7 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		dev_kfree_skb(skb);
 		return -ERESTARTSYS;
 	}
-	
+
 	/* avoid wmi event be processed while driver unloading */
 	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
 		ath6kl_err("recv %d, destroy in progress %lu\n", id, ar->flag);
@@ -4531,13 +4540,13 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 		return -EBUSY;
 	}
 
-	if (!test_bit(FIRST_BOOT, &ar->flag) && 
+	if (!test_bit(FIRST_BOOT, &ar->flag) &&
 		!test_bit(WMI_READY, &ar->flag)) {
 		ath6kl_err("recv %d, destroy in progress %lu\n", id, ar->flag);
 		up(&ar->wmi_evt_sem);
 		dev_kfree_skb(skb);
 		return -EBUSY;
-    }	
+	}
 
 	wmi->stat.last_rx_evt[wmi->stat.rx_evt_cnt &
 				(WMI_STAT_MAX_REC - 1)] = id;

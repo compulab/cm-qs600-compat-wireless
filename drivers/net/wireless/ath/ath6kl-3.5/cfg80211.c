@@ -757,7 +757,7 @@ DONE:
 
 static void switch_tid_rx_timeout(
 		struct ath6kl_vif *vif,
-		bool mcc)
+		bool enlarge_aggr_rx_timer)
 {
 	u8 i, j = 0;
 	struct aggr_conn_info *aggr_conn;
@@ -772,7 +772,7 @@ static void switch_tid_rx_timeout(
 			case WMM_AC_BK:
 			case WMM_AC_BE:
 			case WMM_AC_VI:
-				if (mcc)
+				if (enlarge_aggr_rx_timer)
 					aggr_conn->tid_timeout_setting[j] =
 						MCC_AGGR_RX_TIMEOUT;
 				else
@@ -780,7 +780,7 @@ static void switch_tid_rx_timeout(
 						AGGR_RX_TIMEOUT;
 				break;
 			case WMM_AC_VO:
-				if (mcc)
+				if (enlarge_aggr_rx_timer)
 					aggr_conn->tid_timeout_setting[j] =
 						MCC_AGGR_RX_TIMEOUT_VO;
 				else
@@ -878,7 +878,11 @@ void ath6kl_switch_parameter_based_on_connection(
 				if (call_on_disconnect &&
 					vif->fw_vif_idx == vif_temp->fw_vif_idx)
 					continue;
-				switch_tid_rx_timeout(vif_temp, mcc);
+				if (vif->wdev.iftype ==
+					NL80211_IFTYPE_STATION && !mcc)
+					switch_tid_rx_timeout(vif_temp, false);
+				else
+					switch_tid_rx_timeout(vif_temp, true);
 			}
 		}
 	}
@@ -923,6 +927,11 @@ void ath6kl_switch_parameter_based_on_connection(
 	else
 		clear_bit(MCC_ENABLED, &ar->flag);
 
+	if (connected_count > 1 && !mcc)
+		set_bit(SCC_ENABLED, &ar->flag);
+	else
+		clear_bit(SCC_ENABLED, &ar->flag);
+
 	if (ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL) {
 		if (ar->conf_flags & ATH6KL_CONF_DISABLE_SKIP_FLOWCTRL) {
 			clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
@@ -965,10 +974,13 @@ void ath6kl_switch_parameter_based_on_connection(
 	}
 
 	/* Update HIF queue policy */
-	ath6kl_hif_pipe_set_max_queue_number(ar, mcc);
+	if (connected_count > 1)
+		ath6kl_hif_pipe_set_max_queue_number(ar, true);
+	else
+		ath6kl_hif_pipe_set_max_queue_number(ar, false);
 
 	/* Reconfigurate the PS mode case by case. */
-	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect);
+	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect, connected_count);
 
 #ifdef USB_AUTO_SUSPEND
 	ath6kl_check_autopm_onoff(ar, call_on_disconnect);
@@ -2199,7 +2211,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -ERESTARTSYS;
 	}
 
-	if (test_bit(CONNECT_PEND, &vif->flags)) {
+	if (test_bit(CONNECT_PEND, &vif->flags) &&
+		!test_bit(CONNECTED, &vif->flags)) {
 		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_INFO1,
 			"Connection on-going, reject scan, vif %d\n",
 			vif->fw_vif_idx);

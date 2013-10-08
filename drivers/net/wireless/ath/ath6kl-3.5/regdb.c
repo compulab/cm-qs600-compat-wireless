@@ -1870,7 +1870,7 @@ static const struct ieee80211_regdomain ath6kl_regd_GB = {
 };
 
 static const struct ieee80211_regdomain ath6kl_regd_US = {
-	.n_reg_rules = 5,
+	.n_reg_rules = 6,
 	.alpha2 = "US",
 	.reg_rules = {
 		REG_RULE(2412 - 10, 2462 + 10, 40, 3, 30, 0),
@@ -1878,7 +1878,10 @@ static const struct ieee80211_regdomain ath6kl_regd_US = {
 		REG_RULE(5260 - 10, 5320 + 10, 40, 3, 24, 0
 						 | NL80211_RRF_DFS
 						 | NL80211_RRF_PASSIVE_SCAN),
-		REG_RULE(5500 - 10, 5720 + 10, 40, 3, 24, 0
+		REG_RULE(5500 - 10, 5580 + 10, 40, 3, 24, 0
+						 | NL80211_RRF_DFS
+						 | NL80211_RRF_PASSIVE_SCAN),
+		REG_RULE(5660 - 10, 5720 + 10, 40, 3, 24, 0
 						 | NL80211_RRF_DFS
 						 | NL80211_RRF_PASSIVE_SCAN),
 		REG_RULE(5745 - 10, 5825 + 10, 40, 3, 30, 0),

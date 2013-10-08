@@ -651,6 +651,33 @@ int ath6kl_p2p_utils_check_port(struct ath6kl_vif *vif,
 	return 0;
 }
 
+void ath6kl_mcc_pause_ahead_timeout_handler(unsigned long ptr)
+{
+	struct ath6kl *ar = (struct ath6kl *)ptr;
+	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
+	struct ath6kl_fw_conn_list *fw_conn;
+	int i;
+
+	WARN_ON(!p2p_flowctrl);
+
+	if (!test_bit(MCC_ENABLED, &ar->flag) ||
+	    (!(ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL)) ||
+	    (test_bit(SKIP_FLOWCTRL_EVENT, &ar->flag)) ||
+	    (ar->vif_max == 1))
+		return;
+
+	spin_lock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+	p2p_flowctrl->p2p_flowctrl_event_cnt++;
+	for (i = 0; i < NUM_CONN; i++) {
+		fw_conn = &p2p_flowctrl->fw_conn_list[i];
+		fw_conn->ocs = 1;
+	}
+	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
+	
+	ath6kl_p2p_flowctrl_state_change(ar);
+	ath6kl_p2p_flowctrl_tx_schedule(ar);
+}
+
 struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 						struct ath6kl *ar)
 {
@@ -663,6 +690,10 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 		ath6kl_err("failed to alloc memory for p2p_flowctrl\n");
 		return NULL;
 	}
+
+	setup_timer(&ar->mcc_pause_ahead_timer,
+			ath6kl_mcc_pause_ahead_timeout_handler,
+			(unsigned long) ar);
 
 	p2p_flowctrl->ar = ar;
 	spin_lock_init(&p2p_flowctrl->p2p_flowctrl_lock);
@@ -717,6 +748,7 @@ void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar)
 		}
 
 		kfree(p2p_flowctrl);
+		del_timer(&ar->mcc_pause_ahead_timer);
 	}
 
 	ar->p2p_flowctrl_ctx = NULL;
@@ -1122,6 +1154,7 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	int i;
+	bool update_pause_ahead = false;
 
 	WARN_ON(!p2p_flowctrl);
 	WARN_ON(numConn > NUM_CONN);
@@ -1130,6 +1163,8 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	p2p_flowctrl->p2p_flowctrl_event_cnt++;
 	for (i = 0; i < numConn; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
+		if (fw_conn->ocs != ((ac_map[i] >> 5) & 0x1))
+			update_pause_ahead = true;
 		fw_conn->connect_status = ac_map[i];
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
@@ -1138,6 +1173,9 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 		   "p2p_flowctrl state_update %p ac_map %02x %02x %02x %02x\n",
 		   ar,
 		   ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
+	if (update_pause_ahead)
+		mod_timer(&ar->mcc_pause_ahead_timer,
+			jiffies + ATH6KL_MCC_PAUSE_AHEAD_PERIOD);
 
 	return;
 }
@@ -2298,11 +2336,11 @@ void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
 
 void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 			bool mcc,
-			bool call_on_disconnect)
+			bool call_on_disconnect,
+			u8 connected_count)
 {
 	struct ath6kl_vif *vif;
 	u8 pwr_mode = REC_POWER;
-	int connected = 0;
 
 	/* Not support PS in MCC mode currently. */
 
@@ -2332,25 +2370,25 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 						pwr_mode = MAX_PERF_POWER;
 				}
 			} else {
-				/* SCC/notP2P-VIF - Back to original PS mode. */
+				/* notP2P-VIF - Back to original PS mode. */
 				clear_bit(PS_STICK, &vif->flags);
 				if (vif->nw_type == AP_NETWORK)
 					pwr_mode = MAX_PERF_POWER;
-				else {	/* Ad-Hoc & STA */
-					if (vif->wdev.ps == NL80211_PS_ENABLED)
+				else {	/* Ad-Hoc & STA, Max_perf_power in SCC. */
+					if (vif->wdev.ps == NL80211_PS_ENABLED &&
+						connected_count == 1)
 						pwr_mode = REC_POWER;
 					else
 						pwr_mode = MAX_PERF_POWER;
 				}
 			}
-			connected++;
 
 			ath6kl_dbg(ATH6KL_DBG_INFO,
 				"PS vif %d ps %d-%d conn %d %s %s => %s\n",
 				vif->fw_vif_idx,
 				vif->last_pwr_mode,
 				vif->wdev.ps,
-				connected,
+				connected_count,
 				(mcc ? "MCC" : "SCC"),
 				(call_on_disconnect ? "DISCONN" : "CONN"),
 				(pwr_mode == REC_POWER ? "ON" : "OFF"));

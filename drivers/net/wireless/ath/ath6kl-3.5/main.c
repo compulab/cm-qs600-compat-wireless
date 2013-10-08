@@ -1707,8 +1707,8 @@ void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver)
 	struct ath6kl *ar = devt;
 
 	memcpy(ar->mac_addr, datap, ETH_ALEN);
-	ath6kl_dbg(ATH6KL_DBG_TRC, "%s: mac addr = %pM\n",
-		   __func__, ar->mac_addr);
+
+	ath6kl_info("MAC ADDRESS %pM\n", ar->mac_addr);
 
 	ar->version.wlan_ver = sw_ver;
 	ar->version.abi_ver = abi_ver;
@@ -1758,8 +1758,10 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 		   ATH6KL_DBG_EXT_INFO1 |
-		   ATH6KL_DBG_EXT_SCAN,
-		"scan complete: %d\n",
+		   ATH6KL_DBG_EXT_SCAN |
+		   ATH6KL_DBG_EXT_DEF,
+		"vif %d, scan complete: %d\n",
+		vif->fw_vif_idx,
 		status);
 }
 
@@ -1954,6 +1956,8 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 		le16_to_cpu(tgt_stats->cserv_stats.cs_connect_cnt);
 	stats->cs_discon_cnt +=
 		le16_to_cpu(tgt_stats->cserv_stats.cs_discon_cnt);
+	stats->cs_roam_cnt +=
+		le16_to_cpu(tgt_stats->cserv_stats.cs_roam_count);
 
 	stats->cs_ave_beacon_rssi =
 		a_sle16_to_cpu(tgt_stats->cserv_stats.cs_ave_beacon_rssi);
