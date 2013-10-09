@@ -1271,6 +1271,12 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 #ifdef CONFIG_ATH6KL_BAM2BAM
 			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
 #endif
+			if (ar->is_mcc_enabled) {
+				ar->is_mcc_enabled = false;
+				ath6kl_ipa_enable_host_route_config (vif, false);
+				ath6kl_dbg(ATH6KL_DBG_FLOWCTRL, "(ap) disc_evt: (mcc_disabled)\n");
+			}
+
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
 			vif->max_num_sta = 0;
@@ -1303,6 +1309,11 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 				ath6kl_mcc_flowctrl_set_conn_id(vif, NULL,
 					ar->mcc_flowctrl_ctx->fw_conn_list[i].conn_id);
 			}
+		}
+		if (ar->is_mcc_enabled) {
+			ar->is_mcc_enabled = false;
+			ath6kl_ipa_enable_host_route_config (vif, false);
+			ath6kl_dbg(ATH6KL_DBG_FLOWCTRL, "(infra) disc_evt: (mcc_disabled)\n");
 		}
 	}
 
