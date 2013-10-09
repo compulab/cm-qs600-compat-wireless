@@ -16,7 +16,9 @@
 
 #include "alx.h"
 #include "alx_hwcom.h"
+
 #include <linux/moduleparam.h>
+
 
 char alx_drv_name[] = "alx";
 static const char alx_drv_description[] =
@@ -32,6 +34,7 @@ u32 mac_addr_lo32=0xFFFFFFFFUL;
 module_param(mac_addr_lo32, uint, 0);
 MODULE_PARM_DESC(mac_addr_lo32,"Specify the low 32 bits of the mac address");
 // END of ProjE change
+
 
 /* alx_pci_tbl - PCI Device ID Table
  *
@@ -61,6 +64,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 static int alx_open_internal(struct alx_adapter *adpt, u32 ctrl);
 static void alx_stop_internal(struct alx_adapter *adpt, u32 ctrl);
+static void alx_init_ring_ptrs(struct alx_adapter *adpt);
 
 int alx_cfg_r16(const struct alx_hw *hw, int reg, u16 *pval)
 {
@@ -460,8 +464,9 @@ static void alx_receive_skb(struct alx_adapter *adpt,
 	netif_receive_skb(skb);
 }
 
+
 static bool alx_get_rrdesc(struct alx_adapter *adpt, struct alx_rx_queue *rxque,
-				union alx_sw_rrdesc *srrd)
+			   union alx_sw_rrdesc *srrd)
 {
 	u32 cnt = 0;
 	union alx_hw_rrdesc *hrrd =
@@ -475,7 +480,7 @@ static bool alx_get_rrdesc(struct alx_adapter *adpt, struct alx_rx_queue *rxque,
 	if (!srrd->genr.update)
 		return false;
 
-	/* Workaround for the PCIe DMA write issue */
+	/* workaround for the PCIe DMA write issue */
 	/* Please make sure hrrd->dmt.dw0 is set to 0 after handling, please refer to the later line in the same function alx_get_rrdesc: hrrd->dfmt.dw0 = 0;*/
 	if (srrd->dfmt.dw0 == 0) {
 		volatile u32 *flag = (volatile u32 *)&hrrd->dfmt.dw0;
@@ -600,6 +605,8 @@ static int alx_refresh_rx_buffer(struct alx_rx_queue *rxque)
 						 DMA_FROM_DEVICE);
 		srfd.genr.addr = curr_rxbuf->dma;
 		alx_set_rfdesc(rxque, &srfd);
+		/*alx_err(adpt, "rx-buffer-addr=%llx\n",
+			(u64)curr_rxbuf->dma);*/
 
 		next_produce_idx = rxque->rfq.produce_idx;
 		if (++next_produce_idx == rxque->rfq.count)
@@ -636,14 +643,16 @@ static void alx_clean_rfdesc(struct alx_rx_queue *rxque,
 	rxque->rfq.consume_idx = consume_idx;
 }
 
-#if 0 /* Mocha's compiler doesn't allow warning, these 3 functions are not used any more */
+#if 0
 #define ROLL_BK_NUM 16
 
 static void alx_dump_rrd(struct alx_adapter *adpt, struct alx_rx_queue *rxque)
 {
 	union alx_sw_rrdesc srrd;
 	union alx_hw_rrdesc *hrrd;
+
 	u16 begin, end;
+
 
 	alx_err(adpt, "PATCH v5, dumpping RRD .... consumer idx=%x\n",
 			rxque->rrq.consume_idx);
@@ -665,10 +674,12 @@ static void alx_dump_rrd(struct alx_adapter *adpt, struct alx_rx_queue *rxque)
 	}
 }
 
+
 static void alx_dump_rfd(struct alx_adapter *adpt, struct alx_rx_queue *rxque, u16 idx)
 {
 	struct alx_buffer *rfbuf;
 	u16 begin, end;
+
 
 	alx_err(adpt, "RFD:%x\n", idx);
 
@@ -681,7 +692,7 @@ static void alx_dump_rfd(struct alx_adapter *adpt, struct alx_rx_queue *rxque, u
 		rfbuf = GET_RF_BUFFER(rxque, begin);
 		alx_err(adpt, "IDX(%x): addr=0x%llx\n", begin, (u64)rfbuf->dma);
         if (++begin == rxque->rfq.count)
-            begin = 0;
+		begin = 0;
 	}
 }
 
@@ -697,6 +708,7 @@ static void alx_dump_register(struct alx_adapter *adpt)
 	}
 
 }
+
 #endif
 
 u32 alx_read_dbg_reg(struct alx_hw *hw, u16 reg)
@@ -708,8 +720,6 @@ u32 alx_read_dbg_reg(struct alx_hw *hw, u16 reg)
 
 	return val;
 }
-
-
 
 static bool alx_dispatch_rx_irq(struct alx_msix_param *msix,
 				struct alx_rx_queue *rxque)
@@ -2079,12 +2089,15 @@ static int __devinit alx_init_adapter_special(struct alx_adapter *adpt)
 		goto init_alf_adapter;
 		break;
 	case alx_mac_l1c:
+	case alx_mac_l2c:
+		goto init_alc_adapter;
+		break;
 	case alx_mac_l1d_v1:
 	case alx_mac_l1d_v2:
-	case alx_mac_l2c:
 	case alx_mac_l2cb_v1:
 	case alx_mac_l2cb_v20:
 	case alx_mac_l2cb_v21:
+		adpt->hw.bHibBug = true;
 		goto init_alc_adapter;
 		break;
 	default:
@@ -2596,9 +2609,12 @@ static void alx_free_all_rtx_descriptor(struct alx_adapter *adpt)
 	adpt->smb.dma = 0;
 	adpt->smb.smb = NULL;
 
+	if (ring_header->desc) {
 	pci_free_consistent(pdev, ring_header->size, ring_header->desc,
 					ring_header->dma);
 	ring_header->desc = NULL;
+	}
+
 	ring_header->size = ring_header->used = 0;
 }
 
@@ -2728,8 +2744,9 @@ static int alx_open_internal(struct alx_adapter *adpt, u32 ctrl)
 	/* check link status */
 	SET_ADPT_FLAG(0, TASK_LSC_REQ);
 	adpt->link_jiffies = jiffies + ALX_TRY_LINK_TIMEOUT;
+#ifndef ALX_HIB_TIMER_CONFIG
 	mod_timer(&adpt->alx_timer, jiffies);
-
+#endif
 	return retval;
 
 err_request_irq:
@@ -2759,8 +2776,9 @@ static void alx_stop_internal(struct alx_adapter *adpt, u32 ctrl)
 
 	CLI_ADPT_FLAG(0, TASK_LSC_REQ);
 	CLI_ADPT_FLAG(0, TASK_REINIT_REQ);
+#ifndef ALX_HIB_TIMER_CONFIG
 	del_timer_sync(&adpt->alx_timer);
-
+#endif
 	if (ctrl & ALX_OPEN_CTRL_RESET_PHY)
 		hw->cbs.reset_phy(hw);
 
@@ -3074,6 +3092,44 @@ static struct net_device_stats *alx_get_stats(struct net_device *netdev)
 	return &netdev->stats;
 }
 
+#ifdef ALX_LINK_DOWN_CONFIG
+static int alx_link_mac_restore(struct alx_adapter *adpt)
+{
+	struct alx_hw *hw = &adpt->hw;
+	int retval = 0;
+	int i;
+
+	printk(KERN_INFO "alx: into NEW alx_link_mac_restore\n");
+	alx_init_ring_ptrs(adpt);
+
+	alx_set_multicase_list(adpt->netdev);
+	alx_restore_vlan(adpt);
+
+	if (hw->cbs.config_mac)
+		retval = hw->cbs.config_mac(hw, adpt->rxbuf_size,
+				adpt->num_hw_rxques, adpt->num_rxdescs,
+				adpt->num_txques, adpt->num_txdescs);
+
+	if (hw->cbs.config_tx)
+		retval = hw->cbs.config_tx(hw);
+
+	if (hw->cbs.config_rx)
+		retval = hw->cbs.config_rx(hw);
+
+	alx_config_rss(adpt);
+
+	for (i = 0; i < adpt->num_hw_rxques; i++)
+		alx_refresh_rx_buffer(adpt->rx_queue[i]);
+
+	/* configure HW regsiters of MSIX */
+	if (hw->cbs.config_msix)
+		retval = hw->cbs.config_msix(hw, adpt->num_msix_intrs,
+					CHK_ADPT_FLAG(0, MSIX_EN),
+					CHK_ADPT_FLAG(0, MSI_EN));
+
+	return retval;
+}
+#endif
 
 static void alx_link_task_routine(struct alx_adapter *adpt)
 {
@@ -3135,10 +3191,17 @@ static void alx_link_task_routine(struct alx_adapter *adpt)
 		netif_carrier_off(netdev);
 		netif_tx_stop_all_queues(netdev);
 
+#ifdef ALX_LINK_DOWN_CONFIG
+		hw->cbs.reset_mac(hw);
+#else
 		hw->cbs.stop_mac(hw);
+#endif
 		hw->cbs.config_aspm(hw, false, true);
 		hw->cbs.setup_phy_link(hw, hw->autoneg_advertised, true,
 				!hw->disable_fc_autoneg);
+#ifdef ALX_LINK_DOWN_CONFIG
+		alx_link_mac_restore(adpt);
+#endif
 	}
 }
 
@@ -3164,6 +3227,11 @@ static void alx_timer_routine(unsigned long data)
 	struct alx_adapter *adpt = (struct alx_adapter *)data;
 	unsigned long delay;
 
+#ifdef ALX_HIB_TASK_CONFIG
+	struct alx_hw *hw = &adpt->hw;
+	if (hw->bHibBug)
+		hw->cbs.apply_phy_hib_patch(hw);
+#endif
 	/* poll faster when waiting for link */
 	if (CHK_ADPT_FLAG(0, TASK_LSC_REQ))
 		delay = HZ / 10;
@@ -3742,8 +3810,11 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	/* get mac addr and perm mac addr, set to register */
 	if (hw->cbs.get_mac_addr)
 		retval = hw->cbs.get_mac_addr(hw, hw->mac_perm_addr);
-	else
+	else {
 		retval = -EINVAL;
+	}
+
+/* original QC code */
 #if 0
 	if (retval) {
 		eth_hw_addr_random(netdev);
@@ -3751,7 +3822,7 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	}
 #endif
 
-	// ProjE change
+	/* ProjE change */
         /* Fill the mac address from input parameters
          * Always use the mac address from the input parameters
          */
@@ -3777,6 +3848,7 @@ static int __devinit alx_init(struct pci_dev *pdev,
                netdev->dev_addr[3], netdev->dev_addr[4], netdev->dev_addr[5]);
         memcpy(hw->mac_perm_addr, netdev->dev_addr, netdev->addr_len);
         // END ProjE change
+
 
 	memcpy(hw->mac_addr, hw->mac_perm_addr, netdev->addr_len);
 	if (hw->cbs.set_mac_addr)
@@ -3893,6 +3965,9 @@ static int __devinit alx_init(struct pci_dev *pdev,
 			   "RSS(SW) Capable: %s\n",
 			   CHK_ADPT_FLAG(0, SRSS_EN) ? "Enable" : "Disable");
 	}
+#ifdef ALX_HIB_TIMER_CONFIG
+	mod_timer(&adpt->alx_timer, jiffies);
+#endif
 
 	printk(KERN_INFO "alx: Atheros Gigabit Network Connection\n");
 	cards_found++;
@@ -3930,6 +4005,9 @@ static void __devexit alx_remove(struct pci_dev *pdev)
 	struct alx_hw *hw = &adpt->hw;
 	struct net_device *netdev = adpt->netdev;
 
+#ifdef ALX_HIB_TIMER_CONFIG
+	del_timer_sync(&adpt->alx_timer);
+#endif
 	SET_ADPT_FLAG(1, STATE_DOWN);
 	cancel_work_sync(&adpt->alx_task);
 
@@ -4065,6 +4143,7 @@ static int __init alx_init_module(void)
 	int retval;
 
 	printk(KERN_INFO "%s\n", alx_drv_description);
+	/* printk(KERN_INFO "%s\n", "-----ALX_V1.0.0.2-----"); */
 	retval = pci_register_driver(&alx_driver);
 
 	return retval;
