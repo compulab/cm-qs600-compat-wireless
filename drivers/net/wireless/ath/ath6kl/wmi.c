@@ -1067,13 +1067,6 @@ static int ath6kl_wmi_disconnect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				ev->bssid, ev->assoc_resp_len, ev->assoc_info,
 				le16_to_cpu(ev->proto_reason_status));
 
-	if (vif->ar->is_mcc_enabled == true) {
-#ifdef CONFIG_ATH6KL_BAM2BAM
-		ath6kl_ipa_enable_host_route_config (vif, false);
-#endif
-		vif->ar->is_mcc_enabled = false;
-		ath6kl_dbg(ATH6KL_DBG_WMI, "disconnect_event: (MCC_DISABLED)\n");
-        }
 
 	if (vif->nw_type == INFRA_NETWORK)
 		vif->ar->sta_bh_override = 0;
