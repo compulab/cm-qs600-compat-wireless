@@ -2976,7 +2976,8 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		return -EOPNOTSUPP;
 
 	list_for_each_entry(tmp_vif, &ar->vif_list, list)
-		if (tmp_vif->nw_type == AP_NETWORK)
+		if ((tmp_vif->nw_type == AP_NETWORK) &&
+				test_bit(CONNECTED, &tmp_vif->flags))
 			max_num_sta += tmp_vif->max_num_sta;
 
 	if (!info->max_num_sta || max_num_sta + info->max_num_sta >
@@ -3904,6 +3905,7 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 	ath6kl_lte_coex_update_wlan_data(vif, 0);
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_PEND, &vif->flags);
+	vif->max_num_sta = 0;
 
 	/* disable scanning */
 	if (test_bit(WMI_READY, &vif->ar->flag)) {
