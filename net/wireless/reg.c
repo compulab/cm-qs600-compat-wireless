@@ -260,7 +260,7 @@ static bool is_an_alpha2(const char *alpha2)
 {
 	if (!alpha2)
 		return false;
-	if (isalpha(alpha2[0]) && isalpha(alpha2[1]))
+	if (isalpha(alpha2[0]) && isalnum(alpha2[1]))
 		return true;
 	return false;
 }
