@@ -20,6 +20,7 @@
 #include "cfg80211.h"
 #include "target.h"
 #include "debug.h"
+#include <linux/vmalloc.h>
 #ifdef ATHTST_SUPPORT
 #include "ieee80211_ioctl.h"
 #include "ce_athtst.h"
@@ -951,43 +952,103 @@ enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 	return ar->ac2ep_map[ac];
 }
 
+static inline u8 *_cookie_malloc(int size, bool *alloc_from_vmalloc)
+{
+	bool from_vmalloc = false;
+	u8 *ptr = NULL;
+
+	/* use kmalloc() first then vmalloc() if fail. */
+	ptr = kzalloc(size, GFP_ATOMIC);
+	if (!ptr) {
+		from_vmalloc = true;
+		ptr = vmalloc(size);
+		if (ptr)
+			memset(ptr, 0 , size);
+	}
+
+	*alloc_from_vmalloc = from_vmalloc;
+
+	return ptr;
+}
+
+static inline void _cookie_free(u8 *buf, bool alloc_from_vmalloc)
+{
+	if (buf == NULL)
+		return;
+
+	if (alloc_from_vmalloc)
+		vfree(buf);
+	else
+		kfree(buf);
+
+	return;
+}
+
 static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	struct ath6kl_cookie_pool *cookie_pool,
 	enum cookie_type cookie_type,
 	u32 cookie_num)
 {
 	u32 i, j, mem_size;
+	bool alloc_from_vmalloc = false;
 
 	WARN_ON(!cookie_num);
 
-	cookie_pool->cookie_num = cookie_num;
 	cookie_pool->cookie_type = cookie_type;
 
 	cookie_pool->cookie_list = NULL;
 	cookie_pool->cookie_count = 0;
 
 	mem_size = sizeof(struct ath6kl_cookie) * cookie_num;
-	cookie_pool->cookie_mem = kzalloc(mem_size, GFP_ATOMIC);
+	cookie_pool->cookie_mem =
+		(struct ath6kl_cookie *)_cookie_malloc(mem_size,
+				&alloc_from_vmalloc);
+
 	if (!cookie_pool->cookie_mem) {
+		cookie_pool->cookie_num = 0;
 		ath6kl_err("unable to allocate cookie, type %d num %d\n",
 				cookie_type,
 				cookie_num);
 		return -ENOMEM;
+	} else {
+		cookie_pool->cookie_num = cookie_num;
+		cookie_pool->cookie_mem->alloc_from_vmalloc =
+			alloc_from_vmalloc;
 	}
 
 	for (i = 0; i < cookie_num; i++) {
 		/* Assign the parent then insert to free queue */
 		cookie_pool->cookie_mem[i].cookie_pool = cookie_pool;
 		cookie_pool->cookie_mem[i].htc_pkt =
-			kzalloc(sizeof(struct htc_packet), GFP_ATOMIC);
-		if (cookie_pool->cookie_mem[i].htc_pkt)
+			(struct htc_packet *)_cookie_malloc(
+					sizeof(struct htc_packet),
+					&alloc_from_vmalloc);
+
+		if (cookie_pool->cookie_mem[i].htc_pkt) {
+			cookie_pool->cookie_mem[i].htc_pkt->alloc_from_vmalloc =
+				alloc_from_vmalloc;
+
 			ath6kl_free_cookie(ar, &cookie_pool->cookie_mem[i]);
-		else {
+		} else {
+			struct htc_packet *htc_pkt;
+
 			ath6kl_err("unable to allocate htc_pkt\n");
 
-			for (j = 0 ; j < i ; j++)
-				kfree(cookie_pool->cookie_mem[j].htc_pkt);
-			kfree(cookie_pool->cookie_mem);
+			for (j = 0 ; j < i ; j++) {
+				htc_pkt = cookie_pool->cookie_mem[j].htc_pkt;
+				if (htc_pkt)
+					_cookie_free((u8 *)htc_pkt,
+						htc_pkt->alloc_from_vmalloc);
+				cookie_pool->cookie_mem[j].htc_pkt = NULL;
+			}
+
+			_cookie_free((u8 *)(cookie_pool->cookie_mem),
+				cookie_pool->cookie_mem->alloc_from_vmalloc);
+
+			cookie_pool->cookie_mem = NULL;
+
+			cookie_pool->cookie_count = 0;
+			cookie_pool->cookie_num = 0;
 			return -ENOMEM;
 		}
 	}
@@ -999,9 +1060,13 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	cookie_pool->cookie_peak_cnt = 0;
 	cookie_pool->cookie_fail_in_row = 0;
 
-	ath6kl_info("Create HTC cookie, type %d num %d\n",
+	ath6kl_info("Create HTC cookie, type %d num %d\n"
+			"pool from vmalloc %d htc from vmalloc %d",
 			cookie_type,
-			cookie_num);
+			cookie_num,
+			cookie_pool->cookie_mem->alloc_from_vmalloc,
+			alloc_from_vmalloc);
+
 	return 0;
 }
 
@@ -1023,11 +1088,22 @@ static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
 	cookie_pool->cookie_list = NULL;
 	cookie_pool->cookie_count = 0;
 
-	for (i = 0; i < cookie_pool->cookie_num; i++)
-		kfree(cookie_pool->cookie_mem[i].htc_pkt);
+	if (cookie_pool->cookie_mem) {
+		for (i = 0; i < cookie_pool->cookie_num; i++) {
+			struct htc_packet *htc_pkt;
 
-	kfree(cookie_pool->cookie_mem);
-	cookie_pool->cookie_mem = NULL;
+			htc_pkt = cookie_pool->cookie_mem[i].htc_pkt;
+			if (htc_pkt)
+				_cookie_free((u8 *)htc_pkt,
+						htc_pkt->alloc_from_vmalloc);
+			cookie_pool->cookie_mem[i].htc_pkt = NULL;
+		}
+
+		_cookie_free((u8 *)(cookie_pool->cookie_mem),
+				cookie_pool->cookie_mem->alloc_from_vmalloc);
+
+		cookie_pool->cookie_mem = NULL;
+	}
 
 	cookie_pool->cookie_alloc_cnt = 0;
 	cookie_pool->cookie_alloc_fail_cnt = 0;

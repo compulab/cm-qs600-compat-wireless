@@ -979,6 +979,7 @@ struct ath6kl_cookie {
 	u32 map_no;
 	struct htc_packet *htc_pkt;
 	struct ath6kl_cookie *arc_list_next;
+	bool alloc_from_vmalloc;
 };
 
 struct ath6kl_cookie_pool {
