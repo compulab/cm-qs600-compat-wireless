@@ -1178,6 +1178,11 @@ static void _reg_remap_rdcode(unsigned short *rdcode_used)
 		country_code_remap = country_code_ori;
 
 		/* TODO : remap country code here */
+		if (country_code_ori == COUNTRY_CHINA) {
+				/* China allow 5150-5350 after 2013/01/31. */
+					country_code_remap = COUNTRY_INDIA;
+		}
+
 		if (country_code_ori != country_code_remap) {
 			*rdcode_used = (ATH6KL_COUNTRY_ERD_FLAG |
 					country_code_remap);
