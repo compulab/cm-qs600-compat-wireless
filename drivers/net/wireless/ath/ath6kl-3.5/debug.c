@@ -4867,6 +4867,21 @@ static ssize_t ath6kl_chan_list_read(struct file *file,
 	buf_len = _BUF_SIZE;
 
 	if (reg->current_regd) {
+		/* If recode is from the user */
+		if (reg_domain != NULL_REG_CODE) {
+			if (reg_domain_used == NULL_REG_CODE)
+				len += scnprintf(p + len, buf_len - len,
+						"\nUser rdcode 0x%x - invalid\n",
+						reg_domain);
+			else
+				len += scnprintf(p + len, buf_len - len,
+						"\nUser rdcode 0x%x - %s 0x%x\n",
+						reg_domain,
+						((reg_domain != reg_domain_used) ?
+						 "remap to" : "use"),
+						reg_domain_used);
+		}
+
 		len += scnprintf(p + len, buf_len - len,
 				"\nCurrent Regulatory - %08x %c%c %d rules\n",
 				reg->current_reg_code,

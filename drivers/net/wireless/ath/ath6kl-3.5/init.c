@@ -54,7 +54,8 @@ unsigned int ath6kl_ath0_name;
 unsigned int ath6kl_ce_flags = 1;
 #endif
 unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
-unsigned short reg_domain = NULL_REG_CODE;
+unsigned short reg_domain = NULL_REG_CODE;	/* user prefer */
+unsigned short reg_domain_used = NULL_REG_CODE;	/* final used */
 unsigned int ath6kl_ps_disabled = ATH6KL_MODULE_DEF_PS_DISABLED;
 
 #ifdef ATH6KL_DIAGNOSTIC
@@ -2741,7 +2742,9 @@ static int __ath6kl_init_hw_start(struct ath6kl *ar)
 
 	/* Overwrite the default rd code */
 	if (reg_domain != NULL_REG_CODE) {
-		ret = ath6kl_reg_set_rdcode(ar, reg_domain);
+		ret = ath6kl_reg_set_rdcode(ar,
+				reg_domain,
+				&reg_domain_used);
 		if (ret)
 			goto err_power_off;
 	}

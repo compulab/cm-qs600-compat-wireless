@@ -2162,6 +2162,9 @@ extern unsigned int ath6kl_ce_flags;
 extern unsigned int ath6kl_bt_on;
 #endif
 
+extern unsigned short reg_domain;
+extern unsigned short reg_domain_used;
+
 #if defined(CONFIG_CRASH_DUMP) || defined(ATH6KL_HSIC_RECOVER)
 int _readwrite_file(const char *filename, char *rbuf,
 	const char *wbuf, size_t length, int mode);
