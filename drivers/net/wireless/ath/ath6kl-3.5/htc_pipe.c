@@ -1400,6 +1400,9 @@ static void do_recv_completion(struct htc_endpoint *ep,
 			       struct list_head *queue_to_indicate)
 {
 	struct htc_packet *packet;
+	struct htc_target *target = (struct htc_target *)
+				    ep->target;
+
 	if (list_empty(queue_to_indicate)) {
 		/* nothing to indicate */
 		return;
@@ -1407,11 +1410,12 @@ static void do_recv_completion(struct htc_endpoint *ep,
 
 	/* using legacy EpRecv */
 	while (!list_empty(queue_to_indicate)) {
+		spin_lock_bh(&target->rx_lock);
 		packet = list_first_entry(queue_to_indicate,
 					struct htc_packet, list);
 		list_del(&packet->list);
-		ep->ep_cb.rx((struct htc_target *)
-				    ep->target, packet);
+		spin_unlock_bh(&target->rx_lock);
+		ep->ep_cb.rx(target, packet);
 	}
 
 	return;
@@ -1422,8 +1426,10 @@ static void recv_packet_completion(struct htc_target *target,
 				   struct htc_packet *packet)
 {
 	struct list_head container;
+	spin_lock_bh(&target->rx_lock);
 	INIT_LIST_HEAD(&container);
 	list_add_tail(&packet->list, &container);
+	spin_unlock_bh(&target->rx_lock);
 	/* do completion */
 	do_recv_completion(ep, &container);
 }

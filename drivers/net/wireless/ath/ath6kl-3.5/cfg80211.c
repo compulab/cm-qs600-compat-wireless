@@ -1163,7 +1163,7 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		return -EIO;
 
 	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
-		ath6kl_err("destroy in progress\n");
+		ath6kl_err("%s destroy in progress %lu\n", __func__ ,ar->flag);
 		return -EBUSY;
 	}
 
@@ -1687,7 +1687,7 @@ static int ath6kl_cfg80211_disconnect(struct wiphy *wiphy,
 		return -EIO;
 
 	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
-		ath6kl_err("busy, destroy in progress\n");
+		ath6kl_err("%s destroy in progress %lu\n", __func__, ar->flag);
 		return -EBUSY;
 	}
 
@@ -1750,8 +1750,14 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	struct ath6kl *ar = vif->ar;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_INFO1,
-		"%s: reason=%u, proto_reason %u\n",
-		__func__, reason, proto_reason);
+		"%s: reason=%u, proto_reason %u, flag %lu\n",
+		__func__, reason, proto_reason, ar->flag);
+
+	/* avoid wmi event be processed while driver unloading */
+	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
+		ath6kl_err("%s destroy in progress %lu\n", __func__, ar->flag);
+		return;
+	}
 
 	if (vif->scan_req) {
 		del_timer(&vif->vifscan_timer);

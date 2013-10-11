@@ -3396,12 +3396,17 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif, *tmp_vif;
 
-	set_bit(DESTROY_IN_PROGRESS, &ar->flag);
-
 	if (down_interruptible(&ar->sem)) {
 		ath6kl_err("down_interruptible failed\n");
 		return;
 	}
+
+	if (down_interruptible(&ar->wmi_evt_sem)) {
+		ath6kl_err("wmi down_interruptible failed\n");
+		return;
+	}
+
+	set_bit(DESTROY_IN_PROGRESS, &ar->flag);
 
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
@@ -3441,6 +3446,8 @@ void ath6kl_stop_txrx(struct ath6kl *ar)
 	ath6kl_dbg(ATH6KL_DBG_TRC,
 			"attempting to reset target on instance destroy\n");
 	ath6kl_reset_device(ar, ar->target_type, true, true);
+
+	up(&ar->wmi_evt_sem);
 
 	up(&ar->sem);
 }

@@ -4509,7 +4509,24 @@ int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb)
 	/* Keep WMI event be processed in sequence. */
 	if (down_interruptible(&ar->wmi_evt_sem)) {
 		ath6kl_err("ath6kl_wmi_control_rx busy, couldn't get access\n");
+		dev_kfree_skb(skb);
 		return -ERESTARTSYS;
+	}
+
+	/* avoid wmi event be processed while driver unloading */
+	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
+		ath6kl_err("recv %d, destroy in progress %lu\n", id, ar->flag);
+		up(&ar->wmi_evt_sem);
+		dev_kfree_skb(skb);
+		return -EBUSY;
+	}
+
+	if (!test_bit(FIRST_BOOT, &ar->flag) &&
+			!test_bit(WMI_READY, &ar->flag)) {
+		ath6kl_err("recv %d, destroy in progress %lu\n", id, ar->flag);
+		up(&ar->wmi_evt_sem);
+		dev_kfree_skb(skb);
+		return -EBUSY;
 	}
 
 	wmi->stat.last_rx_evt[wmi->stat.rx_evt_cnt &
