@@ -1190,6 +1190,8 @@ struct target_stats {
 	u32 arp_replied;
 
 	struct timeval update_time;
+
+	u16 cs_roam_cnt;
 };
 
 struct ath6kl_mbox_info {

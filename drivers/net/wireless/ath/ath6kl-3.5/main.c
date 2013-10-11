@@ -1944,6 +1944,8 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 		le16_to_cpu(tgt_stats->cserv_stats.cs_connect_cnt);
 	stats->cs_discon_cnt +=
 		le16_to_cpu(tgt_stats->cserv_stats.cs_discon_cnt);
+	stats->cs_roam_cnt +=
+		le16_to_cpu(tgt_stats->cserv_stats.cs_roam_count);
 
 	stats->cs_ave_beacon_rssi =
 		a_sle16_to_cpu(tgt_stats->cserv_stats.cs_ave_beacon_rssi);
