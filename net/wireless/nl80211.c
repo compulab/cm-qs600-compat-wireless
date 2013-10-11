@@ -4207,8 +4207,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	if (!rdev->ops->scan)
 		return -EOPNOTSUPP;
 
-	/* Forcing scan in case of obss scan */
-	if (rdev->scan_req && !(info->attrs[NL80211_ATTR_HT_2040_MODE]))
+	if (rdev->scan_req)
 		return -EBUSY;
 
 	if (info->attrs[NL80211_ATTR_SCAN_FREQUENCIES]) {
