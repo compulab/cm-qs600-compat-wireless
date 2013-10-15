@@ -855,6 +855,7 @@ void ath6kl_switch_parameter_based_on_connection(
 			bool call_on_disconnect)
 {
 	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *wlan_vif = NULL;
 	u8 connected_count = 0;
 	struct ath6kl_vif *vif_temp;
 	bool mcc = false;
@@ -973,11 +974,37 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
+	wlan_vif = ath6kl_get_vif_by_index(ar, 0);
 	/* Update HIF queue policy */
-	if (connected_count > 1)
+	if (connected_count > 1) {
 		ath6kl_hif_pipe_set_max_queue_number(ar, true);
-	else
+		if (test_bit(CONNECTED, &wlan_vif->flags)) {
+			if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
+				wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
+				htcoex_ht40_rateset(wlan_vif,
+					wlan_vif->htcoex_ctx, false);
+		}
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			if (test_bit(CONNECTED, &vif_temp->flags))
+				ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
+					vif_temp->fw_vif_idx,
+					ATH6KL_RTS_THRESHOLD);
+		}
+	} else {
 		ath6kl_hif_pipe_set_max_queue_number(ar, false);
+		if ((call_on_disconnect) &&
+			test_bit(CONNECTED, &wlan_vif->flags)) {
+		    if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
+				wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
+				htcoex_ht40_rateset(wlan_vif,
+					wlan_vif->htcoex_ctx, true);
+		}
+		list_for_each_entry(vif_temp, &ar->vif_list, list) {
+			if (test_bit(CONNECTED, &vif_temp->flags))
+				ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
+					vif_temp->fw_vif_idx, 0);
+		}
+	}
 
 	/* Reconfigurate the PS mode case by case. */
 	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect, connected_count);

@@ -240,7 +240,7 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 
 }
 
-static void htcoex_ht40_rateset(struct ath6kl_vif *vif,
+void htcoex_ht40_rateset(struct ath6kl_vif *vif,
 				struct htcoex *coex,
 				bool enabled)
 {

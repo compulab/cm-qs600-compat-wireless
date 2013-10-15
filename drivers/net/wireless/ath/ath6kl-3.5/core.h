@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.517)
+#define __BUILD_VERSION_ (3.5.0.521)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -799,6 +799,7 @@ enum ath6kl_recovery_mode {
 
 #define ATH6KL_PS_QUEUE_MAX_DEPTH	(65535)
 #define ATH6KL_PS_QUEUE_NO_DEPTH	(0)			/* unlimit */
+#define ATH6KL_RTS_THRESHOLD		(50)
 
 enum ps_queue_type {
 	PS_QUEUE_TYPE_NONE,
