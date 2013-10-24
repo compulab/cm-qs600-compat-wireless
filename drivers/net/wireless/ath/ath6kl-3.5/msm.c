@@ -13,6 +13,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
+#define CONFIG_ANDROID_8960_SDIO 1
 #ifdef CONFIG_ANDROID_8960_SDIO
 #include "core.h"
 
@@ -113,8 +114,9 @@ struct semaphore wifi_control_sem;
 
 int wifi_set_power(int on, unsigned long msec)
 {
-	if (wifi_control_data && wifi_control_data->set_power)
+	if (wifi_control_data && wifi_control_data->set_power) {
 		wifi_control_data->set_power(on);
+	}
 
 	if (msec)
 		mdelay(msec);
