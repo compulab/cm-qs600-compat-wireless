@@ -755,7 +755,11 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 	len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
 			 "Num disconnects", tgt_stats->cs_discon_cnt);
 	len += scnprintf(buf + len, buf_len - len, "%20s %10d\n",
-			 "Beacon avg rssi", tgt_stats->cs_ave_beacon_rssi);
+			"Beacon avg rssi", tgt_stats->cs_ave_beacon_rssi);
+	len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
+			"Low rssi count", tgt_stats->cs_low_rssi_cnt);
+	len += scnprintf(buf + len, buf_len - len, "%20s %10d\n",
+			"Roam count", tgt_stats->cs_roam_cnt);
 
 	len += scnprintf(buf + len, buf_len - len, "%25s\n",
 			 "Wow stats");
