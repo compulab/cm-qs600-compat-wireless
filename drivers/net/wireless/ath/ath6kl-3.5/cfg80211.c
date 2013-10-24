@@ -755,7 +755,7 @@ DONE:
 
 static void switch_tid_rx_timeout(
 		struct ath6kl_vif *vif,
-		bool mcc)
+		bool enlarge_aggr_rx_timer)
 {
 	u8 i, j = 0;
 	struct aggr_conn_info *aggr_conn;
@@ -770,7 +770,7 @@ static void switch_tid_rx_timeout(
 			case WMM_AC_BK:
 			case WMM_AC_BE:
 			case WMM_AC_VI:
-				if (mcc)
+				if (enlarge_aggr_rx_timer)
 					aggr_conn->tid_timeout_setting[j] =
 						MCC_AGGR_RX_TIMEOUT;
 				else
@@ -778,7 +778,7 @@ static void switch_tid_rx_timeout(
 						AGGR_RX_TIMEOUT;
 				break;
 			case WMM_AC_VO:
-				if (mcc)
+				if (enlarge_aggr_rx_timer)
 					aggr_conn->tid_timeout_setting[j] =
 						MCC_AGGR_RX_TIMEOUT_VO;
 				else
@@ -876,7 +876,12 @@ void ath6kl_switch_parameter_based_on_connection(
 				if (call_on_disconnect &&
 					vif->fw_vif_idx == vif_temp->fw_vif_idx)
 					continue;
-				switch_tid_rx_timeout(vif_temp, mcc);
+				if (vif->wdev.iftype ==
+					NL80211_IFTYPE_STATION && !mcc)
+					switch_tid_rx_timeout(vif_temp, false);
+				else
+					switch_tid_rx_timeout(vif_temp, true);
+
 			}
 		}
 	}
