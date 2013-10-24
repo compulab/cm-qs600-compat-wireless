@@ -458,6 +458,11 @@ int ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	struct htcoex_coex_info coex_info;
 	int ret = HTCOEX_PASS_SCAN_DONE;
 
+	if (!coex) {
+		ath6kl_err("%s %lu\n",__func__, vif->ar->flag);
+		return ret;
+	}
+
 	/* Send Action frame even scan issue by user. */
 	if (!(coex->flags & ATH6KL_HTCOEX_FLAGS_START) ||
 		(vif->nw_type != INFRA_NETWORK) ||
@@ -592,6 +597,11 @@ void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif)
 
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
+
+	if (!coex) {
+		ath6kl_err("%s %lu\n",__func__, vif->ar->flag);
+		return;
+	}
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
 		   "htcoex disconnect (vif %p) flags %x\n",
