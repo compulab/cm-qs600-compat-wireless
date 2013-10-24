@@ -1308,6 +1308,8 @@ u16 l1c_write_phydbg(struct alx_hw *hw, bool fast, u16 reg, u16 data);
 /* check the configuration of the PHY */
 u16 l1c_get_phy_config(struct alx_hw *hw);
 
+/* phy hib patch */
+u16 l1c_apply_phy_hib_patch(struct alx_hw *hw);
 /*
  * initialize mac basically
  *  most of hi-feature no init

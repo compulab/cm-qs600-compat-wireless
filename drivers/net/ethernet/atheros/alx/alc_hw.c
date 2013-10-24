@@ -16,7 +16,7 @@
 
 #include <linux/pci_regs.h>
 #include <linux/mii.h>
-
+#include "alx.h"
 #include "alc_hw.h"
 
 
@@ -137,13 +137,16 @@ out:
 u16 l1c_reset_mac(struct alx_hw *hw)
 {
 	u32 val, mrst_val;
+	u16 ret;
 	u16 i;
 
 	/* disable all interrupts, RXQ/TXQ */
 	alx_mem_w32(hw, L1C_IMR, 0);
 	alx_mem_w32(hw, L1C_ISR, L1C_ISR_DIS);
 
-	l1c_enable_mac(hw, false, 0);
+	ret = l1c_enable_mac(hw, false, 0);
+	if (ret != 0)
+		return ret;
 
 	/* reset whole mac safely. OOB is meaningful for L1D only  */
 	alx_mem_r32(hw, L1C_MASTER, &mrst_val);
@@ -155,7 +158,11 @@ u16 l1c_reset_mac(struct alx_hw *hw)
 		alx_mem_r32(hw, L1C_MASTER, &val);
 		if ((val & L1C_MASTER_DMA_MAC_RST) == 0)
 			break;
+#ifdef ALX_LINK_DOWN_CONFIG
+		mdelay(20);
+#else
 		udelay(20);
+#endif
 	}
 	if (i == L1C_DMA_MAC_RST_TO)
 		return LX_ERR_RSTMAC;
@@ -518,7 +525,11 @@ u16 l1c_enable_mac(struct alx_hw *hw, bool en, u16 en_ctrl)
 				    L1C_MAC_STS_RXQ_BUSY)) == 0) {
 				break;
 			}
-			msleep(1);
+#ifdef ALX_LINK_DOWN_CONFIG
+			mdelay(20);
+#else
+			udelay(20);
+#endif
 		}
 		if (L1C_DMA_MAC_RST_TO == i)
 			return LX_ERR_RSTMAC;
@@ -530,7 +541,11 @@ u16 l1c_enable_mac(struct alx_hw *hw, bool en, u16 en_ctrl)
 			alx_mem_r32(hw, L1C_MAC_STS, &val);
 			if ((val & L1C_MAC_STS_IDLE) == 0)
 				break;
-			msleep(1);
+#ifdef ALX_LINK_DOWN_CONFIG
+			mdelay(20);
+#else
+			udelay(10);
+#endif
 		}
 		if (L1C_DMA_MAC_RST_TO == i)
 			return LX_ERR_RSTMAC;
@@ -1082,3 +1097,71 @@ u16 l1c_get_phy_config(struct alx_hw *hw)
 	return LX_DRV_PHY_UNKNOWN;
 }
 
+u16 l1c_apply_phy_hib_patch(struct alx_hw *hw)
+{
+	u16 Control, cr;
+	u8 link_cap = 0;
+	u32 speed = 0;
+	bool link_up = 0;
+	u16 i;
+
+	l1c_read_phydbg(hw, false, 0xc, &Control);
+
+	/*bit 11: 0 means in hibernation, 1 means not*/
+	if (Control & BIT(11))
+		hw->bInHibMode = false;
+	else
+		hw->bInHibMode = true;
+
+
+	if ((hw->bInHibMode) && (!hw->bHibPatched)) {
+		if ((hw->mac_type == alx_mac_l2cb_v1) ||
+		    (hw->mac_type == alx_mac_l2cb_v20) ||
+		    (hw->mac_type == alx_mac_l2cb_v21)) {
+			l1c_write_phy(hw, false, 0, false, MII_BMCR,
+				      (BMCR_FULLDPLX | BMCR_SPEED100));
+		} else if ((hw->mac_type == alx_mac_l1d_v1) ||
+			   (hw->mac_type == alx_mac_l1d_v2)) {
+			l1c_write_phy(hw, false, 0, false, MII_BMCR,
+				      (BMCR_FULLDPLX | BMCR_SPEED1000));
+		}
+		hw->bHibPatched = true;
+
+	} else if (!hw->bInHibMode && hw->bHibPatched) {
+		for (i = 0; i < 10; i++) {
+			hw->cbs.check_phy_link(hw, &speed, &link_up);
+
+			if (link_up) {
+				if (speed & ALX_LINK_SPEED_1GB_FULL)
+					link_cap |= LX_LC_1000F;
+
+				if (speed & ALX_LINK_SPEED_100_FULL)
+					link_cap |= LX_LC_100F;
+
+				if (speed & ALX_LINK_SPEED_100_HALF)
+					link_cap |= LX_LC_100H;
+
+				if (speed & ALX_LINK_SPEED_10_FULL)
+					link_cap |= LX_LC_10F;
+
+				if (speed & ALX_LINK_SPEED_10_HALF)
+					link_cap |= LX_LC_10H;
+
+				l1c_init_phy_spdfc(hw, true, link_cap,
+						   !hw->disable_fc_autoneg);
+				break;
+			}
+
+			mdelay(100);
+		}
+
+		if (!link_up) {
+			cr = BMCR_RESET | BMCR_ANENABLE | BMCR_ANRESTART;
+			l1c_write_phy(hw, false, 0, false, MII_BMCR, cr);
+		}
+
+		hw->bHibPatched = false;
+	}
+
+	return 0;
+}

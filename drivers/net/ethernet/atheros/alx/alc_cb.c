@@ -809,6 +809,10 @@ static int alc_get_ethtool_regs(struct alx_hw *hw, void *buff)
 	return 0;
 }
 
+static int alc_apply_phy_hib_patch(struct alx_hw *hw)
+{
+	return l1c_apply_phy_hib_patch(hw);
+}
 
 /******************************************************************************/
 static int alc_get_hw_capabilities(struct alx_hw *hw)
@@ -879,6 +883,7 @@ int alc_init_hw_callbacks(struct alx_hw *hw)
 	hw->cbs.check_phy_link    = &alc_check_phy_link;
 	hw->cbs.setup_phy_link    = &alc_setup_phy_link;
 	hw->cbs.setup_phy_link_speed = &alc_setup_phy_link_speed;
+	hw->cbs.apply_phy_hib_patch = &alc_apply_phy_hib_patch;
 
 	/* Interrupt */
 	hw->cbs.ack_phy_intr	= &alc_ack_phy_intr;
