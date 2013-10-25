@@ -925,12 +925,63 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
+	/* Update HIF queue policy */
+	ath6kl_hif_pipe_set_max_queue_number(ar, mcc);
+
 	/* Reconfigurate the PS mode case by case. */
 	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect);
 
 #ifdef USB_AUTO_SUSPEND
 	ath6kl_check_autopm_onoff(ar);
 #endif /* USB_AUTO_SUSPEND */
+}
+
+static inline void _change_sta_scan_plan(struct ath6kl_vif *vif)
+{
+	if (vif->ssid_len) {
+		int i, chan_num;
+		u16 chan_list[64];	/* WMI_MAX_CHANNELS */
+
+		memset(chan_list, 0, sizeof(u16) * 64);
+		chan_num = ath6kl_bss_post_proc_candidate_bss(vif,
+								vif->ssid,
+								vif->ssid_len,
+								chan_list);
+
+		if (chan_num) {
+			vif->scan_plan.type = ATH6KL_SCAN_PLAN_HOST_ORDER;
+
+			/* For STA, prefer to use 5G APs. */
+			if (chan_num <= 21) {	/* (64 / 3) */
+				vif->scan_plan.numChan = chan_num * 3;
+
+				for (i = 0; i < chan_num; i++)
+					vif->scan_plan.chanList[i * 3] =
+					vif->scan_plan.chanList[i * 3 + 1] =
+					vif->scan_plan.chanList[i * 3 + 2] =
+						chan_list[chan_num - 1 - i];
+			} else {
+				vif->scan_plan.numChan = chan_num;
+
+				for (i = 0; i < chan_num; i++)
+					vif->scan_plan.chanList[i] =
+						chan_list[chan_num - 1 - i];
+			}
+
+			/*
+			 * If only one channel need to try and 1s' disconnection
+			 * timeout is enough.
+			 */
+			if (chan_num == 1)
+				ath6kl_wmi_disctimeout_cmd(vif->ar->wmi,
+							vif->fw_vif_idx,
+							1);
+		} else
+			vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
+	} else
+		vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
+
+	return;
 }
 
 static inline void _change_p2p_scan_plan(struct ath6kl_vif *vif)
@@ -974,7 +1025,7 @@ void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
 	struct ath6kl *ar = vif->ar;
 
 	/* Default */
-	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
+	vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
 	vif->scan_plan.numChan = 0;
 
 	if (!reset) {
@@ -985,10 +1036,9 @@ void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
 		if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 			goto done;
 
-		if (vif->wdev.iftype == NL80211_IFTYPE_STATION) {
-			/* For STA, prefer to use 5G APs. */
-			vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
-		} else if ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) &&
+		if (vif->wdev.iftype == NL80211_IFTYPE_STATION)
+			_change_sta_scan_plan(vif);
+		else if ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) &&
 			   (vif->ssid_len)) {
 			struct cfg80211_bss *bss;
 
@@ -1026,7 +1076,7 @@ void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
 	}
 
 done:
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
 		   "change scan plan, vif %d reset %d type %d numChan %d\n",
 		   vif->fw_vif_idx,
 		   reset,
@@ -1396,8 +1446,7 @@ void ath6kl_cfg80211_connect_result(struct ath6kl_vif *vif,
 {
 	bool need_pending;
 
-	if (status != WLAN_STATUS_SUCCESS)
-		ath6kl_change_scan_plan(vif, true);
+	ath6kl_change_scan_plan(vif, true);
 
 	need_pending = ath6kl_p2p_pending_connect_event(vif,
 							bssid,
@@ -1674,6 +1723,11 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	 */
 
 	if (reason != DISCONNECT_CMD) {
+		if ((reason == AUTH_FAILED) &&
+		    (vif->dot11_auth_mode & SHARED_AUTH))
+			vif->next_conn_status = WLAN_STATUS_CHALLENGE_FAIL;
+		else
+			vif->next_conn_status = WLAN_STATUS_UNSPECIFIED_FAILURE;
 		ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 		return;
 	}
@@ -1681,10 +1735,15 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	clear_bit(CONNECT_PEND, &vif->flags);
 
 	if (vif->sme_state == SME_CONNECTING) {
+		u16 status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+
+		if (vif->next_conn_status)
+			status = vif->next_conn_status;
+
 		ath6kl_cfg80211_connect_result(vif,
 				bssid, NULL, 0,
 				NULL, 0,
-				WLAN_STATUS_UNSPECIFIED_FAILURE,
+				status,
 				GFP_KERNEL);
 	} else if (vif->sme_state == SME_CONNECTED) {
 		ath6kl_cfg80211_disconnected(vif, proto_reason,
@@ -1697,6 +1756,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 #endif
 
 	vif->sme_state = SME_DISCONNECTED;
+	vif->next_conn_status = WLAN_STATUS_SUCCESS;
 
 	if (reason == DISCONNECT_CMD) {
 		if (test_bit(DISCONNECT_PEND, &vif->flags) &&
@@ -1778,7 +1838,9 @@ static int ath6kl_scan_timeout_cal(struct ath6kl *ar)
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
 			connected_count++;
-			if (connected_count > 1)
+			if (connected_count == 1)
+				return ATH6KL_SCAN_TIMEOUT_ONE_CON;
+			else if (connected_count > 1)
 				return ATH6KL_SCAN_TIMEOUT_LONG;
 		}
 	}
@@ -1854,13 +1916,13 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 	switch (vif->scanband_type) {
 	case SCANBAND_TYPE_CHAN_ONLY:
 		channels[0] = vif->scanband_chan;
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"Only signal channel scan, channel %d\n",
 			channels[0]);
 		num_chan = 1;
 		break;
 	case SCANBAND_TYPE_5G:
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"Only 5G channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
 			if (request->channels[i]->center_freq <= 2484) {
@@ -1869,13 +1931,13 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 			}
 			channels[i - skip_chan_num] =
 					request->channels[i]->center_freq;
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 				"%d ", channels[i - skip_chan_num]);
 		}
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_2G:
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"Only 2G channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
 			if (request->channels[i]->center_freq > 2484) {
@@ -1884,13 +1946,24 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 			}
 			channels[i - skip_chan_num] =
 					request->channels[i]->center_freq;
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 				"%d ", channels[i - skip_chan_num]);
 		}
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_P2PCHAN:
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		num_chan = ath6kl_p2p_build_scan_chan(vif,
+							n_channels,
+							channels);
+		if (num_chan) {
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
+				"Only P2P channels scan, full scan instead\n");
+
+			break;
+		} else
+			num_chan = n_channels;
+
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"Only P2P channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
 			if (!ath6kl_reg_is_p2p_channel(vif->ar,
@@ -1900,13 +1973,24 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 			}
 			channels[i - skip_chan_num] =
 					request->channels[i]->center_freq;
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 				"%d ", channels[i - skip_chan_num]);
 		}
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_2_P2PCHAN:
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		num_chan = ath6kl_p2p_build_scan_chan(vif,
+							n_channels,
+							channels);
+		if (num_chan) {
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
+				"x2 P2P channels scan, full scan instead\n");
+
+			break;
+		} else
+			num_chan = n_channels;
+
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"x2 P2P channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
 			if (!ath6kl_reg_is_p2p_channel(vif->ar,
@@ -1916,7 +2000,7 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 			}
 			channels[i - skip_chan_num] =
 					request->channels[i]->center_freq;
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 				"%d ", channels[i - skip_chan_num]);
 		}
 		num_chan -= skip_chan_num;
@@ -1929,7 +2013,7 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 		}
 		break;
 	case SCANBAND_TYPE_IGNORE_DFS:
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"No DFS channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
 			if (ath6kl_reg_is_dfs_channel(vif->ar,
@@ -1939,13 +2023,13 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 			}
 			channels[i - skip_chan_num] =
 					request->channels[i]->center_freq;
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 				"%d ", channels[i - skip_chan_num]);
 		}
 		num_chan -= skip_chan_num;
 		break;
 	case SCANBAND_TYPE_IGNORE_CH:
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 			"Ignore channels scan, channel list - ");
 		for (i = 0; i < n_channels; i++) {
 			if (_ath6kl_scanband_ignore_ch(vif,
@@ -1955,7 +2039,7 @@ static s8 ath6kl_scanband(struct ath6kl_vif *vif,
 			}
 			channels[i - skip_chan_num] =
 					request->channels[i]->center_freq;
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_INFO | ATH6KL_DBG_EXT_SCAN,
 				"%d ", channels[i - skip_chan_num]);
 		}
 		num_chan -= skip_chan_num;
@@ -1981,8 +2065,15 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	bool sche_scan_trig, left;
 
 	if (test_bit(DISABLE_SCAN, &ar->flag)) {
-		ath6kl_err("scan is disabled temporarily\n");
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+			"scan is disabled temporarily\n");
 		return -EIO;
+	}
+
+	if (vif->sme_state == SME_CONNECTING) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+			"Connection on-going, reject scan\n");
+		return -EBUSY;
 	}
 
 	if (!ath6kl_cfg80211_ready(vif))
@@ -1993,22 +2084,24 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -ERESTARTSYS;
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s\n", __func__);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
+		"%s\n", __func__);
 
 	/*
 	 * Last Cancel-RoC not yet finished. To update vif->last_cancel_roc_id
 	 * first to avoid wrong cookie report to supplicant.
 	 */
 	if (test_bit(ROC_CANCEL_PEND, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : Scan but Cancel-RoC not yet back, wait it finish %x\n",
-				vif->last_cancel_roc_id);
+			vif->last_cancel_roc_id);
 
 		wait_event_interruptible_timeout(ar->event_wq,
 					!test_bit(ROC_ONGOING, &vif->flags),
 					WMI_TIMEOUT);
 		if (signal_pending(current)) {
-			ath6kl_err("RoC : target did not respond\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : target did not respond\n");
 			up(&ar->sem);
 			return -EINTR;
 		}
@@ -2016,14 +2109,15 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	/* RoC is ongoing and stop it first. */
 	if (test_bit(ROC_ONGOING, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : Scan but On-going-RoC, cancel it first %x\n",
 			vif->last_roc_id);
 
 		set_bit(ROC_CANCEL_PEND, &vif->flags);
 		if (ath6kl_wmi_cancel_remain_on_chnl_cmd(ar->wmi,
 				vif->fw_vif_idx) != 0) {
-			ath6kl_err("RoC : cancel ROC failed\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : cancel ROC failed\n");
 			clear_bit(ROC_CANCEL_PEND, &vif->flags);
 			up(&ar->sem);
 			return -EIO;
@@ -2034,7 +2128,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 					WMI_TIMEOUT);
 
 		if (left == 0) {
-			ath6kl_err("RoC : wait cancel RoC timeout\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : wait cancel RoC timeout\n");
 			clear_bit(ROC_CANCEL_PEND, &vif->flags);
 			clear_bit(ROC_ONGOING, &vif->flags);
 			up(&ar->sem);
@@ -2042,7 +2137,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		}
 
 		if (signal_pending(current)) {
-			ath6kl_err("RoC : target did not respond\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : target did not respond\n");
 			up(&ar->sem);
 			return -EINTR;
 		}
@@ -2114,8 +2210,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 		channels = kzalloc(n_channels * sizeof(u16) * 2, GFP_KERNEL);
 		if (channels == NULL) {
-			ath6kl_warn("failed to set scan channels, "
-				    "scan all channels");
+			ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+				"failed to set scan chan, scan all channel\n");
 			n_channels = 0;
 		}
 
@@ -2139,7 +2235,8 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 
 	if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) ||
 	    test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag)) {
-		ath6kl_info("EAPOL %s_handshake_protect reject scan\n",
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+			"EAPOL %s_handshake_protect reject scan\n",
 			(test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag) ?
 			 "rekey" : "connect"));
 		clear_bit(SCANNING, &vif->flags);
@@ -2180,19 +2277,19 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
 #ifdef USB_AUTO_SUSPEND
-		set_bit(SCANNING, &ar->usb_autopm_scan);
-		ath6kl_hif_auto_pm_disable(ar);
+		if (test_bit(SCANNING, &ar->usb_autopm_scan) == 0) {
+			set_bit(SCANNING, &ar->usb_autopm_scan);
+			ath6kl_hif_auto_pm_disable(ar);
+		}
 #endif
 	}
 
 	kfree(channels);
 
 	ath6kl_bss_post_proc_bss_scan_start(vif);
-	ath6kl_p2p_rc_scan_start(vif);
+	ath6kl_p2p_rc_scan_start(vif, false);
 
 	up(&ar->sem);
-
-
 
 	return ret;
 }
@@ -2221,8 +2318,10 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	struct ath6kl *ar = vif->ar;
 	int i;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: status%s\n", __func__,
-		   aborted ? " aborted" : "");
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
+		"%s: status%s\n", __func__,
+		aborted ? " aborted" : "complete");
+
 #if defined(USB_AUTO_SUSPEND)
 	/*
 	In Disconnected state, the driver will enter deep sleep,
@@ -2232,7 +2331,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 
 	if (test_and_clear_bit(SCANNING, &ar->usb_autopm_scan)) {
 		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN,
 			"%s: warnning pm_usage_cnt =0\n", __func__);
 		} else {
 			ath6kl_hif_auto_pm_enable(ar);
@@ -2241,6 +2340,11 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 
 #endif
 	del_timer(&vif->vifscan_timer);
+
+	if (test_bit(SCANNING_WAIT, &vif->flags)) {
+		clear_bit(SCANNING_WAIT, &vif->flags);
+		wake_up(&ar->event_wq);
+	}
 
 	if (!vif->scan_req)
 		return;
@@ -3247,18 +3351,24 @@ static bool is_rate_legacy(s32 rate)
 static bool is_rate_ht20(s32 rate, u8 *mcs, bool *sgi)
 {
 	static const s32 ht20[] = { 6500, 13000, 19500, 26000, 39000,
-		52000, 58500, 65000, 72200
+		52000, 58500, 65000
+	};
+	static const s32 ht20_sgi[] = { 7200, 14400, 21700, 28900, 43300,
+		57800, 65000, 72200
 	};
 	u8 i;
 
 	for (i = 0; i < ARRAY_SIZE(ht20); i++) {
 		if (rate == ht20[i]) {
-			if (i == ARRAY_SIZE(ht20) - 1)
-				/* last rate uses sgi */
-				*sgi = true;
-			else
-				*sgi = false;
+			*sgi = false;
+			*mcs = i;
+			return true;
+		}
+	}
 
+	for (i = 0; i < ARRAY_SIZE(ht20_sgi); i++) {
+		if (rate == ht20_sgi[i]) {
+			*sgi = true;
 			*mcs = i;
 			return true;
 		}
@@ -3269,19 +3379,24 @@ static bool is_rate_ht20(s32 rate, u8 *mcs, bool *sgi)
 static bool is_rate_ht40(s32 rate, u8 *mcs, bool *sgi)
 {
 	static const s32 ht40[] = { 13500, 27000, 40500, 54000,
-		81000, 108000, 121500, 135000,
-		150000
+		81000, 108000, 121500, 135000
+	};
+	static const s32 ht40_sgi[] = { 15000, 30000, 45000, 60000,
+		90000, 120000, 135000, 150000
 	};
 	u8 i;
 
 	for (i = 0; i < ARRAY_SIZE(ht40); i++) {
 		if (rate == ht40[i]) {
-			if (i == ARRAY_SIZE(ht40) - 1)
-				/* last rate uses sgi */
-				*sgi = true;
-			else
-				*sgi = false;
+			*sgi = false;
+			*mcs = i;
+			return true;
+		}
+	}
 
+	for (i = 0; i < ARRAY_SIZE(ht40_sgi); i++) {
+		if (rate == ht40_sgi[i]) {
+			*sgi = true;
 			*mcs = i;
 			return true;
 		}
@@ -3361,21 +3476,15 @@ static void _get_sta_info(struct ath6kl_vif *vif,
 			sinfo->txrate.legacy = rate / 100;
 			sinfo->filled |= STATION_INFO_TX_BITRATE;
 		} else if (is_rate_ht20(rate, &mcs, &sgi)) {
-			if (sgi) {
+			if (sgi)
 				sinfo->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-				sinfo->txrate.mcs = mcs - 1;
-			} else
-				sinfo->txrate.mcs = mcs;
-
+			sinfo->txrate.mcs = mcs;
 			sinfo->txrate.flags |= RATE_INFO_FLAGS_MCS;
 			sinfo->filled |= STATION_INFO_TX_BITRATE;
 		} else if (is_rate_ht40(rate, &mcs, &sgi)) {
-			if (sgi) {
+			if (sgi)
 				sinfo->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-				sinfo->txrate.mcs = mcs - 1;
-			} else
-				sinfo->txrate.mcs = mcs;
-
+			sinfo->txrate.mcs = mcs;
 			sinfo->txrate.flags |= RATE_INFO_FLAGS_40_MHZ_WIDTH;
 			sinfo->txrate.flags |= RATE_INFO_FLAGS_MCS;
 			sinfo->filled |= STATION_INFO_TX_BITRATE;
@@ -3743,9 +3852,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 #ifndef CONFIG_ANDROID
 	int pos;
 	u32 filter = 0;
-	u16 i;
 	u8 mask[WOW_MASK_SIZE];
 #endif
+	u16 i;
 	struct in_device *in_dev;
 	struct in_ifaddr *ifa;
 	unsigned char src_ip[4];
@@ -3839,6 +3948,9 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 		if (wow->four_way_handshake || wow->any)
 			filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
+
+		if (vif->arp_offload_ip_set || wow->any)
+			filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
 	}
 
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
@@ -3847,10 +3959,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
 	}
 
-	if (vif->arp_offload_ip_set || (wow && wow->any))
-		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
-
-	if (filter) {
+	if (filter || (wow && wow->n_patterns)) {
 		ret = ath6kl_wmi_set_wow_mode_cmd(ar->wmi, vif->fw_vif_idx,
 						  ATH6KL_WOW_MODE_ENABLE,
 						  filter,
@@ -3861,22 +3970,40 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 #endif /*!CONFIG_ANDROID*/
 
 	/* Setup own IP addr for ARP agent. */
-	in_dev = __in_dev_get_rtnl(vif->ndev);
-	if (in_dev) {
-		ifa = in_dev->ifa_list;
-		if (ifa && ifa->ifa_local) {
-			if (vif->arp_offload_ip_set == 0 ||
-			    vif->arp_offload_ip != ifa->ifa_local) {
-				memcpy(src_ip, &ifa->ifa_local, 4);
-				vif->arp_offload_ip_set = 0;
-				if (!ath6kl_wmi_set_arp_offload_ip_cmd(ar->wmi,
-								src_ip)) {
-					vif->arp_offload_ip_set = 1;
-					vif->arp_offload_ip = ifa->ifa_local;
-					ath6kl_dbg(ATH6KL_DBG_WOWLAN,
-					"%s: enable arp offload %d.%d.%d.%d\n",
-					__func__, src_ip[0], src_ip[1],
-					src_ip[2], src_ip[3]);
+	for (i = 0; i < ar->vif_max; i++) {
+		struct ath6kl_vif *mvif = ath6kl_get_vif_by_index(ar, i);
+		if (!mvif)
+			continue;
+
+		memset(src_ip, 0x0, 4);
+		in_dev = __in_dev_get_rtnl(mvif->ndev);
+		if (in_dev) {
+			ifa = in_dev->ifa_list;
+			if (ifa && ifa->ifa_local) {
+				if (mvif->arp_offload_ip != ifa->ifa_local) {
+					memcpy(src_ip, &ifa->ifa_local, 4);
+					if (!ath6kl_wmi_set_arp_offload_ip_cmd(
+						ar->wmi, mvif->fw_vif_idx,
+						src_ip)) {
+						mvif->arp_offload_ip =
+							ifa->ifa_local;
+						ath6kl_dbg(ATH6KL_DBG_WOWLAN,
+							"%s: enable %s arp offload %d.%d.%d.%d\n",
+							__func__,
+							mvif->ndev->name,
+							src_ip[0], src_ip[1],
+							src_ip[2], src_ip[3]);
+					}
+				}
+			} else if (mvif->arp_offload_ip != 0) {
+				if (!ath6kl_wmi_set_arp_offload_ip_cmd(
+						ar->wmi, mvif->fw_vif_idx,
+						src_ip)) {
+						mvif->arp_offload_ip = 0;
+						ath6kl_dbg(ATH6KL_DBG_WOWLAN,
+							"%s: disable %s arp offload\n",
+							__func__,
+							mvif->ndev->name);
 				}
 			}
 		}
@@ -3982,11 +4109,16 @@ static bool ath6kl_cfg80211_need_suspend(struct ath6kl *ar, u32 *suspend_vif)
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
 		if (vif) {
+			#ifdef CE_SUPPORT
+			if (vif->nw_type != AP_NETWORK)
+				*suspend_vif |= (1 << i);
+			#else
 			if (vif->nw_type == AP_NETWORK) {
 				*suspend_vif = 0;
 				return false;
 			}
 			*suspend_vif |= (1 << i);
+			#endif
 		}
 	}
 
@@ -4607,6 +4739,9 @@ static u16 _ath6kl_ap_get_channel(struct ath6kl_vif *vif,
 		chan |= (chan_type << WMI_CONNECT_AP_CHAN_SELECT_OFFSET);
 	}
 
+	/* Overwrite the channel if AP recommand channel turns on */
+	chan = ath6kl_ap_rc_get(vif, chan);
+
 	return chan;
 }
 
@@ -5224,7 +5359,7 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 
 	/* If already ongoing scan then wait it finish. */
 	if (vif->scan_req) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : Schedule a RoC but on-going Scan %x\n",
 				vif->last_roc_id);
 
@@ -5233,7 +5368,8 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 						 MAX_SCAN_PERIOD);
 
 		if (signal_pending(current)) {
-			ath6kl_err("RoC : last scan not yet finish?\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : last scan not yet finish?\n");
 			up(&ar->sem);
 			return -EBUSY;
 		}
@@ -5241,14 +5377,15 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 
 	/* If already pending remain-on-channel then reject request. */
 	if (test_bit(ROC_PEND, &vif->flags)) {
-		ath6kl_err("RoC : Receive duplicate ROC.\n");
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+			"RoC : Receive duplicate ROC.\n");
 		up(&ar->sem);
 		return -EBUSY;
 	}
 
 	/* If ongoing remain-on-channel and wait it finish. */
 	if (test_bit(ROC_ONGOING, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : Last RoC not yet finish, %x %d %d",
 				vif->last_roc_id,
 				((test_bit(ROC_PEND, &vif->flags)) ? 1 : 0),
@@ -5260,14 +5397,15 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 			 MAX_ROC_PERIOD);
 
 		if (left == 0) {
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 				"RoC : wait ROC_WAIT_EVENT timeout\n");
 			clear_bit(ROC_WAIT_EVENT, &vif->flags);
 			clear_bit(ROC_ONGOING, &vif->flags);
 		}
 
 		if (signal_pending(current)) {
-			ath6kl_err("RoC : last RoC not yet finish?\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : last RoC not yet finish?\n");
 			up(&ar->sem);
 			return -EBUSY;
 		}
@@ -5318,7 +5456,7 @@ static int _ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 	 * it by order to avoid wrong cookie report to supplicant.
 	 */
 	if (test_bit(ROC_PEND, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : RoC not start but canceled %x\n",
 				vif->last_roc_id);
 
@@ -5333,7 +5471,7 @@ static int _ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 		 * treat WMI_TIMEOUT as target reject then return.
 		 */
 		if (left == 0) {
-			ath6kl_dbg(ATH6KL_DBG_INFO,
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 				"RoC : wait ROC_WAIT_EVENT timeout, %lld %d\n",
 					cookie,
 					vif->last_roc_id);
@@ -5344,7 +5482,8 @@ static int _ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 		}
 
 		if (signal_pending(current)) {
-			ath6kl_err("RoC : target did not respond\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : target did not respond\n");
 			up(&ar->sem);
 			return -EINTR;
 		}
@@ -5352,7 +5491,7 @@ static int _ath6kl_cancel_remain_on_channel(struct wiphy *wiphy,
 
 	spin_lock_bh(&vif->if_lock);
 	if (cookie != vif->last_roc_id) {
-		ath6kl_dbg(ATH6KL_DBG_INFO,
+		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : Cancel-RoC %llx but current is %x\n", cookie,
 			vif->last_roc_id);
 
@@ -5400,7 +5539,8 @@ static int _ath6kl_mgmt_tx(struct wiphy *wiphy, struct net_device *dev,
 		!test_bit(ROC_ONGOING, &vif->flags)) {
 
 		if (ath6kl_p2p_is_p2p_frame(ar, buf, len)) {
-			ath6kl_err("RoC : RoC channel closed, ignore action frame\n");
+			ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
+				"RoC : Channel closed, ignore action frame\n");
 			up(&ar->sem);
 			return -EINVAL;
 		}
@@ -5939,6 +6079,11 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_8021X_4WAYHS\n");
 			filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
 		}
+
+		if (vif->arp_offload_ip_set || wow->any) {
+			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_OFFLOAD_ARP\n");
+			filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
+		}
 	}
 
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
@@ -5946,11 +6091,6 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 	  || vif->auth_mode == WPA_AUTH_CCKM || vif->auth_mode == WPA_PSK_AUTH){
 		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_OFFLOAD_GTK\n");
 		filter |= WOW_FILTER_OPTION_OFFLOAD_GTK;
-	}
-
-	if (vif->arp_offload_ip_set || wow->any) {
-		ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_OFFLOAD_ARP\n");
-		filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
 	}
 
 	if (filter || (wow && wow->n_patterns)) {
@@ -6159,9 +6299,17 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 void ath6kl_cfg80211_stop_all(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif, *tmp_vif;
-
+#ifdef CE_SUPPORT
+	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list) {
+		if (ar->state == ATH6KL_STATE_DEEPSLEEP) {
+			if (vif->nw_type != AP_NETWORK)
+				ath6kl_cfg80211_stop(vif);
+		}
+	}
+#else
 	list_for_each_entry_safe(vif, tmp_vif, &ar->vif_list, list)
 		ath6kl_cfg80211_stop(vif);
+#endif
 }
 
 static void ath6kl_change_cfg80211_ops(struct cfg80211_ops *cfg80211_ops)
@@ -6527,6 +6675,7 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar)
 
 		ath6kl_band_2ghz.ht_cap.cap &= ~IEEE80211_HT_CAP_TX_STBC;
 		ath6kl_band_5ghz.ht_cap.cap &= ~IEEE80211_HT_CAP_TX_STBC;
+
 	}
 
 	/* update 2G-HT40 capability. */
@@ -6744,6 +6893,8 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+	ath6kl_ap_rc_init(vif);
+
 	setup_timer(&vif->disconnect_timer, disconnect_timer_handler,
 		    (unsigned long) vif->ndev);
 	set_bit(WMM_ENABLED, &vif->flags);
@@ -6761,8 +6912,9 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 
 	vif->scanband_chan = 0;
 	if (ar->p2p_wise_scan &&
-	    (vif->fw_vif_idx != 0)) {
-		/* Only apply to P2P related interfaces. */
+	    (vif->fw_vif_idx != 0) &&
+	    (vif->fw_vif_idx != (ar->vif_max - 1))) {
+		/* Only apply to P2P interfaces. */
 		vif->scanband_type = SCANBAND_TYPE_2_P2PCHAN;
 	} else
 		vif->scanband_type = SCANBAND_TYPE_ALL;
@@ -6783,6 +6935,10 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 #endif
 
 	for (ctr = 0; ctr < AP_MAX_NUM_STA ; ctr++) {
+		if (vif->sta_list[ctr].psq_age_active) {
+			del_timer_sync(&vif->sta_list[ctr].psq_age_timer);
+			vif->sta_list[ctr].psq_age_active = 0;
+		}
 		if (!ath6kl_ps_queue_empty(&vif->sta_list[ctr].psq_data))
 			ath6kl_ps_queue_purge(&vif->sta_list[ctr].psq_data);
 
