@@ -19,6 +19,7 @@
 #include "htc-ops.h"
 #include "epping.h"
 #include <linux/version.h>
+#include "hif-ops.h"
 
 /* 802.1d to AC mapping. Refer pg 57 of WMM-test-plan-v1.2 */
 static const u8 up_to_ac[] = {
@@ -3417,6 +3418,18 @@ static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx)
 			cfg80211_scan_done(tmp->scan_req, true);
 			tmp->scan_req = NULL;
 			clear_bit(SCANNING, &tmp->flags);
+
+#if defined(USB_AUTO_SUSPEND)
+			if (test_and_clear_bit(SCANNING,
+				&ar->usb_autopm_scan)) {
+				if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+					ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+					"%s: warnning pm_usage_cnt =0\n",
+					__func__);
+				} else
+					ath6kl_hif_auto_pm_enable(ar);
+			}
+#endif
 		}
 	}
 

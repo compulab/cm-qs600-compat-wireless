@@ -16,6 +16,7 @@
 
 #include "core.h"
 #include "debug.h"
+#include "hif-ops.h"
 
 static inline enum ap_keepalive_adjust __ap_keepalive_adjust_txrx_time(
 	struct ath6kl_sta *conn, u16 last_txrx_time, unsigned long now)
@@ -1224,6 +1225,272 @@ int ath6kl_ap_admc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 	}
 
 	return len;
+}
+
+void ath6kl_ap_rc_init(struct ath6kl_vif *vif)
+{
+	struct ap_rc_info *ap_rc = &vif->ap_rc_info_ctx;
+
+	ap_rc->mode = AP_RC_MODE_DISABLE;
+	ap_rc->chan = 0;
+	ap_rc->chan_fixed = 0;
+
+	ath6kl_dbg(ATH6KL_DBG_AP_RC,
+			"ap_rc init mode %d\n",
+			ap_rc->mode);
+
+	return;
+}
+
+u16 ath6kl_ap_rc_get(struct ath6kl_vif *vif, u16 chan_config)
+{
+	struct ap_rc_info *ap_rc = &vif->ap_rc_info_ctx;
+	enum ap_rc_mode rc_mode = ap_rc->mode;
+	u16 chan_rc = chan_config;
+
+	/*
+	 * Only support AP recommend channel when
+	 * 1.ATH6KL_MODULE_ENABLE_P2P_CHANMODE not support.
+	 * 2.in pure SoftAP mode.
+	 */
+	if ((vif->next_chan_type == ATH6KL_CHAN_TYPE_NONE) &&
+	    (vif->wdev.iftype != NL80211_IFTYPE_P2P_GO)) {
+		struct ath6kl_rc_report rc_report;
+		int ret = -1;
+
+		memset(&rc_report, 0, sizeof(struct ath6kl_rc_report));
+		if (rc_mode != AP_RC_MODE_DISABLE)
+			ret = ath6kl_p2p_rc_get(vif->ar, &rc_report);
+
+		if (ret == 0) {
+			if (rc_mode == AP_RC_MODE_DISABLE)
+				chan_rc = 0;
+			else if (rc_mode == AP_RC_MODE_FIXED)
+				chan_rc = ap_rc->chan_fixed;
+			else if (rc_mode == AP_RC_MODE_2GALL)
+				chan_rc = rc_report.rc_2g;
+			else if (rc_mode == AP_RC_MODE_2GPOP)
+				chan_rc = rc_report.rc_p2p_so;
+			else if (rc_mode == AP_RC_MODE_5GALL)
+				chan_rc = rc_report.rc_5g;
+			else if (rc_mode == AP_RC_MODE_OVERALL)
+				chan_rc = rc_report.rc_all;
+			else if (rc_mode == AP_RC_MODE_2GNOLTE)
+				chan_rc = rc_report.rc_2g_nolte;
+			else if (rc_mode == AP_RC_MODE_5GNODFS)
+				chan_rc = rc_report.rc_5g_nodfs;
+			else if (rc_mode == AP_RC_MODE_OVERALLNOLTE)
+				chan_rc = rc_report.rc_all_nolte;
+			else if (rc_mode == AP_RC_MODE_OVERALLNODFS)
+				chan_rc = rc_report.rc_all_nodfs;
+			else if (rc_mode == AP_RC_MODE_OVERALLNOLTEDFS)
+				chan_rc = rc_report.rc_all_noltedfs;
+
+			ap_rc->chan = chan_rc;
+		} else {
+			/*
+			 * If disabled, fixed modes or query fails then not to
+			 * overwrite it
+			 */
+			chan_rc = chan_config;
+			ap_rc->chan = 0;
+		}
+	} else
+		chan_rc = chan_config;
+
+	ath6kl_dbg(ATH6KL_DBG_AP_RC,
+			"ap_rc get mode %d chan %d fixed %d config %d use %d\n",
+			ap_rc->mode,
+			ap_rc->chan,
+			ap_rc->chan_fixed,
+			chan_config,
+			chan_rc);
+
+	return chan_rc;
+}
+
+static s8 _ap_rc_build_scan_chan(struct ath6kl *ar, u16 *chan_list)
+{
+	struct wiphy *wiphy = ar->wiphy;
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_channel *chan;
+	s8 chan_num = 0;
+	int i;
+
+	/* TBD : fine tune channel order or needed channels. */
+	sband = wiphy->bands[NL80211_BAND_2GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (!(chan->flags & IEEE80211_CHAN_DISABLED))
+			chan_list[chan_num++] = chan->center_freq;
+	}
+
+	sband = wiphy->bands[NL80211_BAND_5GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (!(chan->flags & IEEE80211_CHAN_DISABLED))
+			chan_list[chan_num++] = chan->center_freq;
+	}
+
+	return chan_num;
+}
+
+void ath6kl_ap_rc_update(struct ath6kl_vif *vif)
+{
+#define _AP_RC_SCAN_TIMEOUT	(2 * HZ)
+	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *vif_tmp;
+	struct ap_rc_info *ap_rc = &vif->ap_rc_info_ctx;
+	bool scan_on_going = false;
+	int i, ret;
+
+	if ((ap_rc->mode == AP_RC_MODE_DISABLE) ||
+	    (ap_rc->mode == AP_RC_MODE_FIXED))
+		return;
+
+	if (test_bit(DISABLE_SCAN, &ar->flag)) {
+		ath6kl_err("ap_rc scan is disabled temporarily\n");
+		return;
+	}
+
+	if (down_interruptible(&ar->sem)) {
+		ath6kl_err("busy, couldn't get access\n");
+		return;
+	}
+
+	ath6kl_dbg(ATH6KL_DBG_AP_RC,
+			"ap_rc udpate start\n");
+
+	/*
+	 * If any kind of scan on-going and no need scan now.
+	 * Otherwise, start a scan and block until the scan finished.
+	 */
+	for (i = 0; i < ar->vif_max; i++) {
+		vif_tmp = ath6kl_get_vif_by_index(ar, i);
+		if (vif_tmp && test_bit(SCANNING, &vif_tmp->flags))
+			scan_on_going = true;
+	}
+
+	if (scan_on_going == false) {
+		u16 *channels;
+		s8 num_chan = 0;
+		bool left;
+
+		channels = kzalloc(WMI_MAX_CHANNELS * sizeof(u16), GFP_KERNEL);
+		if (channels) {
+			set_bit(SCANNING, &vif->flags);
+
+			if (!vif->usr_bss_filter) {
+				clear_bit(CLEAR_BSSFILTER_ON_BEACON,
+						&vif->flags);
+				ath6kl_wmi_bssfilter_cmd(ar->wmi,
+							vif->fw_vif_idx,
+							ALL_BSS_FILTER,
+							0);
+			}
+
+			num_chan = _ap_rc_build_scan_chan(ar, channels);
+			ret = ath6kl_wmi_startscan_cmd(ar->wmi,
+							vif->fw_vif_idx,
+							WMI_LONG_SCAN,
+							true, false, 0, 0,
+							num_chan,
+							channels);
+			if (ret)
+				ath6kl_err("wmi_startscan_cmd failed\n");
+			else {
+				set_bit(SCANNING_WAIT, &vif->flags);
+
+				ath6kl_p2p_rc_scan_start(vif, true);
+#ifdef USB_AUTO_SUSPEND
+				ath6kl_hif_auto_pm_disable(ar);
+#endif
+
+				/* Block until scan finish */
+				left = wait_event_interruptible_timeout(
+					ar->event_wq,
+					!test_bit(SCANNING_WAIT, &vif->flags),
+					_AP_RC_SCAN_TIMEOUT);
+
+				if (left == 0) {
+					clear_bit(SCANNING_WAIT, &vif->flags);
+					ath6kl_wmi_abort_scan_cmd(ar->wmi,
+							vif->fw_vif_idx);
+					ath6kl_err("ap_rc scan timeout\n");
+				}
+
+				if (signal_pending(current)) {
+					clear_bit(SCANNING_WAIT, &vif->flags);
+					ath6kl_err("ap_rc tgt not respond\n");
+				}
+			}
+
+			/* Local scan need to clear SCANNING by caller. */
+			clear_bit(SCANNING, &vif->flags);
+
+			kfree(channels);
+		} else
+			ath6kl_err("ap_rc alloc channel_list memory fail!\n");
+	}
+
+	up(&ar->sem);
+
+	ath6kl_dbg(ATH6KL_DBG_AP_RC,
+			"ap_rc udpate down %s scan\n",
+			(scan_on_going ? "without" : "with"));
+
+	return;
+#undef _AP_RC_SCAN_TIMEOUT
+}
+
+int ath6kl_ap_rc_config(struct ath6kl_vif *vif, int mode_or_freq)
+{
+	struct ap_rc_info *ap_rc = &vif->ap_rc_info_ctx;
+
+	/* Not yet support DFS in AP mode. */
+	if ((mode_or_freq == AP_RC_MODE_5GALL) ||
+	    (mode_or_freq == AP_RC_MODE_OVERALL) ||
+	    (mode_or_freq == AP_RC_MODE_OVERALLNOLTE)) {
+		ath6kl_err("set ap_rc error! mode_or_freq %d not yet support\n",
+				mode_or_freq);
+
+		return -EINVAL;
+	}
+
+	if (mode_or_freq >= AP_RC_MODE_DISABLE) {
+		if (mode_or_freq <= AP_RC_MODE_MAX) {
+			ap_rc->mode = mode_or_freq;
+			ap_rc->chan = 0;
+			ap_rc->chan_fixed = 0;
+		} else {
+			struct ieee80211_channel *chan;
+
+			chan = ieee80211_get_channel(vif->ar->wiphy,
+							mode_or_freq);
+			if ((chan) &&
+			    !(chan->flags & IEEE80211_CHAN_DISABLED)) {
+				ap_rc->mode = AP_RC_MODE_FIXED;
+				ap_rc->chan = 0;
+				ap_rc->chan_fixed = mode_or_freq;
+			} else {
+				ath6kl_err("set ap_rc set fixed freq %d fail\n",
+						mode_or_freq);
+
+				return -EINVAL;
+			}
+		}
+
+		ath6kl_dbg(ATH6KL_DBG_AP_RC,
+				"ap_rc change to mode %d chan_fixed %d\n",
+				ap_rc->mode,
+				ap_rc->chan_fixed);
+
+		return 0;
+	}
+		ath6kl_err("set ap_rc error! mode_or_freq %d\n",
+				mode_or_freq);
+
+	return -EINVAL;
 }
 
 int ath6kl_ap_ht_update_ies(struct ath6kl_vif *vif)

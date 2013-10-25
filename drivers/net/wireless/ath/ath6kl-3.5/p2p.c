@@ -561,7 +561,7 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						ar->event_wq,
 						!test_bit(PORT_STATUS_PEND,
 						&vif->flags),
-						WMI_TIMEOUT/10);
+						WMI_TIMEOUT/2);
 				WARN_ON(left <= 0);
 			}
 
@@ -577,7 +577,7 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 						ar->event_wq,
 						!test_bit(PORT_STATUS_PEND,
 						&vif->flags),
-						WMI_TIMEOUT/5);
+						WMI_TIMEOUT);
 			WARN_ON(left <= 0);
 
 			if (type == NL80211_IFTYPE_P2P_CLIENT) {
@@ -1437,34 +1437,38 @@ static void _p2p_rc_reset_chan_record(struct ath6kl_p2p_rc_info *p2p_rc)
 	return;
 }
 
-void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif)
+void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif, bool local_scan)
 {
 	struct ath6kl_p2p_rc_info *p2p_rc = vif->ar->p2p_rc_info_ctx;
 
 	if (!p2p_rc)
 		return;
 
-	/* Assume only one scan behavior between all VIFs at the same time. */
+	/*
+	 * Assume that
+	 * 1.only one scan behavior between all VIFs at the same time.
+	 * 2.trust vif->scanband_type if this is a user scan.
+	 * 3.if this is a driver scan and always learn it.
+	 */
 
 	/* Only full-scan is valid. */
-	if ((vif->scan_req) &&
-	    (vif->scanband_type == SCANBAND_TYPE_ALL)) {
+	if ((local_scan) ||
+	    (test_bit(SCANNING, &vif->flags) &&
+	     (vif->scanband_type == SCANBAND_TYPE_ALL))) {
 		/* Reset the channel record. */
 		_p2p_rc_reset_chan_record(p2p_rc);
 
-		if ((vif->scan_req->n_channels == 0) ||
-		    (vif->scan_req->n_channels == p2p_rc->chan_record_cnt)) {
-			p2p_rc->flags |= ATH6KL_RC_FLAGS_NEED_UPDATED;
-			p2p_rc->last_update = jiffies;
-		}
+		p2p_rc->flags |= ATH6KL_RC_FLAGS_NEED_UPDATED;
+		p2p_rc->last_update = jiffies;
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_RC,
-			"p2p_rc scan_start %s, chan %d type %d cnt %d\n",
+			"p2p_rc scan_start %s, chan %d %s type %d cnt %d\n",
 				(p2p_rc->flags & ATH6KL_RC_FLAGS_NEED_UPDATED ?
 					"need-update" : ""),
 				(vif->scan_req ?
 					vif->scan_req->n_channels : -1),
+				(local_scan ? "local-scan" : ""),
 				vif->scanband_type,
 				p2p_rc->chan_record_cnt);
 
@@ -1593,23 +1597,6 @@ static inline u8 __p2p_rc_average_snr(struct p2p_rc_chan_record *chan[],
 	return aver_snr;
 }
 
-static inline bool __p2p_rc_is_lte_channel(struct ath6kl_p2p_rc_info *p2p_rc,
-					struct ieee80211_channel *chan)
-{
-#define _LTE_BAND7_START_FREQ	(2457)	/* Not used after Ch10 */
-
-	/*
-	 * FDD LTE band 7 uplink (2500Mhz ~ 2570MHz)
-	 * TDD LTE band 40 (2300Mhz ~ 2400MHz)
-	 */
-
-	if (chan->center_freq >= _LTE_BAND7_START_FREQ)
-		return true;
-	else
-		return false;
-#undef _LTE_BAND7_START_FREQ
-}
-
 static bool __p2p_rc_is_user_channel(struct ath6kl_p2p_rc_info *p2p_rc,
 					struct ieee80211_channel *chan)
 {
@@ -1666,7 +1653,8 @@ static struct p2p_rc_chan_record *_p2p_rc_get_2g_chan(
 				 !ath6kl_p2p_is_p2p_channel(chan->center_freq))
 				continue;
 			else if ((no_lte) &&
-				 __p2p_rc_is_lte_channel(p2p_rc, chan))
+				 ath6kl_reg_is_lte_channel(p2p_rc->ar,
+							 chan->center_freq))
 				continue;
 
 			/* Get adjacence channels in 20MHz width. */
@@ -1765,19 +1753,7 @@ static struct p2p_rc_chan_record *_p2p_rc_get_5g_chan(
 	return best_p2p_rc_chan;
 }
 
-int ath6kl_p2p_rc_get(struct ath6kl *ar,
-			u16 *rc_2g,
-			u16 *rc_5g,
-			u16 *rc_all,
-			u16 *rc_p2p_social,
-			u16 *rc_p2p_2g,
-			u16 *rc_p2p_5g,
-			u16 *rc_p2p_all,
-			u16 *rc_5g_nodfs,
-			u16 *rc_all_nodfs,
-			u16 *rc_2g_nolte,
-			u16 *rc_all_nolte,
-			u16 *rc_user_chan)
+int ath6kl_p2p_rc_get(struct ath6kl *ar, struct ath6kl_rc_report *rc_report)
 {
 	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
 	struct p2p_rc_chan_record **p2p_rc_chan;
@@ -1922,6 +1898,24 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 		p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTE] =
 			p2p_rc_chan[P2P_RC_TYPE_5GALL];
 
+	/* Get overall w/o LTE&DFS recommand channel. */
+	if (p2p_rc_chan[P2P_RC_TYPE_2GNOLTE]) {
+		if (p2p_rc_chan[P2P_RC_TYPE_5GNODFS]) {
+			if (p2p_rc_chan[P2P_RC_TYPE_2GNOLTE]->aver_snr >
+			    (p2p_rc_chan[P2P_RC_TYPE_5GNODFS]->best_snr +
+			     p2p_rc->snr_compensation))
+				p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTEDFS] =
+					p2p_rc_chan[P2P_RC_TYPE_2GNOLTE];
+			else	/* Prefer to use 5G if has the same value. */
+				p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTEDFS] =
+					p2p_rc_chan[P2P_RC_TYPE_5GNODFS];
+		} else
+			p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTEDFS] =
+					p2p_rc_chan[P2P_RC_TYPE_2GNOLTE];
+	} else if (p2p_rc_chan[P2P_RC_TYPE_5GNODFS])
+		p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTEDFS] =
+			p2p_rc_chan[P2P_RC_TYPE_5GNODFS];
+
 	/* Get user-defined recommand channel. */
 	user_chan_2g = _p2p_rc_get_2g_chan(p2p_rc,
 						false,
@@ -1952,52 +1946,56 @@ int ath6kl_p2p_rc_get(struct ath6kl *ar,
 
 done:
 	/* Get all results back to the caller */
-	if ((p2p_rc_chan[P2P_RC_TYPE_2GALL]) && rc_2g)
-		*rc_2g =
+	if (p2p_rc_chan[P2P_RC_TYPE_2GALL])
+		rc_report->rc_2g =
 		p2p_rc_chan[P2P_RC_TYPE_2GALL]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_5GALL]) && rc_5g)
-		*rc_5g =
+	if (p2p_rc_chan[P2P_RC_TYPE_5GALL])
+		rc_report->rc_5g =
 		p2p_rc_chan[P2P_RC_TYPE_5GALL]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_OVERALL]) && rc_all)
-		*rc_all =
+	if (p2p_rc_chan[P2P_RC_TYPE_OVERALL])
+		rc_report->rc_all =
 		p2p_rc_chan[P2P_RC_TYPE_OVERALL]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_SOCAIL]) && rc_p2p_social)
-		*rc_p2p_social =
+	if (p2p_rc_chan[P2P_RC_TYPE_SOCAIL])
+		rc_report->rc_p2p_so =
 		p2p_rc_chan[P2P_RC_TYPE_SOCAIL]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_2GP2P]) && rc_p2p_2g)
-		*rc_p2p_2g =
+	if (p2p_rc_chan[P2P_RC_TYPE_2GP2P])
+		rc_report->rc_p2p_2g =
 		p2p_rc_chan[P2P_RC_TYPE_2GP2P]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_5GP2P]) && rc_p2p_5g)
-		*rc_p2p_5g =
+	if (p2p_rc_chan[P2P_RC_TYPE_5GP2P])
+		rc_report->rc_p2p_5g =
 		p2p_rc_chan[P2P_RC_TYPE_5GP2P]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_ALLP2P]) && rc_p2p_all)
-		*rc_p2p_all =
+	if (p2p_rc_chan[P2P_RC_TYPE_ALLP2P])
+		rc_report->rc_p2p_all =
 		p2p_rc_chan[P2P_RC_TYPE_ALLP2P]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_5GNODFS]) && rc_5g_nodfs)
-		*rc_5g_nodfs =
+	if (p2p_rc_chan[P2P_RC_TYPE_5GNODFS])
+		rc_report->rc_5g_nodfs =
 		p2p_rc_chan[P2P_RC_TYPE_5GNODFS]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS]) && rc_all_nodfs)
-		*rc_all_nodfs =
+	if (p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS])
+		rc_report->rc_all_nodfs =
 		p2p_rc_chan[P2P_RC_TYPE_OVERALLNODFS]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_2GNOLTE]) && rc_2g_nolte)
-		*rc_2g_nolte =
+	if (p2p_rc_chan[P2P_RC_TYPE_2GNOLTE])
+		rc_report->rc_2g_nolte =
 		p2p_rc_chan[P2P_RC_TYPE_2GNOLTE]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTE]) && rc_all_nolte)
-		*rc_all_nolte =
+	if (p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTE])
+		rc_report->rc_all_nolte =
 		p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTE]->channel->center_freq;
 
-	if ((p2p_rc_chan[P2P_RC_TYPE_USER_CHAN]) && rc_user_chan)
-		*rc_user_chan =
+	if (p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTEDFS])
+		rc_report->rc_all_noltedfs =
+		p2p_rc_chan[P2P_RC_TYPE_OVERALLNOLTEDFS]->channel->center_freq;
+
+	if (p2p_rc_chan[P2P_RC_TYPE_USER_CHAN])
+		rc_report->rc_user_chan =
 		p2p_rc_chan[P2P_RC_TYPE_USER_CHAN]->channel->center_freq;
 
 	ath6kl_dbg(ATH6KL_DBG_RC,
@@ -2012,11 +2010,8 @@ int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 {
 	struct ath6kl_p2p_rc_info *p2p_rc = ar->p2p_rc_info_ctx;
 	struct p2p_rc_chan_record *p2p_rc_chan;
+	struct ath6kl_rc_report rc_report;
 	int i, idx = 0, len = 0;
-	u16 rc_2g, rc_5g, rc_all, rc_p2p_so, rc_p2p_2g, rc_p2p_5g, rc_p2p_all;
-	u16 rc_5g_nodfs, rc_all_nodfs;
-	u16 rc_2g_nolte, rc_all_nolte;
-	u16 rc_user_chan;
 
 	if ((!p2p_rc) || (!buf))
 		return 0;
@@ -2028,52 +2023,40 @@ int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len)
 			(long long int)p2p_rc->last_update,
 			(long long int)jiffies);
 
-	rc_2g = rc_5g = rc_all = 0;
-	rc_p2p_so = rc_p2p_2g = rc_p2p_5g = rc_p2p_all = 0;
-	rc_5g_nodfs = rc_all_nodfs = 0;
-	rc_2g_nolte = rc_all_nolte = 0;
-	rc_user_chan = 0;
-	if (ath6kl_p2p_rc_get(ar,
-			&rc_2g,
-			&rc_5g,
-			&rc_all,
-			&rc_p2p_so,
-			&rc_p2p_2g,
-			&rc_p2p_5g,
-			&rc_p2p_all,
-			&rc_5g_nodfs,
-			&rc_all_nodfs,
-			&rc_2g_nolte,
-			&rc_all_nolte,
-			&rc_user_chan) != 0)
+	memset(&rc_report, 0, sizeof(struct ath6kl_rc_report));
+	if (ath6kl_p2p_rc_get(ar, &rc_report) != 0)
 		return 0;
 
 	len += snprintf(buf + len, buf_len - len,
 		"\n2G/5G/ALL %d %d %d\n",
-		rc_2g,
-		rc_5g,
-		rc_all);
+		rc_report.rc_2g,
+		rc_report.rc_5g,
+		rc_report.rc_all);
 
 	len += snprintf(buf + len, buf_len - len,
 		"P2P-Social/2G/5G/ALL %d %d %d %d\n",
-		rc_p2p_so,
-		rc_p2p_2g,
-		rc_p2p_5g,
-		rc_p2p_all);
+		rc_report.rc_p2p_so,
+		rc_report.rc_p2p_2g,
+		rc_report.rc_p2p_5g,
+		rc_report.rc_p2p_all);
 
 	len += snprintf(buf + len, buf_len - len,
 		"NoDFS-5G/ALL %d %d\n",
-		rc_5g_nodfs,
-		rc_all_nodfs);
+		rc_report.rc_5g_nodfs,
+		rc_report.rc_all_nodfs);
 
 	len += snprintf(buf + len, buf_len - len,
 		"NoLTE-2G/ALL %d %d\n",
-		rc_2g_nolte,
-		rc_all_nolte);
+		rc_report.rc_2g_nolte,
+		rc_report.rc_all_nolte);
+
+	len += snprintf(buf + len, buf_len - len,
+		"NoLTE-NoDFS-ALL %d\n",
+		rc_report.rc_all_noltedfs);
 
 	len += snprintf(buf + len, buf_len - len,
 		"UserChan %d\n",
-		rc_user_chan);
+		rc_report.rc_user_chan);
 
 	len += snprintf(buf + len, buf_len - len,
 		"\nUserChan Type - %s\nUserChan List -",
@@ -2596,5 +2579,66 @@ bool ath6kl_p2p_is_social_channel(u32 freq)
 		return true;
 
 	return false;
+}
+
+static int _p2p_build_scan_chan(struct ath6kl *ar, u16 *chan_list)
+{
+	struct wiphy *wiphy = ar->wiphy;
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_channel *chan;
+	int i, num_chan = 0;
+
+	sband = wiphy->bands[NL80211_BAND_2GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (!(chan->flags & IEEE80211_CHAN_DISABLED) &&
+		    ath6kl_p2p_is_p2p_channel(chan->center_freq))
+			chan_list[num_chan++] = chan->center_freq;
+	}
+
+	sband = wiphy->bands[NL80211_BAND_5GHZ];
+	for (i = 0; i < sband->n_channels; i++) {
+		chan = &sband->channels[i];
+		if (!(chan->flags & IEEE80211_CHAN_DISABLED) &&
+		    ath6kl_p2p_is_p2p_channel(chan->center_freq))
+			chan_list[num_chan++] = chan->center_freq;
+	}
+
+	return num_chan;
+}
+
+int ath6kl_p2p_build_scan_chan(struct ath6kl_vif *vif,
+				u32 req_chan_num,
+				u16 *chan_list)
+{
+#define _P2P_WISE_FULL_SCAN_CNT	(15)
+	struct ath6kl *ar = vif->ar;
+	bool full_chan_scan = false;
+
+	/*
+	 * If this's P2P-Device's scan w/ only P2P-Social channel and assume
+	 * the user is in P2P searching state and will insert a full channel
+	 * scan every _P2P_WISE_FULL_SCAN_CNT time.
+	 */
+	if (ar->p2p_wise_scan) {
+		if (ar->p2p_dedicate &&
+		    (vif->fw_vif_idx == (ar->vif_max - 1))) {
+			if (req_chan_num > 3)
+				vif->p2p_wise_full_scan = 0;
+			else if (req_chan_num == 3)
+				vif->p2p_wise_full_scan++;
+
+			if (vif->p2p_wise_full_scan > _P2P_WISE_FULL_SCAN_CNT) {
+				full_chan_scan = true;
+				vif->p2p_wise_full_scan = 0;
+			}
+
+			if (full_chan_scan)
+				return _p2p_build_scan_chan(ar, chan_list);
+		}
+	}
+
+	return 0;
+#undef _P2P_WISE_FULL_SCAN_CNT
 }
 

@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.394)
+#define __BUILD_VERSION_ (3.5.0.425)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -106,6 +106,7 @@
 #else
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
 	ATH6KL_MODULES_ANI_ENABLE |			\
 	 0)
 #endif
@@ -350,7 +351,8 @@
 #define ATH6KL_ROC_MAX_PERIOD		(5)	/* in sec. */
 
 /* scan time out */
-#define ATH6KL_SCAN_TIMEOUT_LONG (8 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_LONG (9 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_ONE_CON (7 * HZ)
 #define ATH6KL_SCAN_TIMEOUT_SHORT (5 * HZ) /* in sec. */
 #define ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM (20 * HZ)  /* in sec. */
 
@@ -1045,6 +1047,7 @@ struct ath6kl_sta {
 	struct ath6kl_ps_buf_head psq_data;
 	struct ath6kl_ps_buf_head psq_mgmt;
 	struct timer_list psq_age_timer;
+	u8 psq_age_active;
 	u8 apsd_info;
 
 	/* TX/RX-AMSDU */
@@ -1255,6 +1258,7 @@ enum ath6kl_vif_state {
 	PORT_STATUS_PEND,
 	WLAN_WOW_ENABLE,
 	SCANNING,
+	SCANNING_WAIT,
 	DORMANT,
 	PS_STICK,
 #ifdef ATHTST_SUPPORT
@@ -1304,15 +1308,21 @@ struct bss_info_entry {
 	struct ieee80211_channel *channel;
 	struct ieee80211_mgmt *mgmt;
 	size_t len;
+	unsigned long shoot_time;
 };
 
 #define ATH6KL_BSS_POST_PROC_SCAN_ONGOING	(1 << 0)
+#define ATH6KL_BSS_POST_PROC_CACHED_BSS		(1 << 1)
 
 struct bss_post_proc {
 	struct ath6kl_vif *vif;
 	u32 flags;
 	spinlock_t bss_info_lock;
 	struct list_head bss_info_list;
+
+#define ATH6KL_BSS_POST_PROC_AGING_TIME		(15 * HZ)	/* second */
+#define ATH6KL_BSS_POST_PROC_AGING_TIME_MIN	ATH6KL_SCAN_TIMEOUT_SHORT
+	int aging_time;
 };
 
 struct ath6kl_vif {
@@ -1436,6 +1446,11 @@ struct ath6kl_vif {
 
 	struct bss_post_proc *bss_post_proc_ctx;
 	u32 data_cookie_count;
+
+	struct ap_rc_info ap_rc_info_ctx;
+
+	int p2p_wise_full_scan;		/* Counter to trigger full P2P scan. */
+	u16 next_conn_status;		/* CR508988 */
 };
 
 #define WOW_LIST_ID		0
@@ -2019,6 +2034,13 @@ void ath6kl_bss_post_proc_bss_info(struct ath6kl_vif *vif,
 				int len,
 				s32 snr,
 				struct ieee80211_channel *channel);
+int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
+					char *ssid,
+					int ssid_len,
+					u16 *chan_list);
+void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
+				bool cache_bss,
+				int aging_time);
 
 #ifdef CONFIG_ANDROID
 void ath6kl_sdio_init_msm(void);
@@ -2058,5 +2080,9 @@ extern unsigned int htc_bundle_send_timer;
 extern unsigned int htc_bundle_send_th;
 #ifdef CE_SUPPORT
 extern unsigned int ath6kl_ce_flags;
+#endif
+
+#ifdef CONFIG_ANDROID
+extern unsigned int ath6kl_bt_on;
 #endif
 #endif /* CORE_H */

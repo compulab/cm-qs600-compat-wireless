@@ -69,6 +69,11 @@ char *ath6kl_wifi_mac;
    to avoid the problem that create softap mode will fail. */
 char *fwpath = "android_fw_path_compatible_str";
 
+#ifdef CONFIG_ANDROID
+/* status for bt on/off */
+unsigned int ath6kl_bt_on;
+#endif
+
 module_param(debug_mask, uint, 0644);
 module_param(debug_mask_ext, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
@@ -95,6 +100,10 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 module_param(reg_domain, ushort, 0644);
+
+#ifdef CONFIG_ANDROID
+module_param(ath6kl_bt_on, uint, 0644);
+#endif
 
 #ifdef ATH6KL_HSIC_RECOVER
 u8 cached_mac[ETH_ALEN];
@@ -692,6 +701,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 						 ENABLE_AUTO_CTRL_FLAGS);
 	}
 
+#if 0
 	if ((ar->hif_type == ATH6KL_HIF_TYPE_USB) &&
 			(ar->p2p_compat) &&
 			(vif->fw_vif_idx)) {
@@ -699,6 +709,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 		ath6kl_info("Disable connect-scan, vif_idx = %d\n",
 				vif->fw_vif_idx);
 	}
+#endif
 
 	if (ar->roam_mode != ATH6KL_MODULEROAM_DISABLE &&
 		(vif->wdev.iftype == NL80211_IFTYPE_STATION ||
@@ -708,10 +719,10 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 #if defined(CE_SUPPORT) || defined(CE_2_SUPPORT)
 	/* avoid association reject by AP not found */
 	vif->sc_params.maxact_chdwell_time = 60;
-	vif->sc_params.maxact_scan_per_ssid = 2;
 #else
 	vif->sc_params.maxact_chdwell_time = (2 * ATH6KL_SCAN_ACT_DEWELL_TIME);
 #endif
+	vif->sc_params.maxact_scan_per_ssid = 2;
 
 	if (!(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
 		vif->sc_params.pas_chdwell_time =
