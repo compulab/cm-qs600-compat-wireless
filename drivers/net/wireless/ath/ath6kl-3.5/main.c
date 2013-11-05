@@ -1973,6 +1973,8 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 						(user_cmd + 4),
 						NULL,
 						(android_cmd.used_len - 4));
+				else if (strstr(user_cmd, "SET_AP_WPS_P2P_IE"))
+					ret = 0; /* To avoid AP/GO up stuck. */
 				else {
 					ath6kl_dbg(ATH6KL_DBG_TRC,
 						"not yet support \"%s\"\n",

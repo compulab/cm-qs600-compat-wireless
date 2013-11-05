@@ -41,12 +41,13 @@
 #include "p2p.h"
 #include "ap.h"
 #include <linux/wireless.h>
+#include <linux/interrupt.h>
 
 #define MAKE_STR(symbol) #symbol
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.1.21)
+#define __BUILD_VERSION_ (3.5.4.3)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -117,6 +118,62 @@
 
 #ifndef ATH6KL_DEVNAME_DEF_STA
 #define ATH6KL_DEVNAME_DEF_STA		"sta%d"
+#endif
+
+
+/*
+ * NOT to touch origional branches's Makefile and therefore turn-on
+ * ATH6KL_SUPPORT_NL80211_QCA by default for all Android releases.
+ */
+#ifdef CONFIG_ANDROID
+#define ATH6KL_SUPPORT_NL80211_QCA
+
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_4
+/*
+ * New Android (after JB_2.5/JB_MR1) use build-in cfg80211.ko and
+ * need to remove QCA's cfg80211 implementations.
+ */
+#undef ATH6KL_SUPPORT_NL80211_QCA
+#endif
+#endif
+
+/*
+ * No good way to support every version of cfg80211.ko so far, especially
+ * we sometimes change the default behavior of public cfg80211.ko.
+ *
+ * To let driver code could compiler between different cfg80211.ko and using
+ * these flags now.
+ * Newer NL80211.h may has the similiar definitions to used by application
+ * or the driver but, unfortunately, all are not we want.
+ *
+ * Please add ATH6KL_SUPPORT_NL80211_QCA or ATH6KL_SUPPORT_NL80211_KERNEL3_x
+ * in your BSP's Makefiles based on the cfg80211.ko you used.
+ */
+#ifdef ATH6KL_SUPPORT_NL80211_QCA
+/*
+ * Means the cfg80211.ko is older version (as least older than built-in
+ * version of kernel3.3) and had QCA's special implementations.
+ *
+ * NL80211_CMD_GET_WOWLAN_QCA: for QCA WoW command.
+ * NL80211_CMD_BTCOEX_QCA: for QCA BTCoext NL80211 command and event.
+ *
+ * TODO : remove these special implementations.
+ */
+#define NL80211_CMD_GET_WOWLAN_QCA
+#define NL80211_CMD_BTCOEX_QCA
+#endif
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_4
+/*
+ * Means the cfg80211.ko is newer version (as least newer than built-in
+ * version of kernel3.4)
+ *
+ * NL80211_CMD_START_AP: for new call-back and structures.
+ * NL80211_ATTR_RX_SIGNAL_DBM: for new API's parameter.
+ * CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL: new flag consist w/ RoC oper.
+ */
+#define NL80211_CMD_START_AP
+#define NL80211_ATTR_RX_SIGNAL_DBM
+#define CFG80211_WIPHY_FLAG_HAS_REMAIN_ON_CHANNEL
 #endif
 
 #define ATH6KL_SUPPORT_WIFI_DISC 1
@@ -299,7 +356,7 @@ struct ath6kl_android_wifi_priv_cmd {
 	int total_len;
 };
 
-struct btcoex_ioctl{
+struct btcoex_ioctl {
 	char *cmd;
 	unsigned int cmd_len;
 };

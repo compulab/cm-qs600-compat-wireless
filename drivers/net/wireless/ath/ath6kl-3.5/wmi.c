@@ -121,6 +121,16 @@ static const u8 up_to_ac[] = {
 	WMM_AC_VO,
 };
 
+static inline bool ath6kl_wmi_report_rx_mgmt(struct net_device *dev, int freq,
+	int sig_mbm, const u8 *buf, size_t len, gfp_t gfp)
+{
+#ifdef NL80211_ATTR_RX_SIGNAL_DBM
+	return cfg80211_rx_mgmt(dev, freq, sig_mbm, buf, len, gfp);
+#else
+	return cfg80211_rx_mgmt(dev, freq, buf, len, gfp);
+#endif
+}
+
 void ath6kl_wmi_set_control_ep(struct wmi *wmi, enum htc_endpoint_id ep_id)
 {
 	if (WARN_ON(ep_id == ENDPOINT_UNUSED || ep_id >= ENDPOINT_MAX))
@@ -808,7 +818,12 @@ static int ath6kl_wmi_rx_probe_req_event_rx(struct wmi *wmi, u8 *datap, int len,
 		   dlen, freq, vif->probe_req_report);
 
 	if (vif->probe_req_report || vif->nw_type == AP_NETWORK)
-		cfg80211_rx_mgmt(vif->ndev, freq, ev->data, dlen, GFP_ATOMIC);
+		ath6kl_wmi_report_rx_mgmt(vif->ndev,
+					freq,
+					0,
+					ev->data,
+					dlen,
+					GFP_ATOMIC);
 
 	return 0;
 }
@@ -858,7 +873,12 @@ static int ath6kl_wmi_rx_action_event_rx(struct wmi *wmi, u8 *datap, int len,
 		return 0;
 	}
 
-	cfg80211_rx_mgmt(vif->ndev, freq, ev->data, dlen, GFP_ATOMIC);
+	ath6kl_wmi_report_rx_mgmt(vif->ndev,
+				freq,
+				0,
+				ev->data,
+				dlen,
+				GFP_ATOMIC);
 
 	return 0;
 }

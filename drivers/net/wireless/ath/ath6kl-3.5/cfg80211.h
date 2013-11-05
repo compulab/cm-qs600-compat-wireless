@@ -29,6 +29,31 @@ extern unsigned int ath6kl_wow_ext;
 extern unsigned int ath6kl_scan_timeout;
 extern unsigned int ath6kl_roam_mode;
 
+struct ath6kl_beacon_parameters {
+	/* Settings */
+	int beacon_interval;
+	int dtim_period;
+	const u8 *ssid;
+	size_t ssid_len;
+	enum nl80211_hidden_ssid hidden_ssid;
+	struct cfg80211_crypto_settings crypto;
+	bool privacy;
+	enum nl80211_auth_type auth_type;
+	int inactivity_timeout;
+
+	/* IEs */
+	const u8 *head, *tail;
+	int head_len, tail_len;
+	const u8 *beacon_ies;
+	size_t beacon_ies_len;
+	const u8 *proberesp_ies;
+	size_t proberesp_ies_len;
+	const u8 *assocresp_ies;
+	size_t assocresp_ies_len;
+	const u8 *probe_resp;
+	int probe_resp_len;
+};
+
 struct net_device *ath6kl_interface_add(struct ath6kl *ar, char *name,
 					enum nl80211_iftype type,
 					u8 fw_vif_idx, u8 nw_type);
