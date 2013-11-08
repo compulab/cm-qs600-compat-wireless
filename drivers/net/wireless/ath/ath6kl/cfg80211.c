@@ -3238,8 +3238,8 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (info->auto_channel_select)  {
                 if (vif->phy_mode == WMI_11A_MODE)
                         band = IEEE80211_BAND_5GHZ;
-                else
-                        band = IEEE80211_BAND_2GHZ;
+		else
+			band = IEEE80211_BAND_2GHZ;
 	} else {
 		band = info->channel->band;
 	}
@@ -3290,6 +3290,8 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			ar->acs_in_prog = 0;
 		}
 
+		if (p.ch == AP_ACS_USER_DEFINED)
+			vif->acs_chan_mask = info->acs_chan_mask;
 	} else {
                 p.ch = cpu_to_le16(info->channel->center_freq);
 
