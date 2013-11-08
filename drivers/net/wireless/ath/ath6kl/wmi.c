@@ -857,10 +857,9 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 		/* AP mode start/STA connected event */
 		struct net_device *dev = vif->ndev;
 		if (memcmp(dev->dev_addr, ev->u.ap_bss.bssid, ETH_ALEN) == 0) {
-			ath6kl_dbg(ATH6KL_DBG_WMI,
-				   "%s: freq %d bssid %pM (AP started)\n",
-				   __func__, le16_to_cpu(ev->u.ap_bss.ch),
-				   ev->u.ap_bss.bssid);
+			ath6kl_info("%s: freq %d bssid %pM (AP started)\n",
+					__func__, le16_to_cpu(ev->u.ap_bss.ch),
+					ev->u.ap_bss.bssid);
 			ath6kl_mcc_flowctrl_set_conn_id(vif,
 							ev->u.ap_bss.bssid,
 							ev->u.ap_bss.aid);
@@ -3378,6 +3377,25 @@ static bool ath6kl_apap_override(struct ath6kl *ar, int vif_idx)
 
 /*  AP mode functions */
 
+int ath6kl_wmi_ap_set_acs_policy_cmd(struct wmi *wmip, u8 if_idx,
+		u16 acs_chan_mask)
+{
+	struct sk_buff *skb;
+	struct wmi_ap_set_acs_policy_cmd *cm;
+
+	skb = ath6kl_wmi_get_new_buf(sizeof(*cm));
+	if (!skb)
+		return -ENOMEM;
+
+	cm = (struct wmi_ap_set_acs_policy_cmd *) skb->data;
+	cm->acs_chan_mask = acs_chan_mask;
+
+	ath6kl_info("ap_set_acs_policy: chan_mask=%d\n", cm->acs_chan_mask);
+
+	return ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_SET_CH_ACS_CMDID,
+				   NO_SYNC_WMIFLAG);
+}
+
 int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 				 struct wmi_connect_cmd *p)
 {
@@ -3404,6 +3422,12 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 	}
 
 	vif = ath6kl_get_vif_by_index(wmip->parent_dev, if_idx);
+
+	if (vif && cm->ch == AP_ACS_USER_DEFINED) {
+		ath6kl_wmi_ap_set_acs_policy_cmd(ar->wmi, vif->fw_vif_idx,
+				vif->acs_chan_mask);
+	}
+
 	if (vif)
 		ath6kl_wmi_set_ch_params(ar->wmi, vif->fw_vif_idx,
 					 vif->phy_mode);

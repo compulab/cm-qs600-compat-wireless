@@ -1542,6 +1542,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_USER_REG_HINT_TYPE,
 
 	NL80211_ATTR_REQUIRE_HT,
+
+	NL80211_ATTR_ACS_CHAN_MASK,
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,

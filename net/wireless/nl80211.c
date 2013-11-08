@@ -302,6 +302,7 @@ static const struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] = {
 	[NL80211_ATTR_ACS] = { .type = NLA_U8 },
 	[NL80211_ATTR_HT_2040_MODE] = { .type = NLA_U8 },
 	[NL80211_ATTR_MAX_NUM_STA] = { .type = NLA_U32 },
+	[NL80211_ATTR_ACS_CHAN_MASK] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
@@ -2595,6 +2596,11 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		params.channel_type = wdev->preset_chantype;
 	} else if (!nl80211_get_ap_channel(rdev, &params)) {
 		return -EINVAL;
+	}
+
+	if (info->attrs[NL80211_ATTR_ACS_CHAN_MASK]) {
+		params.acs_chan_mask =
+			nla_get_u16(info->attrs[NL80211_ATTR_ACS_CHAN_MASK]);
 	}
 
 	if (!cfg80211_can_beacon_sec_chan(&rdev->wiphy, params.channel,
