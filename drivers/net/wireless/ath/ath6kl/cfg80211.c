@@ -92,6 +92,11 @@ static struct ieee80211_rate ath6kl_rates[] = {
 			IEEE80211_HT_CAP_LDPC_CODING	 | \
 			IEEE80211_HT_CAP_RX_STBC	 | \
 			IEEE80211_HT_CAP_TX_STBC)
+#define ath6kl_ap_g_htcap (IEEE80211_HT_CAP_SGI_20)
+#define ath6kl_ap_a_htcap (IEEE80211_HT_CAP_SUP_WIDTH_20_40 | \
+			IEEE80211_HT_CAP_SGI_20		 | \
+			IEEE80211_HT_CAP_SGI_40)
+
 
 static struct ieee80211_channel ath6kl_2ghz_channels[] = {
 	CHAN2G(1, 2412, 0),
@@ -3265,7 +3270,11 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if(info->ht_cap_info) {
 		htcap->cap_info = info->ht_cap_info;
 	} else {
-		htcap->cap_info = 0;
+                if (band != IEEE80211_BAND_2GHZ) {
+			htcap->cap_info = ath6kl_ap_a_htcap;
+		} else {
+			htcap->cap_info = ath6kl_ap_g_htcap;
+		}
 	}
 
 	if (info->require_ht) {
