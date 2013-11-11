@@ -2042,14 +2042,8 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	}
 
 	del_timer(&vif->ap_restart_timer);
-	if (vif->scan_req) {
-		if(vif->scan_req->wiphy)
-			cfg80211_scan_done(vif->scan_req, true);
-		vif->scan_req = NULL;
-		clear_bit(SCANNING, &vif->flags);
-		ath6kl_hif_enable_autopm(vif->ar);
-	}
 
+	ath6kl_cfg80211_scan_complete_event(vif, true);
 
 	if (wmi_ready) {
 		/* need to clean up enhanced bmiss detection fw state */

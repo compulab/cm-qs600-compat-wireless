@@ -917,13 +917,8 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_vif *vif_tmp;
 
-	if (vif->scan_req) {
-		if(vif->scan_req->wiphy)
-			cfg80211_scan_done(vif->scan_req, true);
-		vif->scan_req = NULL;
-		clear_bit(SCANNING, &vif->flags);
-		ath6kl_hif_enable_autopm(ar);
-	}
+
+	ath6kl_cfg80211_scan_complete_event(vif, true);
 
 	if (vif->nw_type & ADHOC_NETWORK) {
 		if (vif->wdev.iftype != NL80211_IFTYPE_ADHOC) {
@@ -1208,18 +1203,26 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 {
 	struct ath6kl *ar = vif->ar;
 	int i;
+	struct cfg80211_scan_request *scan_req = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: status%s\n", __func__,
 		   aborted ? " aborted" : "");
 
-	if (!vif->scan_req)
+	spin_lock_bh(&vif->if_lock);
+
+	scan_req = vif->scan_req;
+	vif->scan_req = NULL;
+
+	spin_unlock_bh(&vif->if_lock);
+
+	if (!scan_req)
 		return;
 
 	if (aborted)
 		goto out;
 
-	if (vif->scan_req->n_ssids && vif->scan_req->ssids[0].ssid_len) {
-		for (i = 0; i < vif->scan_req->n_ssids; i++) {
+	if (scan_req->n_ssids && scan_req->ssids[0].ssid_len) {
+		for (i = 0; i < scan_req->n_ssids; i++) {
 			ath6kl_wmi_probedssid_cmd(ar->wmi, vif->fw_vif_idx,
 						  i + 1, DISABLE_SSID_FLAG,
 						  0, NULL);
@@ -1227,9 +1230,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	}
 
 out:
-	if(vif->scan_req->wiphy)
-		cfg80211_scan_done(vif->scan_req, aborted);
-	vif->scan_req = NULL;
+	cfg80211_scan_done(scan_req, aborted);
 	clear_bit(SCANNING, &vif->flags);
 	ath6kl_hif_enable_autopm(ar);
 }
