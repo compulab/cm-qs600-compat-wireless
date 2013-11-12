@@ -1490,6 +1490,21 @@ static int htc_rx_completion(struct htc_target *context,
 				be32_to_cpu(*(u32 *)(netdata+i + 8)),
 				be32_to_cpu(*(u32 *)(netdata+i + 12)));
 		}
+#define EXTRA_DUMP_MAX (500 + REG_DUMP_COUNT_AR6004 * 4)
+#define DELIMITER 0xaaaaaaaa
+		for (; i < EXTRA_DUMP_MAX; i += 16) {
+
+			if ((*(u32 *)(netdata+i) == DELIMITER) ||
+				((*(u32 *)(netdata+i) == 0)))
+				break;
+
+			ath6kl_info("%d: 0x%08x 0x%08x "
+				"0x%08x 0x%08x\n", i/4,
+				be32_to_cpu(*(u32 *)(netdata+i)),
+				be32_to_cpu(*(u32 *)(netdata+i + 4)),
+				be32_to_cpu(*(u32 *)(netdata+i + 8)),
+				be32_to_cpu(*(u32 *)(netdata+i + 12)));
+		}
 		dev_kfree_skb(netbuf);
 		netbuf = NULL;
 
