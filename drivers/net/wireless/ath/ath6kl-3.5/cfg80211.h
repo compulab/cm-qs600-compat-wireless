@@ -134,4 +134,6 @@ void ath6kl_switch_parameter_based_on_connection(
 #if defined(USB_AUTO_SUSPEND)
 void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk);
 #endif
+void ath6kl_check_apmode(struct ath6kl *ar);
+extern bool gApMode;
 #endif /* ATH6KL_CFG80211_H */

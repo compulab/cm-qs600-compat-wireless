@@ -514,7 +514,7 @@ chip_pwd_fail:
 }
 
 #ifdef ATH6KL_HSIC_RECOVER
-static void ath6kl_trigger_bt_restart(void)
+void ath6kl_trigger_bt_restart(void)
 {
 	int status = 0;
 	char buf[32];
@@ -621,7 +621,7 @@ int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 	}
 
 	if (bind) {
-		/* make sure to hold a rederence to the kobj */
+		/* make sure to hold a reference to the kobj */
 		of_dev_get(ehci_hsic_pdev);
 
 		/* remove device */
@@ -631,11 +631,11 @@ int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 		if (recover == true)
 			msleep(3000);
 
-		/* release the reference after finishing */
-		of_dev_put(ehci_hsic_pdev);
-
 		/* add device */
 		of_device_add(ehci_hsic_pdev);
+
+		/* release the reference after finishing */
+		of_dev_put(ehci_hsic_pdev);
 	}
 
 	return 0;

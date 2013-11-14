@@ -45,7 +45,7 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 	struct p2p_ps_info *p2p_ps = vif->p2p_ps_info_ctx;
 
 	if (p2p_ps) {
-		spin_lock(&p2p_ps->p2p_ps_lock);
+		spin_lock_bh(&p2p_ps->p2p_ps_lock);
 		if (p2p_ps->go_last_beacon_app_ie != NULL)
 			kfree(p2p_ps->go_last_beacon_app_ie);
 
@@ -54,7 +54,7 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 
 		if (p2p_ps->go_working_buffer != NULL)
 			kfree(p2p_ps->go_working_buffer);
-		spin_unlock(&p2p_ps->p2p_ps_lock);
+		spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 		kfree(p2p_ps);
 	}
@@ -96,7 +96,7 @@ int ath6kl_p2p_ps_reset_noa(struct p2p_ps_info *p2p_ps)
 		   p2p_ps->vif,
 		   p2p_ps->go_noa.index);
 
-	spin_lock(&p2p_ps->p2p_ps_lock);
+	spin_lock_bh(&p2p_ps->p2p_ps_lock);
 	p2p_ps->go_flags &= ~ATH6KL_P2P_PS_FLAGS_NOA_ENABLED;
 	p2p_ps->go_noa.index++;
 	p2p_ps->go_noa_enable_idx = 0;
@@ -104,7 +104,7 @@ int ath6kl_p2p_ps_reset_noa(struct p2p_ps_info *p2p_ps)
 		0,
 		sizeof(struct ieee80211_p2p_noa_descriptor) *
 			ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS);
-	spin_unlock(&p2p_ps->p2p_ps_lock);
+	spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 	return 0;
 }
@@ -133,7 +133,7 @@ int ath6kl_p2p_ps_setup_noa(struct p2p_ps_info *p2p_ps,
 		   start_offset,
 		   duration);
 
-	spin_lock(&p2p_ps->p2p_ps_lock);
+	spin_lock_bh(&p2p_ps->p2p_ps_lock);
 	if (noa_id < ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS) {
 		noa_descriptor = &p2p_ps->go_noa.noas[noa_id];
 
@@ -142,7 +142,7 @@ int ath6kl_p2p_ps_setup_noa(struct p2p_ps_info *p2p_ps,
 		noa_descriptor->start_or_offset = start_offset;
 		noa_descriptor->duration = duration;
 	} else {
-		spin_unlock(&p2p_ps->p2p_ps_lock);
+		spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 		ath6kl_err("wrong NoA index %d\n", noa_id);
 
 		return -2;
@@ -150,7 +150,7 @@ int ath6kl_p2p_ps_setup_noa(struct p2p_ps_info *p2p_ps,
 
 	p2p_ps->go_noa_enable_idx |= (1 << noa_id);
 	p2p_ps->go_flags |= ATH6KL_P2P_PS_FLAGS_NOA_ENABLED;
-	spin_unlock(&p2p_ps->p2p_ps_lock);
+	spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 	return 0;
 }
@@ -168,11 +168,11 @@ int ath6kl_p2p_ps_reset_opps(struct p2p_ps_info *p2p_ps)
 		   p2p_ps->vif,
 		   p2p_ps->go_noa.index);
 
-	spin_lock(&p2p_ps->p2p_ps_lock);
+	spin_lock_bh(&p2p_ps->p2p_ps_lock);
 	p2p_ps->go_flags &= ~ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED;
 	p2p_ps->go_noa.index++;
 	p2p_ps->go_noa.ctwindow_opps_param = 0;
-	spin_unlock(&p2p_ps->p2p_ps_lock);
+	spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 	return 0;
 }
@@ -195,14 +195,14 @@ int ath6kl_p2p_ps_setup_opps(struct p2p_ps_info *p2p_ps,
 		   enabled,
 		   ctwindows);
 
-	spin_lock(&p2p_ps->p2p_ps_lock);
+	spin_lock_bh(&p2p_ps->p2p_ps_lock);
 	if (enabled)
 		p2p_ps->go_noa.ctwindow_opps_param = (0x80 |
 						      (ctwindows & 0x7f));
 	else
 		p2p_ps->go_noa.ctwindow_opps_param = 0;
 	p2p_ps->go_flags |= ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED;
-	spin_unlock(&p2p_ps->p2p_ps_lock);
+	spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 	return 0;
 }
@@ -221,7 +221,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 
 	p2p_ps->go_noa_notif_cnt++;
 
-	spin_lock(&p2p_ps->p2p_ps_lock);
+	spin_lock_bh(&p2p_ps->p2p_ps_lock);
 	if ((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) ||
 	    (p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED)) {
 		WARN_ON((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) &&
@@ -232,7 +232,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 
 		buf = kmalloc(len, GFP_ATOMIC);
 		if (buf == NULL) {
-			spin_unlock(&p2p_ps->p2p_ps_lock);
+			spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 			return -ENOMEM;
 		}
@@ -291,7 +291,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 				p2p_ps->go_last_noa_ie_len);
 		}
 
-		spin_unlock(&p2p_ps->p2p_ps_lock);
+		spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 		ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			   "p2p_ps update app IE %p f %x idx %d ie %d len %d\n",
@@ -306,7 +306,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 		 * currently.
 		 */
 		if (p2p_ps->go_last_beacon_app_ie_len == 0) {
-			spin_unlock(&p2p_ps->p2p_ps_lock);
+			spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 			return ret;
 		}
@@ -321,7 +321,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 
 		buf = kmalloc(p2p_ps->go_last_beacon_app_ie_len, GFP_ATOMIC);
 		if (buf == NULL) {
-			spin_unlock(&p2p_ps->p2p_ps_lock);
+			spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 			return -ENOMEM;
 		}
@@ -332,7 +332,7 @@ int ath6kl_p2p_ps_update_notif(struct p2p_ps_info *p2p_ps)
 			p2p_ps->go_last_beacon_app_ie,
 			len);
 
-		spin_unlock(&p2p_ps->p2p_ps_lock);
+		spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 		ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 			   "p2p_ps update app IE %p f %x beacon_ie %p len %d\n",
@@ -375,7 +375,7 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 	if (mgmt_frm_type == WMI_FRAME_BEACON) {
 		WARN_ON((*len) == 0);
 
-		spin_lock(&p2p_ps->p2p_ps_lock);
+		spin_lock_bh(&p2p_ps->p2p_ps_lock);
 		p2p_ps->go_last_beacon_app_ie_len = 0;
 
 		if (p2p_ps->go_last_beacon_app_ie != NULL)
@@ -383,7 +383,7 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 
 		p2p_ps->go_last_beacon_app_ie = kmalloc(*len, GFP_ATOMIC);
 		if (p2p_ps->go_last_beacon_app_ie == NULL) {
-			spin_unlock(&p2p_ps->p2p_ps_lock);
+			spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 			return;
 		}
 
@@ -391,7 +391,7 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 		p2p_ps->go_last_beacon_app_ie_len = *len;
 		memcpy(p2p_ps->go_last_beacon_app_ie, *ie, *len);
 
-		spin_unlock(&p2p_ps->p2p_ps_lock);
+		spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 	} else if (mgmt_frm_type == WMI_FRAME_PROBE_RESP) {
 		/* Assume non-zero means P2P node. */
 		if ((*len) == 0)
@@ -399,7 +399,7 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 	}
 
 	/* Hack : Change ie/len to let caller use the new one. */
-	spin_lock(&p2p_ps->p2p_ps_lock);
+	spin_lock_bh(&p2p_ps->p2p_ps_lock);
 	if ((p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_NOA_ENABLED) ||
 		(p2p_ps->go_flags & ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED)) {
 		/*
@@ -437,7 +437,7 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 			   "p2p_ps change app IE len -> %d\n",
 			   *len);
 	}
-	spin_unlock(&p2p_ps->p2p_ps_lock);
+	spin_unlock_bh(&p2p_ps->p2p_ps_lock);
 
 	return;
 }
@@ -657,6 +657,8 @@ void ath6kl_mcc_pause_ahead_timeout_handler(unsigned long ptr)
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	int i;
+	struct ath6kl_vif *wlan_vif =
+		ath6kl_get_vif_by_index(ar, 0);
 
 	WARN_ON(!p2p_flowctrl);
 
@@ -670,7 +672,8 @@ void ath6kl_mcc_pause_ahead_timeout_handler(unsigned long ptr)
 	p2p_flowctrl->p2p_flowctrl_event_cnt++;
 	for (i = 0; i < NUM_CONN; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
-		fw_conn->ocs = 1;
+		if (wlan_vif && (fw_conn->vif == wlan_vif))
+			fw_conn->ocs = 1;
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 	
@@ -1155,6 +1158,8 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	struct ath6kl_fw_conn_list *fw_conn;
 	int i;
 	bool update_pause_ahead = false;
+	struct ath6kl_vif *wlan_vif =
+		ath6kl_get_vif_by_index(ar, 0);
 
 	WARN_ON(!p2p_flowctrl);
 	WARN_ON(numConn > NUM_CONN);
@@ -1163,8 +1168,12 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	p2p_flowctrl->p2p_flowctrl_event_cnt++;
 	for (i = 0; i < numConn; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
-		if (fw_conn->ocs != ((ac_map[i] >> 5) & 0x1))
-			update_pause_ahead = true;
+		if (wlan_vif && (fw_conn->vif == wlan_vif)) {
+			if (fw_conn->ocs && !((ac_map[i] >> 5) & 0x1))
+				update_pause_ahead = true;
+			else if (!fw_conn->ocs && ((ac_map[i] >> 5) & 0x1))
+				del_timer(&ar->mcc_pause_ahead_timer);
+		}
 		fw_conn->connect_status = ac_map[i];
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
@@ -1175,7 +1184,8 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 		   ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
 	if (update_pause_ahead)
 		mod_timer(&ar->mcc_pause_ahead_timer,
-			jiffies + ATH6KL_MCC_PAUSE_AHEAD_PERIOD);
+			jiffies + msecs_to_jiffies(ATH6KL_MCC_WLAN0_PAUSE_PERIOD));
+
 
 	return;
 }

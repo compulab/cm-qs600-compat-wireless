@@ -2697,6 +2697,12 @@ bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
 		return false;
 	}
 #endif
+
+	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
+		ath6kl_info("destroy in progress!\n");
+		return false;
+	}
+
 	return true;
 }
 
@@ -2826,11 +2832,14 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					btcoex_cmd.cmd_len))
 				ret = -EIO;
 			else {
-				if (!ath6kl_ioctl_ready(vif))
+				if (!ath6kl_ioctl_ready(vif)) {
+					kfree(user_cmd);
 					return -EIO;
+				}
 
 				if (down_interruptible(&vif->ar->sem)) {
 					ath6kl_err("busy, couldn't get access\n");
+					kfree(user_cmd);
 					return -ERESTARTSYS;
 				}
 
@@ -2859,13 +2868,18 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 				struct ifreq *rq,
 				int cmd)
 {
-	struct ath6kl *ar = ath6kl_priv(dev);
+	struct ath6kl *ar;
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	struct iwreq *req = (struct iwreq *)(rq);
 	char user_cmd[32];
 	u8 macaddr[6];
-	long left;
 	s32 rate = 0;
+
+	if (!vif)
+		return -EIO;
+
+	ar = vif->ar;
+	BUG_ON(!ar);
 
 	/* Only AR6004 now */
 	if (ar->target_type != TARGET_TYPE_AR6004)
@@ -2883,9 +2897,6 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	if (_string_to_mac(user_cmd, req->u.data.length, macaddr))
 		return -EFAULT;
 
-	if (down_interruptible(&ar->sem))
-		return -EBUSY;
-
 #ifdef CONFIG_ANDROID
 	/*
 	 * WAR : Framework always use p2p0 to query linkspeed and here transfer
@@ -2896,48 +2907,35 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	    (ar->p2p_concurrent) &&
 	    (ar->p2p_dedicate)) {
 		vif = ath6kl_get_vif_by_index(ar, ar->vif_max - 2);
-		if (!vif) {
-			up(&ar->sem);
+		if (!vif)
 			return -EFAULT;
-		}
 	}
 #endif
 
-	set_bit(STATS_UPDATE_PEND, &vif->flags);
+	if ((!ath6kl_ioctl_ready(vif)) ||
+	    (!test_bit(CONNECTED, &vif->flags)))
+		return -EINVAL;
 
-	if (ath6kl_wmi_get_stats_cmd(ar->wmi, vif->fw_vif_idx) != 0) {
-		up(&ar->sem);
+	if (ath6kl_wmi_get_stats_cmd(ar->wmi, vif->fw_vif_idx) != 0)
 		return -EIO;
-	}
-
-	left = wait_event_interruptible_timeout(ar->event_wq,
-						!test_bit(STATS_UPDATE_PEND,
-							  &vif->flags),
-						WMI_TIMEOUT);
-
-	up(&ar->sem);
-
-	if (left == 0)
-		return -ETIMEDOUT;
-	else if (left < 0)
-		return left;
 
 	memset(user_cmd, 0, 32);
 	if (vif->nw_type == AP_NETWORK) {
 		struct wmi_ap_mode_stat *ap = &vif->ap_stats;
 		struct ath6kl_sta *conn;
+		int idx;
 
 		conn = ath6kl_find_sta(vif, macaddr);
 		if (conn) {
-			for (left = 0; left < AP_MAX_NUM_STA; left++) {
-				if (conn->aid == ap->sta[left].aid) {
+			for (idx = 0; idx < AP_MAX_NUM_STA; idx++) {
+				if (conn->aid == ap->sta[idx].aid) {
 					rate = ath6kl_wmi_get_rate_ar6004(
-						ap->sta[left].tx_ucast_rate);
+						ap->sta[idx].tx_ucast_rate);
 					break;
 				}
 			}
 
-			WARN_ON(left == AP_MAX_NUM_STA);
+			WARN_ON(idx == AP_MAX_NUM_STA);
 		}
 	} else
 		rate = vif->target_stats.tx_ucast_rate;

@@ -1437,7 +1437,7 @@ struct sk_buff *rx_sg_to_single_netbuf(struct htc_target *target)
 	struct sk_buff *skb;
 	u8 *anbdata;
 	u8 *anbdata_new;
-	u32 anblen;
+	u32 anblen = 0;
 	struct sk_buff *new_skb = NULL;
 	struct sk_buff_head *rx_sg_queue = &target->rx_sg_q;
 
@@ -1449,22 +1449,23 @@ struct sk_buff *rx_sg_to_single_netbuf(struct htc_target *target)
 
 	new_skb = __dev_alloc_skb(target->rx_sg_total_len_exp, GFP_ATOMIC);
 	if (new_skb == NULL) {
-		ath6kl_dbg(ATH6KL_DBG_HTC,
-			"%s: can't allocate %u size netbuf\n",
+		ath6kl_err("%s: can't allocate %u size netbuf\n",
 			__func__, target->rx_sg_total_len_exp);
 		goto _failed;
 	}
 
 	anbdata_new = new_skb->data;
-	anblen = new_skb->len;
 
 	while ((skb = skb_dequeue(rx_sg_queue))) {
 		anbdata = skb->data;
 		memcpy(anbdata_new, anbdata, skb->len);
 		skb_put(new_skb, skb->len);
 		anbdata_new += skb->len;
+		anblen += skb->len;
 		dev_kfree_skb(skb);
 	};
+
+	BUG_ON(anblen > target->rx_sg_total_len_exp);
 
 	target->rx_sg_total_len_exp = 0;
 	target->rx_sg_total_len_cur = 0;

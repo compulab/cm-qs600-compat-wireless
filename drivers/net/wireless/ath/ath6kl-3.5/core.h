@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.521)
+#define __BUILD_VERSION_ (3.5.0.548)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -200,6 +200,7 @@ enum ath6kl_hsic_recover_state {
 	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
 	ATH6KL_RECOVER_STATE_IN_PROGRESS,
 	ATH6KL_RECOVER_STATE_DONE,
+	ATH6KL_RECOVER_STATE_BY_SERVICE,
 };
 
 extern wait_queue_head_t ath6kl_hsic_recover_wq;
@@ -412,7 +413,8 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_GTX_MIN_RSSI 35
 #define ATH6KL_GTX_FORCE_BACKOFF 0
 
-#define  ATH6KL_MCC_PAUSE_AHEAD_PERIOD		(msecs_to_jiffies(40))
+#define  ATH6KL_MCC_WLAN0_PAUSE_PERIOD		40
+#define  ATH6KL_MCC_P2P_PAUSE_PERIOD		50
 
 /* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
 * event in certain platform
@@ -910,6 +912,7 @@ struct txtid {
 	u8 tid;
 	u16 aid;
 	u16 max_aggr_sz;		/* 0 means disable */
+	u16 max_aggr_sz_orig;
 	struct timer_list timer;
 	struct sk_buff *amsdu_skb;
 	u8 amsdu_cnt;			/* current aggr count */
@@ -2086,6 +2089,8 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 			     u8 win_sz);
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 	u16 amsdu_sz, u8 status);
+void aggr_force_enable_amsdu(struct ath6kl_vif *vif);
+void aggr_restore_enable_amsdu(struct ath6kl_vif *vif);
 void ath6kl_wakeup_event(void *dev);
 
 void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
@@ -2154,6 +2159,7 @@ void ath6kl_hsic_enum_war_schedule(void);
 
 #ifdef ATH6KL_HSIC_RECOVER
 void ath6kl_hsic_rediscovery(void);
+void ath6kl_trigger_bt_restart(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);

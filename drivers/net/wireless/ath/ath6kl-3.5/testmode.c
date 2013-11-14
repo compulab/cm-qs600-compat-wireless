@@ -499,7 +499,7 @@ int ath6kl_tm_cmd(struct wiphy *wiphy, void *data, int len)
 				hb_params->params.tcp_params.srv_ip,
 				hb_params->params.tcp_params.dev_ip,
 				hb_params->params.tcp_params.seq,
-				hb_params->params.udp_params.interval,
+				hb_params->params.tcp_params.interval,
 				hb_params->params.tcp_params.timeout,
 				hb_params->params.tcp_params.session,
 				hb_params->params.tcp_params.gateway_mac)) {

@@ -463,6 +463,16 @@ static void ath6kl_install_ktk_ptk(struct ath6kl_vif *vif)
 }
 #endif
 
+static bool __ath6kl_cfg80211_destroy_in_progress(struct ath6kl *ar)
+{
+	if (test_bit(DESTROY_IN_PROGRESS, &ar->flag)) {
+		ath6kl_info("destroy in progress: %lu\n", ar->flag);
+		return true;
+	}
+
+	return false;
+}
+
 static bool __ath6kl_cfg80211_ready(struct ath6kl *ar)
 {
 	if (!test_bit(WMI_READY, &ar->flag)) {
@@ -493,6 +503,9 @@ static bool ath6kl_cfg80211_ready(struct ath6kl_vif *vif)
 	if (!test_bit(WLAN_ENABLED, &vif->flags))
 		return false;
 #endif
+
+	if (__ath6kl_cfg80211_destroy_in_progress(vif->ar))
+		return false;
 
 	return true;
 }
@@ -975,34 +988,38 @@ void ath6kl_switch_parameter_based_on_connection(
 	}
 
 	wlan_vif = ath6kl_get_vif_by_index(ar, 0);
-	/* Update HIF queue policy */
-	if (connected_count > 1) {
-		ath6kl_hif_pipe_set_max_queue_number(ar, true);
-		if (test_bit(CONNECTED, &wlan_vif->flags)) {
-			if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
-				wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
-				htcoex_ht40_rateset(wlan_vif,
-					wlan_vif->htcoex_ctx, false);
-		}
-		list_for_each_entry(vif_temp, &ar->vif_list, list) {
-			if (test_bit(CONNECTED, &vif_temp->flags))
-				ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
-					vif_temp->fw_vif_idx,
-					ATH6KL_RTS_THRESHOLD);
-		}
-	} else {
-		ath6kl_hif_pipe_set_max_queue_number(ar, false);
-		if ((call_on_disconnect) &&
-			test_bit(CONNECTED, &wlan_vif->flags)) {
-		    if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
-				wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
-				htcoex_ht40_rateset(wlan_vif,
-					wlan_vif->htcoex_ctx, true);
-		}
-		list_for_each_entry(vif_temp, &ar->vif_list, list) {
-			if (test_bit(CONNECTED, &vif_temp->flags))
-				ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
-					vif_temp->fw_vif_idx, 0);
+
+	if (wlan_vif != NULL) {
+		/* Update HIF queue policy */
+		if (connected_count > 1) {
+			ath6kl_hif_pipe_set_max_queue_number(ar, true);
+			if (test_bit(CONNECTED, &wlan_vif->flags)) {
+
+				if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
+					wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
+					htcoex_ht40_rateset(wlan_vif,
+						wlan_vif->htcoex_ctx, false);
+			}
+			list_for_each_entry(vif_temp, &ar->vif_list, list) {
+				if (test_bit(CONNECTED, &vif_temp->flags))
+					ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
+						vif_temp->fw_vif_idx,
+						ATH6KL_RTS_THRESHOLD);
+			}
+		} else {
+			ath6kl_hif_pipe_set_max_queue_number(ar, false);
+			if ((call_on_disconnect) &&
+				test_bit(CONNECTED, &wlan_vif->flags)) {
+				if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
+					wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
+					htcoex_ht40_rateset(wlan_vif,
+						wlan_vif->htcoex_ctx, true);
+			}
+			list_for_each_entry(vif_temp, &ar->vif_list, list) {
+				if (test_bit(CONNECTED, &vif_temp->flags))
+					ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
+						vif_temp->fw_vif_idx, 0);
+			}
 		}
 	}
 
@@ -1950,7 +1967,14 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 	struct ath6kl_vif *vif = (struct ath6kl_vif *)ptr;
 	struct ath6kl *ar = vif->ar;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s scan timer hit\n", __func__);
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+		   ATH6KL_DBG_EXT_SCAN |
+		   ATH6KL_DBG_EXT_DEF,
+		   "%s vif%d scan timer timeout, scanning %d\n",
+		   __func__,
+		   vif->fw_vif_idx,
+		   test_bit(SCANNING, &vif->flags));
+
 	if (vif->scan_req) {
 		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
 		cfg80211_scan_done(vif->scan_req, true);
@@ -2251,7 +2275,10 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 			ATH6KL_DBG_EXT_SCAN |
 			ATH6KL_DBG_EXT_INFO1 |
 			ATH6KL_DBG_EXT_DEF,
-		"%s: vif %d\n", __func__, vif->fw_vif_idx);
+		"%s: vif %d n_chan %d\n",
+		__func__,
+		vif->fw_vif_idx,
+		(request ? request->n_channels : -1));
 
 	/*
 	 * Last Cancel-RoC not yet finished. To update vif->last_cancel_roc_id
@@ -2483,6 +2510,7 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 {
 	struct ath6kl *ar = vif->ar;
+	struct cfg80211_scan_request *scan_request;
 	int i;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_DEF,
@@ -2515,14 +2543,19 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 		wake_up(&ar->event_wq);
 	}
 
-	if (!vif->scan_req)
+	spin_lock_bh(&vif->if_lock);
+	scan_request = vif->scan_req;
+	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
+
+	if (!scan_request)
 		return;
 
 	if (aborted)
 		goto out;
 
-	if (vif->scan_req->n_ssids && vif->scan_req->ssids[0].ssid_len) {
-		for (i = 0; i < vif->scan_req->n_ssids; i++) {
+	if (scan_request->n_ssids && scan_request->ssids[0].ssid_len) {
+		for (i = 0; i < scan_request->n_ssids; i++) {
 			ath6kl_wmi_probedssid_cmd(ar->wmi, vif->fw_vif_idx,
 						  i + 1, DISABLE_SSID_FLAG,
 						  0, NULL);
@@ -2534,8 +2567,7 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 						  0, NULL);
 
 out:
-	cfg80211_scan_done(vif->scan_req, aborted);
-	vif->scan_req = NULL;
+	cfg80211_scan_done(scan_request, aborted);
 	clear_bit(SCANNING, &vif->flags);
 }
 
@@ -7657,3 +7689,18 @@ int ath6kl_enable_wow_hb(struct ath6kl *ar)
 	return ret;
 }
 #endif
+
+bool gApMode;
+void ath6kl_check_apmode(struct ath6kl *ar)
+{
+	struct ath6kl_vif *vif;
+
+	gApMode = false;
+
+	if (!ar)
+		return;
+
+	vif = ath6kl_get_vif_by_index(ar, 0);
+	if (vif && (vif->nw_type == AP_NETWORK))
+		gApMode = true;
+}

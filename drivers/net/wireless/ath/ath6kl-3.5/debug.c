@@ -4176,7 +4176,7 @@ static ssize_t ath6kl_patterngen_write(struct file *file,
 		else {
 			/* get the stream mapping */
 			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
-					vif->fw_vif_idx, skb,
+					vif->fw_vif_idx, vif, skb,
 					0, test_bit(WMM_ENABLED, &vif->flags),
 					&ac, &htc_tag);
 			if (ret)

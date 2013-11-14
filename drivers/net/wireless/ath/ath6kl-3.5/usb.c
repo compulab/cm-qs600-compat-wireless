@@ -2560,6 +2560,14 @@ int ath6kl_usb_diag_warm_reset(struct ath6kl *ar)
 	struct ath6kl_usb_ctrl_diag_cmd_write *cmd;
 	u32 data, address;
 
+#ifdef ATH6KL_HSIC_RECOVER
+	/* If unload process is done by recovery by service,
+	   we don't need to issue warm reset. */
+	if (atomic_read(&ath6kl_recover_state) ==
+		ATH6KL_RECOVER_STATE_BY_SERVICE)
+		return 0;
+#endif
+
 	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_reset_flag_valid));
 	ath6kl_usb_diag_read32(ar, address, &data);
 
@@ -2607,6 +2615,19 @@ static void ath6kl_recover_war_work(struct work_struct *work)
 		sema_init(&usb_probe_sem, 1);
 		down(&usb_probe_sem);
 
+		/* When WiFi is not in AP mode, 
+		 * use WiFi svc restart to recover WiFi when fw crash/hang happens.
+		 */
+		if (!gApMode) {
+			/* Since SVC wifi disable/enable will be used
+			   to recover, we need to clear
+			   ATH6KL_RECOVER_STATE_IN_PROGRESS. */
+			atomic_set(&ath6kl_recover_state,
+					ATH6KL_RECOVER_STATE_BY_SERVICE);
+			ath6kl_trigger_bt_restart();
+			return;
+		}
+
 		ath6kl_hsic_rediscovery();
 
 		/* change the state and wakeup event queue */
@@ -2649,6 +2670,7 @@ int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 #endif
 
 	ath6kl_info("%s schedule recover worker thread\n", __func__);
+	ath6kl_check_apmode(ar);
 	schedule_work(&recover_war_work);
 	return 0;
 }
@@ -2663,6 +2685,19 @@ static void ath6kl_reset_war_work(struct work_struct *work)
 	if (atomic_read(&ath6kl_usb_unload_state) ==
 			ATH6KL_USB_UNLOAD_STATE_DRV_DEREG) {
 		ath6kl_info("%s driver is unloaded, just return\n", __func__);
+		return;
+	}
+
+	/* When WiFi is not in AP mode, 
+	 * use WiFi svc restart to recover WiFi when fw crash/hang happens.
+	 */
+	if (!gApMode) {
+		/* Since SVC wifi disable/enable will be used
+		   to recover, we need to clear
+		   ATH6KL_RECOVER_STATE_IN_PROGRESS. */
+		atomic_set(&ath6kl_recover_state,
+				ATH6KL_RECOVER_STATE_BY_SERVICE);
+		ath6kl_trigger_bt_restart();
 		return;
 	}
 
@@ -2890,8 +2925,10 @@ static void ath6kl_usb_remove(struct usb_interface *interface)
 	ath6kl_usb_device_detached(interface);
 
 #ifdef ATH6KL_HSIC_RECOVER
-	if (ath6kl_driver_unloaded == 0 && war_in_progress == 0)
+	if (ath6kl_driver_unloaded == 0 && war_in_progress == 0) {
+		ath6kl_check_apmode(ar);
 		schedule_work(&recover_war_work);
+	}
 #endif
 
 }

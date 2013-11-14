@@ -20,6 +20,7 @@
 #include "epping.h"
 #include <linux/version.h>
 #include "hif-ops.h"
+#include "cfg80211.h"
 
 /* 802.1d to AC mapping. Refer pg 57 of WMM-test-plan-v1.2 */
 static const u8 up_to_ac[] = {
@@ -453,6 +454,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
 			if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 				ath6kl_info("%s schedule recover\n", __func__);
+				ath6kl_check_apmode(ar);
 				schedule_work(&ar->reset_cover_war_work);
 			}
 			del_timer(&fw_ping_timer);
@@ -580,7 +582,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		else {
 			/* get the stream mapping */
 			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
-					vif->fw_vif_idx, skb,
+					vif->fw_vif_idx, vif, skb,
 					0, test_bit(WMM_ENABLED, &vif->flags),
 					&ac, &htc_tag);
 			if (ret)
@@ -933,6 +935,7 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 #ifdef ATH6KL_HSIC_RECOVER
 		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 			ath6kl_info("%s schedule recover work\n", __func__);
+			ath6kl_check_apmode(ar);
 			schedule_work(&ar->reset_cover_war_work);
 		}
 #endif
@@ -1769,10 +1772,12 @@ static bool aggr_process_recv_frm(struct ath6kl *ar,
 		stats->num_oow++;
 	}
 
-	if ((drop_it == true) &&
-			!(ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP)) {
-		dev_kfree_skb(frame);
-		is_queued = true;
+        if (drop_it == true) {
+		is_queued = false;
+		if (!(ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP)) {
+			dev_kfree_skb(frame);
+			is_queued = true;
+		}
 		spin_unlock_bh(&rxtid->lock);
 		return is_queued;
 	}
@@ -2528,8 +2533,11 @@ static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta,
 		struct iphdr *ip_hdr = (struct iphdr *)((u8 *)eth_hdr +
 			sizeof(struct ethhdr) +
 			sizeof(struct ath6kl_llc_snap_hdr));
+		u8 usr_pri = ath6kl_wmi_determine_user_priority(((u8 *) llc_hdr) +
+					sizeof(struct ath6kl_llc_snap_hdr), 0);
 
-		if (ip_hdr->protocol == IP_PROTO_TCP) {
+		if ((ip_hdr->protocol == IP_PROTO_TCP) &&
+			(usr_pri < WMI_VOICE_USER_PRIORITY)) {
 			struct ath6kl_sta *conn;
 
 			if (!sta)
@@ -3129,6 +3137,49 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 	}
 }
 
+void aggr_force_enable_amsdu(struct ath6kl_vif *vif)
+{
+	struct ath6kl_sta *conn;
+	struct txtid *txtid;
+	int k;
+	if (vif->nw_type == AP_NETWORK)
+		return;
+
+	conn = &vif->sta_list[0];
+
+	if (conn != NULL &&
+		vif->aggr_cntxt->tx_amsdu_enable == false) {
+
+		for (k = 0; k < NUM_OF_TIDS; k++) {
+			txtid = AGGR_GET_TXTID(
+				conn->aggr_conn_cntxt, k);
+			txtid->max_aggr_sz = 3839;
+		}
+		vif->aggr_cntxt->tx_amsdu_enable = true;
+	}
+}
+
+void aggr_restore_enable_amsdu(struct ath6kl_vif *vif)
+{
+	struct ath6kl_sta *conn;
+	struct txtid *txtid;
+	int k;
+	if (vif->nw_type == AP_NETWORK)
+		return;
+
+	conn = &vif->sta_list[0];
+	if (conn != NULL) {
+		vif->aggr_cntxt->tx_amsdu_enable = false;
+		for (k = 0; k < NUM_OF_TIDS; k++) {
+			txtid = AGGR_GET_TXTID(
+				conn->aggr_conn_cntxt, k);
+			txtid->max_aggr_sz = txtid->max_aggr_sz_orig;
+			if (txtid->max_aggr_sz_orig) 
+				vif->aggr_cntxt->tx_amsdu_enable = true;
+		}
+	}
+}
+
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 	u16 amsdu_sz, u8 status)
 {
@@ -3162,6 +3213,8 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 		else
 			txtid->max_aggr_sz = 0;
 
+		txtid->max_aggr_sz_orig = txtid->max_aggr_sz;
+
 		/* 0 means disable */
 		if (!txtid->max_aggr_sz)
 			aggr_tx_reset_aggr(txtid, true, true);
@@ -3187,7 +3240,7 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 			} else if ((txtid->max_aggr_sz == 0) &&
 				   (vif->aggr_cntxt->tx_amsdu_stick_onoff ==
 							AGGR_TX_STICK_ON)) {
-				txtid->max_aggr_sz = 4096;
+				txtid->max_aggr_sz = 3839;
 				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
 					"Stick tx amsdu from OFF to ON\n");
 			}

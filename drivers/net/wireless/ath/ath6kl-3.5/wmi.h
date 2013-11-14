@@ -3304,8 +3304,8 @@ u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri);
 int ath6kl_wmi_dot11_hdr_remove(struct wmi *wmi, struct sk_buff *skb);
 int ath6kl_wmi_dot3_2_dix(struct sk_buff *skb);
 int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
-			struct sk_buff *skb, u32 layer2_priority,
-			bool wmm_enabled, u8 *ac,
+			struct ath6kl_vif *vif, struct sk_buff *skb,
+			u32 layer2_priority, bool wmm_enabled, u8 *ac,
 			u16 *phtc_tag);
 
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb);

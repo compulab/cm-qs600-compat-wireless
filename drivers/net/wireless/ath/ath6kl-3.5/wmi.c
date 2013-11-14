@@ -409,7 +409,7 @@ u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri)
 }
 
 int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
-				       struct sk_buff *skb,
+				       struct ath6kl_vif *vif, struct sk_buff *skb,
 				       u32 layer2_priority, bool wmm_enabled,
 				       u8 *ac, u16 *phtc_tag)
 {
@@ -421,6 +421,8 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 	u8 stream_exist, usr_pri;
 	u8 traffic_class = WMM_AC_BE;
 	u8 *datap;
+	int pdu_len;
+	struct ath6kl *ar = NULL;
 
 	if (WARN_ON(skb == NULL))
 		return -EINVAL;
@@ -451,6 +453,21 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 			   ath6kl_wmi_determine_user_priority(((u8 *) llc_hdr) +
 					sizeof(struct ath6kl_llc_snap_hdr),
 					layer2_priority);
+
+			if (if_idx == 0) {
+				if (vif) {
+					ar = vif->ar;
+					if(test_bit(SCC_ENABLED, &ar->flag) ||
+						test_bit(MCC_ENABLED, &ar->flag)) {
+						pdu_len = skb->len -
+							sizeof(struct wmi_data_hdr);
+						if (pdu_len <= 
+							vif->aggr_cntxt->tx_amsdu_max_pdu_len)
+							usr_pri = WMI_VOICE_USER_PRIORITY;
+					}
+				}
+			}
+			
 		} else
 			usr_pri = layer2_priority & 0x7;
 
