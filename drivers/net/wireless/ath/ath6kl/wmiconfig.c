@@ -709,7 +709,7 @@ static void ath6kl_lte_coex_set_ap_mode(struct ath6kl *ar, uint8_t index)
 		/* select wlan band */
 		if (!ap_freq) {
 			/* AP not up, note down for future update */
-			vif->acs_chan_mask =
+			ar->lte_coex->acs_chan_mask =
 				lte_coex_chk[index].acs_chan_mask;
 			ar->lte_coex->wwan_band &=
 				lte_coex_chk[index].wwan_band;
@@ -858,15 +858,47 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 
 }
 
-bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint16_t *ap_acs_ch)
+u32 ath6kl_set_lte_chan_mask(uint32_t chan)
 {
+	u32 chan_mask = 0, bit = 0;
+
+	bit = (chan - 2412) / 5;
+	chan_mask = BIT(bit);
+
+	if (!chan || chan_mask > 0x1fff)
+		chan_mask = 0;
+
+	return chan_mask;
+}
+
+bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint16_t *ap_acs_ch,
+		struct ath6kl_vif *vif)
+{
+	struct ath6kl_vif *tmp_vif;
 	bool ret = false;
+	u32 op_freq;
 
 	if (ar->lte_coex && ar->lte_coex->acs_chan_mask != AP_ACS_NONE) {
-		*ap_acs_ch = cpu_to_le16(AP_ACS_USER_DEFINED);
-		ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "Changing ACS config"
-				" for lte_coex to %s\n",
-				GET_ACS_POLICY(*ap_acs_ch));
+		list_for_each_entry(tmp_vif, &ar->vif_list, list) {
+			if (tmp_vif->nw_type == AP_NETWORK) {
+				if (test_bit(CONNECTED, &tmp_vif->flags)) {
+					if (tmp_vif->fw_vif_idx != vif->fw_vif_idx &&
+						(tmp_vif->phy_mode == vif->phy_mode)) {
+						op_freq =
+							ath6kl_set_lte_chan_mask(tmp_vif->bss_ch);
+						if (ar->lte_coex->acs_chan_mask &
+							op_freq)
+							*ap_acs_ch =
+								tmp_vif->bss_ch;
+					}
+				}
+			}
+		}
+
+		if (!*ap_acs_ch) {
+			*ap_acs_ch = cpu_to_le16(AP_ACS_USER_DEFINED);
+			vif->acs_chan_mask = ar->lte_coex->acs_chan_mask;
+		}
 		ret = true;
 	}
 	return ret;

@@ -576,7 +576,8 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
 	set_bit(CONNECTED, &vif->flags);
 	netif_carrier_on(vif->ndev);
-	ath6kl_lte_coex_update_wlan_data(vif, channel);
+	if (vif->phy_mode != WMI_11A_MODE)
+		ath6kl_lte_coex_update_wlan_data(vif, channel);
 
 	list_for_each_entry(vif_tmp, &ar->vif_list, list) {
 		if (vif_tmp->nw_type == AP_NETWORK) {
