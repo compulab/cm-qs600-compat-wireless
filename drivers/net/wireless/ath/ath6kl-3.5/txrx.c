@@ -2530,7 +2530,11 @@ static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta,
 			sizeof(struct ethhdr) +
 			sizeof(struct ath6kl_llc_snap_hdr));
 
-		if (ip_hdr->protocol == IP_PROTO_TCP) {
+		u8 usr_pri = ath6kl_wmi_determine_user_priority(((u8 *) llc_hdr) +
+					sizeof(struct ath6kl_llc_snap_hdr), 0);
+
+		if ((ip_hdr->protocol == IP_PROTO_TCP) &&
+			(usr_pri < WMI_VOICE_USER_PRIORITY)) {
 			struct ath6kl_sta *conn;
 
 			if (!sta)
