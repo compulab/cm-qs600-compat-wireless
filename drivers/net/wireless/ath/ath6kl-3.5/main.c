@@ -1451,7 +1451,8 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif = ath6kl_vif_first(ar);
 
-	BUG_ON(!vif);
+	if (vif == NULL)
+		return;
 
 	ath6kl_info("notify firmware crash to user %p\n", ar);
 

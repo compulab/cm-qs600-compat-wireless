@@ -197,7 +197,18 @@ struct semaphore usb_probe_sem;
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
+enum ath6kl_hsic_recover_state {
+	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
+	ATH6KL_RECOVER_STATE_IN_PROGRESS,
+	ATH6KL_RECOVER_STATE_DONE,
+};
+
+#define ATH6KL_RECOVER_WAIT_TIMEOUT        (8*HZ)
+
+static wait_queue_head_t ath6kl_hsic_recover_wq;
+static atomic_t ath6kl_recover_state;
 struct work_struct recover_war_work;
+
 #endif
 
 #if defined(ATH6KL_BUS_VOTE) || defined(ATH6KL_HSIC_RECOVER)
@@ -2597,7 +2608,23 @@ static void ath6kl_recover_war_work(struct work_struct *work)
 {
 	if (ath6kl_driver_unloaded != 1) {
 		ath6kl_info("%s do HSIC rediscovery\n", __func__);
+		/* check whether driver is unloaded */
+		if (atomic_read(&ath6kl_usb_unload_state) ==
+				ATH6KL_USB_UNLOAD_STATE_DRV_DEREG) {
+			ath6kl_info("%s driver unloaded, exit\n", __func__);
+			return;
+		}
+
+		atomic_set(&ath6kl_recover_state,
+				ATH6KL_RECOVER_STATE_IN_PROGRESS);
+		sema_init(&usb_probe_sem, 1);
+		down(&usb_probe_sem);
+
 		ath6kl_hsic_rediscovery();
+
+		/* change the state and wakeup event queue */
+		atomic_set(&ath6kl_recover_state, ATH6KL_RECOVER_STATE_DONE);
+		wake_up(&ath6kl_hsic_recover_wq);
 	}
 }
 
@@ -2607,9 +2634,25 @@ int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 	struct ath6kl_vif *vif;
 	struct net_device *netdev;
 
+	if (ath6kl_driver_unloaded)
+		return 0;
+
+	if (atomic_read(&ath6kl_usb_unload_state) ==
+			ATH6KL_USB_UNLOAD_STATE_DRV_DEREG) {
+		ath6kl_info("%s driver unloaded, exit\n", __func__);
+		return 0;
+	}
+
+	atomic_set(&ath6kl_recover_state,
+				ATH6KL_RECOVER_STATE_IN_PROGRESS);
+
 	vif = ath6kl_vif_first(ar);
 
+	if (vif == NULL)
+		return 0;
+
 	set_bit(RECOVER_IN_PROCESS, &ar->flag);
+	clear_bit(WMI_READY, &ar->flag);
 
 	netdev = vif->ndev;
 #ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
@@ -2627,7 +2670,22 @@ static void ath6kl_reset_war_work(struct work_struct *work)
 {
 	struct ath6kl *ar;
 
+	if (ath6kl_driver_unloaded)
+		return;
+
+	if (atomic_read(&ath6kl_usb_unload_state) ==
+			ATH6KL_USB_UNLOAD_STATE_DRV_DEREG) {
+		ath6kl_info("%s driver is unloaded, just return\n", __func__);
+		return;
+	}
+
+	atomic_set(&ath6kl_recover_state,
+				ATH6KL_RECOVER_STATE_IN_PROGRESS);
+
 	ar = container_of(work, struct ath6kl, reset_cover_war_work);
+
+	if (ar == NULL)
+		return;
 
 	ath6kl_reset_device(ar, ar->target_type, true, true);
 
@@ -2635,6 +2693,7 @@ static void ath6kl_reset_war_work(struct work_struct *work)
 	print_to_file("%s do HSIC rediscovery\n", __func__);
 
 	ath6kl_hsic_sw_recover(ar);
+	atomic_set(&ath6kl_recover_state, ATH6KL_RECOVER_STATE_DONE);
 }
 #endif
 
@@ -2790,6 +2849,14 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 			ath6kl_reset_war_work);
 	INIT_WORK(&recover_war_work,
 			ath6kl_recover_war_work);
+
+	/* Initialize the wait queue */
+	init_waitqueue_head(&ath6kl_hsic_recover_wq);
+
+	/* Initialize the state */
+	atomic_set(&ath6kl_recover_state,
+			ATH6KL_RECOVER_STATE_INITIALIZED);
+
 #endif
 
 	ath6kl_htc_pipe_attach(ar);
@@ -3106,6 +3173,23 @@ static void ath6kl_usb_exit(void)
 
 
 #if defined(ATH6KL_BUS_VOTE) || defined(ATH6KL_HSIC_RECOVER)
+	/* If recover is on going, wait for recover is done. */
+	if (atomic_read(&ath6kl_recover_state) ==
+			ATH6KL_RECOVER_STATE_IN_PROGRESS) {
+		timeleft = wait_event_interruptible_timeout(
+				ath6kl_hsic_recover_wq,
+				atomic_read(&ath6kl_recover_state) ==
+					ATH6KL_RECOVER_STATE_DONE,
+					ATH6KL_RECOVER_WAIT_TIMEOUT);
+		if (timeleft == 0) {
+			/* If timeout occurs, wait 2s more */
+			msleep(2000);
+		} else if (timeleft > 0) {
+			if (down_timeout(&usb_probe_sem,
+					msecs_to_jiffies(USB_PROBE_WAIT_TIMEOUT)) != 0)
+				ath6kl_info("can't wait for usb probe done, unload\n");
+		}
+	}
 	ath6kl_driver_unloaded = 1;
 #endif
 
