@@ -457,7 +457,6 @@ struct cfg80211_ap_settings {
 	int inactivity_timeout;
 	unsigned short ht_cap_info;
 	u8 auto_channel_select;
-	u32 acs_chan_mask;
 	u32 max_num_sta;
 	u8 require_ht;
 };

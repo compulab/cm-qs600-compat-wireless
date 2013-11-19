@@ -30,7 +30,7 @@ struct ath6kl_coex_dev_ctx {
 
 struct ath6kl_lte_coex_priv {
 	struct wmi_set_lte_coex_state_cmd wmi_lte_data;
-	uint16_t acs_chan_mask;
+	uint16_t ap_acs_ch;
 	uint8_t wwan_band;
 	uint32_t wwan_freq;
 	uint8_t wwan_bw;
