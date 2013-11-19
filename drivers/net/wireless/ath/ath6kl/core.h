@@ -723,7 +723,6 @@ struct ath6kl_vif {
 	u32 cookie_used;
 	u32 intra_bss_data_cnt;
 	u32 max_num_sta;
-	u32 acs_chan_mask;
 };
 
 #define WOW_LIST_ID		0

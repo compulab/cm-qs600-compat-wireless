@@ -778,13 +778,6 @@ static inline u8 wmi_cmd_hdr_get_if_idx(struct wmi_cmd_hdr *chdr)
     WMI_SET_OCB_FLAG_CMDID,
     WMI_SET_OCB_CHANNEL_CMDID,
     WMI_SET_LEGACY_OPT_CMDID,
-    WMI_SET_TX_POWER_SCALE_CMDID,	/* F0D6 */
-    WMI_P2P_LIST_PERSISTENT_NETWORK_CMDID,	/* F0D7 */
-    WMI_SET_PMU_START_CMDID,	/* F0D8 */
-    WMI_SET_PMU_RECALL_CMDID,
-    WMI_SET_PMU_BACKUP_REGISTER_CMDID,
-    WMI_SET_PMU_TEST_VALUE_CMDID,
-    WMI_SET_CH_ACS_CMDID,
 };
 
 /* WMI_SETPMKID_CMDID */
@@ -926,10 +919,6 @@ enum wmi_connect_ctrl_flags_bits {
 	CONNECT_DO_WPA_OFFLOAD = 0x0040,
 	CONNECT_DO_NOT_DEAUTH = 0x0080,
 	CONNECT_WPS_FLAG = 0x0100,
-};
-
-struct wmi_ap_set_acs_policy_cmd {
-	__le32 acs_chan_mask;
 };
 
 struct wmi_connect_cmd {
@@ -1361,7 +1350,6 @@ enum wmi_ap_acs_policy_list {
 	AP_ACS_INCLUDE_CH13,    /* 1, 5, 9, 13 */
 	AP_ACS_DISABLE_CH1,     /* dont use 1 */
 	AP_ACS_DISABLE_CH1_6,   /* dont use 1 & 6 */
-	AP_ACS_USER_DEFINED,
 	AP_ACS_POLICY_MAX
 };
 
@@ -3264,8 +3252,6 @@ int ath6kl_wmi_ap_hidden_ssid(struct wmi *wmi, u8 if_idx, bool enable);
 
 int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 				 struct wmi_connect_cmd *p);
-int ath6kl_wmi_ap_set_acs_policy_cmd(struct wmi *wmi, u8 if_idx,
-		u16 acs_chan_mask);
 
 int ath6kl_wmi_ap_set_num_sta_cmd(struct wmi *wmi, u8 if_idx, u32 max_num_sta);
 
