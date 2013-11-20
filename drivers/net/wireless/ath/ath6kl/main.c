@@ -1280,9 +1280,6 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
-			vif->max_num_sta = 0;
-			vif->prwise_crypto = NONE_CRYPT;
-			ath6kl_restore_htcap(vif);
 
 			list_for_each_entry(vif_tmp, &ar->vif_list, list) {
 				if (vif_tmp->nw_type == AP_NETWORK) {
