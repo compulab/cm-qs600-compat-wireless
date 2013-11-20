@@ -111,7 +111,7 @@ struct app_lte_coex_wwan_data_t {
 #define ATH6KL_WWAN_FREQ_2350 2350
 #define ATH6KL_WWAN_FREQ_2370 2370
 #define ATH6KL_WWAN_FREQ_2380 2380
-#define ATH6KL_WWAN_FREQ_2400 2400
+#define ATH6KL_WWAN_FREQ_2401 2401
 
 /*TDD B41 | FDD B7*/
 #define ATH6KL_WWAN_FREQ_2496 2496
@@ -147,7 +147,23 @@ struct app_lte_coex_wwan_data_t {
 #define CH13 2472
 #define CH14 2484
 
-#define  LTE_COEX_REF_LOOKUP_ROWS 65
+
+#define CHAN1 BIT(0)
+#define CHAN2 BIT(1)
+#define CHAN3 BIT(2)
+#define CHAN4 BIT(3)
+#define CHAN5 BIT(4)
+#define CHAN6 BIT(5)
+#define CHAN7 BIT(6)
+#define CHAN8 BIT(7)
+#define CHAN9 BIT(8)
+#define CHAN10 BIT(9)
+#define CHAN11 BIT(10)
+#define CHAN12 BIT(11)
+#define CHAN13 BIT(12)
+
+#define  LTE_COEX_REF_TDD_ROWS 8
+#define LTE_COEX_REF_FDD_ROWS 57
 struct _lte_coex_chk {
 	int wwan_min_freq;
 	int	wwan_max_freq;
@@ -160,306 +176,312 @@ struct _lte_coex_chk {
 	bool    apply_acs;
 	uint8_t wwan_band;
 	uint8_t no_of_entry;
-} lte_coex_chk[LTE_COEX_REF_LOOKUP_ROWS] = {
+};
+
+struct _lte_coex_chk lte_coex_tdd_lookup_table[LTE_COEX_REF_TDD_ROWS] = {
 /* wwan_min_freq  wwan_max_freq    wlan_freq    sta_lte_coex_mode
  *      ap_lte_coex_mode                        ap_acs
  *	apply_acs					wwan_band
  */
-{ATH6KL_WWAN_FREQ_2300,  ATH6KL_WWAN_FREQ_2350, 20, CH1, CH5,
+{ATH6KL_WWAN_FREQ_2300,  ATH6KL_WWAN_FREQ_2350, 0, CH1, CH4,
 						LTE_COEX_MODE_3WIRE,
-	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	(BIT(5) | BIT(10)),
+	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	(CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
 	ATH6KL_AP_APPLY_ACS_ENABLED,			ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2300,  ATH6KL_WWAN_FREQ_2350, 20, CH6, CH14,
+{ATH6KL_WWAN_FREQ_2300,  ATH6KL_WWAN_FREQ_2350, 0, CH5, CH14,
 						LTE_COEX_MODE_DISABLED,
-	LTE_COEX_MODE_DISABLED,		(BIT(5) | BIT(10)),
+	LTE_COEX_MODE_DISABLED,			(CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
 	ATH6KL_AP_APPLY_ACS_DISABLED,			ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2350,  ATH6KL_WWAN_FREQ_2370, 20, CH1, CH10,
+{ATH6KL_WWAN_FREQ_2350,  ATH6KL_WWAN_FREQ_2370, 0, CH1, CH6,
 						LTE_COEX_MODE_3WIRE,
-	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	BIT(10),
+	LTE_COEX_MODE_CHANNEL_AVOIDANCE,	(CHAN7 | CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
 	ATH6KL_AP_APPLY_ACS_ENABLED,			ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2350,  ATH6KL_WWAN_FREQ_2370, 20, CH11, CH14,
+{ATH6KL_WWAN_FREQ_2350,  ATH6KL_WWAN_FREQ_2370, 0, CH7, CH14,
 						LTE_COEX_MODE_DISABLED,
-	LTE_COEX_MODE_DISABLED,			BIT(10),
+	LTE_COEX_MODE_DISABLED,			(CHAN7 | CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
 	ATH6KL_AP_APPLY_ACS_DISABLED,		ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2380, 20, CH1, CH10,
+{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2401, 0, CH1, CH9,
 						LTE_COEX_MODE_PWR_BACKOFF,
-	LTE_COEX_MODE_PWR_BACKOFF,		BIT(10),
+	LTE_COEX_MODE_PWR_BACKOFF,		(CHAN10 | CHAN11 | CHAN12 | CHAN13),
 	ATH6KL_AP_APPLY_ACS_ENABLED,			ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2380, 20, CH11, CH14,
+{ATH6KL_WWAN_FREQ_2370,  ATH6KL_WWAN_FREQ_2401, 0, CH10, CH14,
 						LTE_COEX_MODE_PWR_BACKOFF,
-	LTE_COEX_MODE_PWR_BACKOFF,		BIT(10),
+	LTE_COEX_MODE_PWR_BACKOFF,		(CHAN10 | CHAN11 | CHAN12 | CHAN13),
 	ATH6KL_AP_APPLY_ACS_DISABLED,			ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2380,  ATH6KL_WWAN_FREQ_2400, 20, CH1, CH10,
-						LTE_COEX_MODE_3WIRE,
-	LTE_COEX_MODE_3WIRE,			BIT(10),
-	ATH6KL_AP_APPLY_ACS_ENABLED,		ATH6KL_WWAN_B40, 2},
 
-{ATH6KL_WWAN_FREQ_2380,  ATH6KL_WWAN_FREQ_2400, 20, CH11, CH14,
+/* band 41 tdd */
+{2496,  2691, 0, CH1, CH9,
 						LTE_COEX_MODE_3WIRE,
-	LTE_COEX_MODE_3WIRE,			BIT(10),
-	ATH6KL_AP_APPLY_ACS_DISABLED,		ATH6KL_WWAN_B40, 2},
+	LTE_COEX_MODE_3WIRE,			(CHAN1| CHAN2 | CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9),
+	ATH6KL_AP_APPLY_ACS_DISABLED,		ATH6KL_WWAN_B41, 2},
+{2496,  2691, 0, CH10, CH14,
+						LTE_COEX_MODE_3WIRE,
+	LTE_COEX_MODE_3WIRE,			(CHAN1| CHAN2 | CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9),
+	ATH6KL_AP_APPLY_ACS_ENABLED,		ATH6KL_WWAN_B41, 2},
 
-/* Coex mode same for TDD B41 and FDD B7 */
+};
+
+
+/* Coex mode same for FDD B20 and B7 */
+struct _lte_coex_chk lte_coex_fdd_lookup_table[LTE_COEX_REF_FDD_ROWS] = {
 {2500,  2525, 10, CH1, CH3,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,
-	(BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(7) | BIT(8)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,	(CHAN4 | CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 {2500,  2525, 10, CH4, CH9,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(7) | BIT(8)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN4 | CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 3},
 {2500,  2525, 10, CH10, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(3) | BIT(4) | BIT(5) | BIT(6) | BIT(7) | BIT(8)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN4 | CHAN5 | CHAN6 | CHAN7 | CHAN8 | CHAN9),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 
 {2525,  2552, 10, CH1, CH8,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,       (BIT(8) | BIT(9) | BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,       (CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 {2525,  2552, 10, CH9, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(8) | BIT(9) | BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 3},
 {2525,  2552, 10, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(8) | BIT(9) | BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN9 | CHAN10 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 
 {2552,  2562, 10, CH1, CH10,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 {2552,  2562, 10, CH11, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 3},
 {2552,  2562, 10, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 
 {2562,  2568, 10, CH1, CH3,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 4},
 {2562,  2568, 10, CH4, CH12,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 4},
 {2562,  2568, 10, CH13, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 4},
 {2562,  2568, 10, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 4},
 
 {2568,  2570, 10, CH1, CH4,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(3)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 2},
 {2568,  2570, 10, CH5, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(3)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 2},
 
 
 {2500,  2525, 20, CH1, CH5,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(5) | BIT(6) | BIT(7) | BIT(8)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN6 | CHAN7 | CHAN8 | CHAN9),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 {2500,  2525, 20, CH6, CH9,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(5) | BIT(6) | BIT(7) | BIT(8)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN6 | CHAN7 | CHAN8 | CHAN9),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 3},
 {2500,  2525, 20, CH10, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(5) | BIT(6) | BIT(7) | BIT(8)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN6 | CHAN7 | CHAN8 | CHAN9),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 
 {2525,  2552, 20, CH1, CH10,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 {2525,  2552, 20, CH11, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 3},
 {2525,  2552, 20, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(10) | BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 
 {2552,  2562, 20, CH1, CH12,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        BIT(12),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        CHAN13,
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 {2552,  2562, 20, CH13, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        BIT(12),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        CHAN13,
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 3},
 {2552,  2562, 20, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        BIT(12),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        CHAN13,
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 3},
 
 {2562,  2568, 20, CH1, CH1,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 4},
 {2562,  2568, 20, CH2, CH12,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 4},
 {2562,  2568, 20, CH13, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 4},
 {2562,  2568, 20, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 4},
 
 {2568,  2570, 20, CH1, CH2,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B7, 2},
 {2568,  2570, 20, CH3, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B7, 2},
 
 //B20
 {832,  837, 10, CH1, CH4,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(2) | BIT(3)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 2},
 {832,  837, 10, CH5, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(2) | BIT(3)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 2},
 
 
 {837,  844, 10, CH1, CH2,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(2) | BIT(3) |BIT(4) | BIT(5) | BIT(6)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 {837,  844, 10, CH3, CH7,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(2) | BIT(3) |BIT(4) | BIT(5) | BIT(6)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 3},
 
 {837,  844, 10, CH8, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(2) | BIT(3) |BIT(4) | BIT(5) | BIT(6)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 
 {845,  852, 10, CH1, CH7,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(7) | BIT(8) |BIT(9) | BIT(10)| BIT(11)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 {845,  852, 10, CH8, CH12,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(7) | BIT(8) |BIT(9) | BIT(10)| BIT(11)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 3},
 {845,  852, 10, CH13, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(7) | BIT(8) |BIT(9) | BIT(10)| BIT(11)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN8 | CHAN9 | CHAN10 | CHAN11 | CHAN12),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 
 {852,  857, 10, CH1, CH2,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(10) | BIT(11)| BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 4},
 {852,  857, 10, CH3, CH10,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(10) | BIT(11)| BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 4},
 {852,  857, 10, CH11, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(10) | BIT(11)| BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 4},
 {852,  857, 10, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(10) | BIT(11)| BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN11 | CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 4},
 
 {857,  862, 10, CH1, CH7,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(2) | BIT(3)| BIT(4) | BIT(5) | BIT(6)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 2},
 {857,  862, 10, CH8, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) |BIT(2) | BIT(3)| BIT(4) | BIT(5) | BIT(6)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4 | CHAN5 | CHAN6 | CHAN7),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 2},
 
 
 
 {832,  837, 20, CH1, CH2,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 2},
 {832,  837, 20, CH3, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 2},
 
 
 {837,  844, 20, CH1, CH3,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(3) | BIT(4)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN4 | CHAN5),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 {837,  844, 20, CH4, CH5,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(3) | BIT(4)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN4 | CHAN5),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 3},
 {837,  844, 20, CH6, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(3) | BIT(4)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN4 | CHAN5),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 
 {845,  852, 20, CH1, CH8,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(8) | BIT(9)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN9 | CHAN10),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 {845,  852, 20, CH9, CH10,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(8) | BIT(9)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN9 | CHAN10),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 3},
 {845,  852, 20, CH11, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(8) | BIT(9)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN9 | CHAN10),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 
 {852,  857, 20, CH1, CH11,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 {852,  857, 20, CH12, CH13,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 3},
 {852,  857, 20, CH14, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(11) | BIT(12)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN12 | CHAN13),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 3},
 
 {857,  862, 20, CH1, CH4,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(3)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4),
         ATH6KL_AP_APPLY_ACS_DISABLED,           ATH6KL_WWAN_B20, 2},
 {857,  862, 20, CH5, CH14,
                                                 LTE_COEX_MODE_3WIRE,
-        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (BIT(0) | BIT(1) | BIT(2) | BIT(3)),
+        LTE_COEX_MODE_CHANNEL_AVOIDANCE,        (CHAN1 | CHAN2 | CHAN3 | CHAN4),
         ATH6KL_AP_APPLY_ACS_ENABLED,           ATH6KL_WWAN_B20, 2},
 
 /* No lte_coex needed for TDD B38
@@ -586,7 +608,8 @@ static void ath6kl_lte_coex_ap_reset(struct ath6kl *ar)
 }
 
 static void ath6kl_setup_wlan_sta_lte_coex_mode(struct ath6kl *ar,
-						int send_wmi_cmd)
+		int table_look_up_entries, struct _lte_coex_chk lte_coex_chk[],
+		int send_wmi_cmd)
 {
 	int i, j, count = 0;
 	struct ath6kl_vif *vif;
@@ -608,10 +631,12 @@ static void ath6kl_setup_wlan_sta_lte_coex_mode(struct ath6kl *ar,
 	}
 	spin_unlock_bh(&ar->list_lock);
 	/* Select wwan band */
-	for (i = 0; i < LTE_COEX_REF_LOOKUP_ROWS - 1; i++) {
+	for (i = 0; i < table_look_up_entries - 1; i++) {
 		if (ar->lte_coex->wwan_freq >= lte_coex_chk[i].wwan_min_freq
-		&& ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq
-		&& ar->lte_coex->wwan_bw == lte_coex_chk[i].wwan_bw) {
+		&& ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq) {
+			if (ar->lte_coex->wwan_band == ATH6KL_WWAN_FDD &&
+				(ar->lte_coex->wwan_bw != lte_coex_chk[i].wwan_bw))
+				continue;
 			/*select wlan band */
 			count = lte_coex_chk[i].no_of_entry;
 			for (j = i; j < i + count; j++) {
@@ -636,7 +661,8 @@ static void ath6kl_setup_wlan_sta_lte_coex_mode(struct ath6kl *ar,
 }
 
 static void ath6kl_lte_coex_check_acs(struct ath6kl_vif *vif,
-					 uint32_t ap_freq, uint8_t index)
+		uint32_t ap_freq, uint8_t index,
+		struct _lte_coex_chk lte_coex_chk[])
 {
 	struct ath6kl *ar = vif->ar;
 	uint8_t j = 0, count = lte_coex_chk[index].no_of_entry;
@@ -695,7 +721,8 @@ static void ath6kl_lte_coex_check_acs(struct ath6kl_vif *vif,
 }
 
 
-static void ath6kl_lte_coex_set_ap_mode(struct ath6kl *ar, uint8_t index)
+static void ath6kl_lte_coex_set_ap_mode(struct ath6kl *ar, uint8_t index,
+		struct _lte_coex_chk lte_coex_chk[])
 {
 	struct ath6kl_vif *vif;
 	uint32_t ap_freq;
@@ -717,7 +744,8 @@ static void ath6kl_lte_coex_set_ap_mode(struct ath6kl *ar, uint8_t index)
 			ar->lte_coex->dev_ctx[vif_idx].acs_evt =
 							ATH6KL_AP_ACS_RESET;
 		} else {
-			ath6kl_lte_coex_check_acs(vif, ap_freq, index);
+			ath6kl_lte_coex_check_acs(vif, ap_freq, index,
+					lte_coex_chk);
 			if (ar->lte_coex->dev_ctx[vif_idx].acs_evt
 						& ATH6KL_AP_ACS_IN_PROGRESS)
 				break;
@@ -727,7 +755,8 @@ static void ath6kl_lte_coex_set_ap_mode(struct ath6kl *ar, uint8_t index)
 }
 
 static void ath6kl_setup_wlan_ap_lte_coex_mode(struct ath6kl *ar,
-							int send_wmi_cmd)
+		int send_wmi_cmd, int table_look_up_entries,
+		struct _lte_coex_chk lte_coex_chk[])
 {
 	int i;
 
@@ -738,11 +767,14 @@ static void ath6kl_setup_wlan_ap_lte_coex_mode(struct ath6kl *ar,
 						LTE_COEX_MODE_DISABLED;
 	ar->lte_coex->acs_chan_mask = AP_ACS_NONE;
 	/* Select wwan band */
-	for (i = 0; i < LTE_COEX_REF_LOOKUP_ROWS; i++) {
+	for (i = 0; i < table_look_up_entries; i++) {
 		if (ar->lte_coex->wwan_freq >= lte_coex_chk[i].wwan_min_freq &&
-		ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq
-		&& ar->lte_coex->wwan_bw == lte_coex_chk[i].wwan_bw) {
-			ath6kl_lte_coex_set_ap_mode(ar, i);
+		ar->lte_coex->wwan_freq < lte_coex_chk[i].wwan_max_freq) {
+			if (ar->lte_coex->wwan_band == ATH6KL_WWAN_FDD &&
+				(ar->lte_coex->wwan_bw != lte_coex_chk[i].wwan_bw))
+				continue;
+
+			ath6kl_lte_coex_set_ap_mode(ar, i, lte_coex_chk);
 			break;
 		}
 	}
@@ -753,14 +785,15 @@ static void ath6kl_setup_wlan_ap_lte_coex_mode(struct ath6kl *ar,
 
 void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf)
 {
+	int table_look_up_entries = 0;
 	struct app_lte_coex_wwan_data_t *wwan =
 				(struct app_lte_coex_wwan_data_t *)wmi_buf;
 
-	ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: QMI LTE band info:%d %d %d",
+	ath6kl_info("LTE_COEX: QMI LTE band info:%d %d %d",
 			wwan->band_info_valid, wwan->ul_freq, wwan->dl_freq);
-	ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: QMI TDD CFG:%d %d",
+	ath6kl_info("LTE_COEX: QMI TDD CFG:%d %d",
 					wwan->tdd_info_valid, wwan->tdd_cfg);
-	ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: QMI off period:%d %d",
+	ath6kl_info("LTE_COEX: QMI off period:%d %d",
 				wwan->off_period_valid, wwan->off_period);
 
 	if (!(wwan->band_info_valid == 1 || wwan->tdd_info_valid == 1 ||
@@ -796,10 +829,12 @@ void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf)
 				ar->lte_coex->wmi_lte_data.wwan_mode =
 					LTE_COEX_WWAN_MODE_TDD_CONFIG;
 				ar->lte_coex->wwan_band = ATH6KL_WWAN_TDD;
+				table_look_up_entries = LTE_COEX_REF_TDD_ROWS;
 			} else {
 				ar->lte_coex->wmi_lte_data.wwan_mode =
 					 LTE_COEX_WWAN_MODE_FDD_CONFIG;
 				ar->lte_coex->wwan_band = ATH6KL_WWAN_FDD;
+				table_look_up_entries = LTE_COEX_REF_FDD_ROWS;
 			}
 			ar->lte_coex->wmi_lte_data.wwan_state =
 					LTE_COEX_WWAN_STATE_CONNECTED;
@@ -814,9 +849,16 @@ void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf)
 
 	if (ar->lte_coex->wmi_lte_data.wwan_state != LTE_COEX_WWAN_STATE_IDLE) {
 		ath6kl_lte_coex_ap_reset(ar);
-		ath6kl_setup_wlan_sta_lte_coex_mode(ar, 0);
+		ath6kl_setup_wlan_sta_lte_coex_mode(ar, table_look_up_entries,
+				(ar->lte_coex->wwan_band & ATH6KL_WWAN_TDD) ?
+				lte_coex_tdd_lookup_table :
+				lte_coex_fdd_lookup_table, 0);
 		/* send wmi cmd only once */
-		ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD);
+		ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD,
+				table_look_up_entries,
+				(ar->lte_coex->wwan_band & ATH6KL_WWAN_TDD) ?
+				lte_coex_tdd_lookup_table :
+				lte_coex_fdd_lookup_table);
 		ath6kl_dbg(ATH6KL_DBG_LTE_COEX, "LTE_COEX: WWAN BAND: %s",
 				GET_ATH6KL_WWAN_BAND(ar->lte_coex->wwan_band));
 		ar->lte_coex->wmi_lte_data.wwan_off_period = 0;
@@ -826,6 +868,9 @@ void ath6kl_lte_coex_update_wwan_data(struct ath6kl *ar, void *wmi_buf)
 void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 {
 	struct ath6kl *ar = vif->ar;
+	int table_look_up_entries = (ar->lte_coex->wwan_band & ATH6KL_WWAN_TDD) ?
+					LTE_COEX_REF_TDD_ROWS :
+					LTE_COEX_REF_FDD_ROWS;
 
 	if (vif->nw_type == INFRA_NETWORK) {
 		ar->lte_coex->dev_ctx[vif->fw_vif_idx].op_freq = chan;
@@ -836,7 +881,11 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 			ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
 				"LTE_COEX: Station disconnected");
 
-		ath6kl_setup_wlan_sta_lte_coex_mode(ar, SEND_WMI_CMD);
+		ath6kl_setup_wlan_sta_lte_coex_mode(ar,
+				table_look_up_entries,
+				(ar->lte_coex->wwan_band & ATH6KL_WWAN_TDD) ?
+				lte_coex_tdd_lookup_table :
+				lte_coex_fdd_lookup_table, SEND_WMI_CMD);
 	} else if (vif->nw_type == AP_NETWORK) {
 		ar->lte_coex->dev_ctx[vif->fw_vif_idx].op_freq = chan;
 		if (chan != 0) {
@@ -853,12 +902,16 @@ void ath6kl_lte_coex_update_wlan_data(struct ath6kl_vif *vif, uint32_t chan)
 		} else
 			ath6kl_dbg(ATH6KL_DBG_LTE_COEX,
 					"LTE_COEX: AP Shutdown");
-		ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD);
+		ath6kl_setup_wlan_ap_lte_coex_mode(ar, SEND_WMI_CMD,
+				table_look_up_entries,
+				(ar->lte_coex->wwan_band & ATH6KL_WWAN_TDD) ?
+				lte_coex_tdd_lookup_table :
+				lte_coex_fdd_lookup_table);
 	}
 
 }
 
-u32 ath6kl_set_lte_chan_mask(uint32_t chan)
+u32 ath6kl_get_ap_operating_chan_mask(uint32_t chan)
 {
 	u32 chan_mask = 0, bit = 0;
 
@@ -872,22 +925,22 @@ u32 ath6kl_set_lte_chan_mask(uint32_t chan)
 }
 
 bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint16_t *ap_acs_ch,
-		struct ath6kl_vif *vif)
+		struct ath6kl_vif *cur_vif)
 {
 	struct ath6kl_vif *tmp_vif;
 	bool ret = false;
-	u32 op_freq;
+	u32 ap_operating_chan_mask = 0;
 
 	if (ar->lte_coex && ar->lte_coex->acs_chan_mask != AP_ACS_NONE) {
 		list_for_each_entry(tmp_vif, &ar->vif_list, list) {
 			if (tmp_vif->nw_type == AP_NETWORK) {
 				if (test_bit(CONNECTED, &tmp_vif->flags)) {
-					if (tmp_vif->fw_vif_idx != vif->fw_vif_idx &&
-						(tmp_vif->phy_mode == vif->phy_mode)) {
-						op_freq =
-							ath6kl_set_lte_chan_mask(tmp_vif->bss_ch);
+					if (tmp_vif->fw_vif_idx != cur_vif->fw_vif_idx &&
+						(tmp_vif->phy_mode != WMI_11A_MODE)) {
+						ap_operating_chan_mask =
+							ath6kl_get_ap_operating_chan_mask(tmp_vif->bss_ch);
 						if (ar->lte_coex->acs_chan_mask &
-							op_freq)
+							ap_operating_chan_mask)
 							*ap_acs_ch =
 								tmp_vif->bss_ch;
 					}
@@ -897,7 +950,7 @@ bool ath6kl_check_lte_coex_acs(struct ath6kl *ar, uint16_t *ap_acs_ch,
 
 		if (!*ap_acs_ch) {
 			*ap_acs_ch = cpu_to_le16(AP_ACS_USER_DEFINED);
-			vif->acs_chan_mask = ar->lte_coex->acs_chan_mask;
+			cur_vif->acs_chan_mask = ar->lte_coex->acs_chan_mask;
 		}
 		ret = true;
 	}
