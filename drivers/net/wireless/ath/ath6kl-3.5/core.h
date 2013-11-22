@@ -47,7 +47,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.4.5)
+#define __BUILD_VERSION_ (3.5.4.8)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -65,9 +65,7 @@
 #endif
 
 #ifdef CONFIG_ATH6KL_UB134
-#ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
-#define CONFIG_ATH6KL_UDP_TPUT_WAR
-#endif
+#undef CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
 
 #ifdef CONFIG_ATH6KL_MCC
@@ -1592,6 +1590,7 @@ void ath6kl_sdio_exit_msm(void);
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
 void ath6kl_indicate_wmm_schedule_change(void *devt, bool active);
 int _string_to_mac(char *string, int len, u8 *macaddr);
+void ath6kl_flush_pend_skb(struct ath6kl_vif *vif);
 
 #ifdef CONFIG_ANDROID
 int ath6kl_android_enable_wow_default(struct ath6kl *ar);

@@ -59,6 +59,10 @@ module_param(diag_local_test, uint, 0644);
    used to override the default MAC of MAC from softmac.bin file */
 char *ath6kl_wifi_mac;
 
+/* for android frame work, we need to add fwpath module parameter,
+   to avoid the problem that create softap mode will fail. */
+char *fwpath = "android_fw_path_compatible_str";
+
 module_param(debug_mask, uint, 0644);
 module_param(htc_bundle_recv, uint, 0644);
 module_param(htc_bundle_send, uint, 0644);
@@ -72,6 +76,7 @@ module_param(ath6kl_wifi_mac, charp, 0000);
 module_param(ath6kl_scan_timeout, uint, 0644);
 module_param(ath6kl_roam_mode, uint, 0644);
 module_param(recovery_enable_mode, uint, 0644);
+module_param(fwpath, charp, 0644);
 
 static const struct ath6kl_hw hw_list[] = {
 	{
@@ -2879,7 +2884,7 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 	bool discon_issued;
 
 	if (vif->pend_skb)
-		flush_delayed_work(&vif->work_eapol_send);
+		ath6kl_flush_pend_skb(vif);
 
 	netif_stop_queue(vif->ndev);
 
