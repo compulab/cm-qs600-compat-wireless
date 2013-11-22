@@ -3438,23 +3438,6 @@ static int ath6kl_wmi_delba_req_event_rx(struct wmi *wmi, u8 *datap, int len,
 	return 0;
 }
 
-static bool ath6kl_apap_override(struct ath6kl *ar, int vif_idx)
-{
-	struct ath6kl_vif *tmp_vif = NULL;
-	int ap_cnt = 0;
-
-	list_for_each_entry(tmp_vif, &ar->vif_list, list)
-		if (tmp_vif->nw_type == AP_NETWORK)
-			if (test_bit(CONNECTED, &tmp_vif->flags))
-				 if (tmp_vif->fw_vif_idx != vif_idx)
-					ap_cnt++;
-
-	/* If one AP is connected then override */
-	if (ap_cnt > 0) return 1;
-
-	return 0;
-}
-
 /*  AP mode functions */
 
 int ath6kl_wmi_ap_set_acs_policy_cmd(struct wmi *wmip, u8 if_idx,
@@ -3484,7 +3467,6 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 	struct ath6kl *ar = wmip->parent_dev;
 	int res;
 	u16 ap_acs_ch = 0;
-	bool apap_override = 0;
 	struct ath6kl_vif *vif = NULL;
 
 	skb = ath6kl_wmi_get_new_buf(sizeof(*cm));
@@ -3494,14 +3476,12 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 	cm = (struct wmi_connect_cmd *) skb->data;
 	memcpy(cm, p, sizeof(*cm));
 
-	apap_override = ath6kl_apap_override(ar, if_idx);
+	vif = ath6kl_get_vif_by_index(wmip->parent_dev, if_idx);
 
-	if (!ar->sta_bh_override && !apap_override) {
-		if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch))
+	if (vif && !ar->sta_bh_override) {
+		if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch, vif))
 			cm->ch = ap_acs_ch;
 	}
-
-	vif = ath6kl_get_vif_by_index(wmip->parent_dev, if_idx);
 
 	if (vif && cm->ch == AP_ACS_USER_DEFINED) {
 		ath6kl_wmi_ap_set_acs_policy_cmd(ar->wmi, vif->fw_vif_idx,
