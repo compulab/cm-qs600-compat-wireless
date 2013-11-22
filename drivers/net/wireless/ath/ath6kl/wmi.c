@@ -3478,9 +3478,12 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 
 	vif = ath6kl_get_vif_by_index(wmip->parent_dev, if_idx);
 
-	if (vif && !ar->sta_bh_override) {
+	if (vif && !ar->sta_bh_override && vif->phy_mode != WMI_11A_MODE) {
 		if (ath6kl_check_lte_coex_acs(ar, &ap_acs_ch, vif))
 			cm->ch = ap_acs_ch;
+
+		if (cm->ch == AP_ACS_USER_DEFINED)
+			ar->acs_in_prog = 1;
 	}
 
 	if (vif && cm->ch == AP_ACS_USER_DEFINED) {
@@ -3493,8 +3496,7 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 					 vif->phy_mode);
 	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_CONFIG_COMMIT_CMDID,
 				  NO_SYNC_WMIFLAG);
-	ath6kl_dbg(ATH6KL_DBG_WMI,
-		   "%s: nw_type=%u auth_mode=%u ch=%u ctrl_flags=0x%x-> res=%d\n",
+	ath6kl_info("%s: nw_type=%u auth_mode=%u ch=%u ctrl_flags=0x%x-> res=%d\n",
 		   __func__, p->nw_type, p->auth_mode, le16_to_cpu(cm->ch),
 		   le32_to_cpu(p->ctrl_flags), res);
 	return res;
