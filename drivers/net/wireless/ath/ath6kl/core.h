@@ -98,6 +98,8 @@
 
 #define ATH6KL_DEF_MCC_ADJ_CH_SPACING 20
 
+#define ATH6KL_DEF_LTE_MARGIN 0
+
 enum ath6kl_fw_ie_type {
 	ATH6KL_FW_IE_FW_VERSION = 0,
 	ATH6KL_FW_IE_TIMESTAMP = 1,
@@ -1016,6 +1018,7 @@ struct ath6kl {
 	u16 scan_params_mask;
 	u16 pas_chdwell_time;
 	u32 bootstrap_mode;
+	u8 lte_margin;
 };
 
 
