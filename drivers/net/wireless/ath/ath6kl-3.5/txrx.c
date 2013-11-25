@@ -1276,7 +1276,8 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) &&
 			(vif->ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM)) {
 			if (vif->pend_skb != NULL)
-				flush_delayed_work(&vif->work_eapol_send);
+				ath6kl_flush_pend_skb(vif);
+
 			if (test_bit(FIRST_EAPOL_PENDSENT, &vif->flags)) {
 				vif->pend_skb = skb;
 				INIT_DELAYED_WORK(&vif->work_eapol_send,
@@ -3201,3 +3202,25 @@ void ath6kl_indicate_wmm_schedule_change(void *devt, bool change)
 		}
 	}
 }
+
+void ath6kl_flush_pend_skb(struct ath6kl_vif *vif)
+{
+
+	spin_lock_bh(&vif->pend_skb_lock);
+
+	if (!vif->pend_skb) {
+		spin_unlock_bh(&vif->pend_skb_lock);
+		return;
+	}
+
+	if (!(vif->pend_skb->dev->flags & IFF_UP))
+			dev_kfree_skb_any(vif->pend_skb);
+	else
+		netif_rx_ni(vif->pend_skb);
+
+	vif->pend_skb = NULL;
+	clear_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
+
+	spin_unlock_bh(&vif->pend_skb_lock);
+}
+

@@ -1136,7 +1136,7 @@ static bool ath6kl_handshake_protect(struct ath6kl_vif *vif, u8 *bssid)
 			spin_lock_bh(&vif->if_lock);
 			set_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 			if (vif->pend_skb)
-				flush_delayed_work(&vif->work_eapol_send);
+				ath6kl_flush_pend_skb(vif);
 			set_bit(FIRST_EAPOL_PENDSENT, &vif->flags);
 			mod_timer(&vif->shprotect_timer,
 				jiffies + ATH6KL_HANDSHAKE_PROC_TIMEOUT);
@@ -1150,7 +1150,7 @@ static bool ath6kl_handshake_protect(struct ath6kl_vif *vif, u8 *bssid)
 		spin_lock_bh(&vif->if_lock);
 		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 		if (vif->pend_skb)
-			flush_delayed_work(&vif->work_eapol_send);
+			ath6kl_flush_pend_skb(vif);
 		del_timer(&vif->shprotect_timer);
 		spin_unlock_bh(&vif->if_lock);
 		reset_handshake_pro = false;
@@ -1359,7 +1359,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 	}
 
 	if (vif->pend_skb)
-		flush_delayed_work(&vif->work_eapol_send);
+		ath6kl_flush_pend_skb(vif);
 
 	/*
 	 * Send a disconnect command to target when a disconnect event is
@@ -1873,7 +1873,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy, struct net_device *ndev,
 	if (key_usage & GROUP_USAGE) {
 		if (vif->pend_skb) {
 			ath6kl_err("eapol protect shall be off already\n");
-			flush_delayed_work(&vif->work_eapol_send);
+			ath6kl_flush_pend_skb(vif);
 		}
 
 		spin_lock_bh(&vif->if_lock);
@@ -5744,7 +5744,7 @@ void ath6kl_shprotect_timer_handler(unsigned long ptr)
 
 	if (vif->pend_skb) {
 		ath6kl_err("%s, shall not have pend skb\n", __func__);
-		flush_delayed_work(&vif->work_eapol_send);
+		ath6kl_flush_pend_skb(vif);
 	}
 
 	if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM) {
