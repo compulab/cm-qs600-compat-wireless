@@ -1293,5 +1293,9 @@ int ath6kl_mcc_flowctrl_stat(struct ath6kl_fw_conn_list *conn, u8 *buf,
 		int buf_len);
 int ath6kl_is_mcc_enabled (struct ath6kl *ar);
 int ath6kl_check_adj_vif_ch_overlap(struct ath6kl_vif *vif, uint16_t chan);
-
+u16 ath6kl_process_user_defined_acs(struct ath6kl *ar,
+                                struct ath6kl_vif *vif,
+                                u16 adj_vif_ch,
+                                u16 cur_vif_ch,
+                                u32 *acs_chan_mask);
 #endif /* CORE_H */

@@ -3041,6 +3041,59 @@ u8 ath6kl_get_ht40_ext_ch_mask(struct cfg80211_ap_settings *info,
 	return mask_sec_ch;
 }
 
+u16 ath6kl_process_user_defined_acs(struct ath6kl *ar,
+				struct ath6kl_vif *vif,
+				u16 adj_vif_ch,
+				u16 cur_vif_ch,
+				u32 *acs_chan_mask)
+{
+	u8 single_ch_width = 5, max_ch_idx = 12, min_ch_idx = 0, i;
+	u16 chan1_freq = 2412;
+	u16 adj_vif_chidx = adj_vif_ch?
+		((adj_vif_ch - chan1_freq)/single_ch_width):0;
+	u32 chan_mask = acs_chan_mask?*acs_chan_mask:0, ch = cur_vif_ch;
+
+	if(adj_vif_ch) {
+		/* check if the other vif channel is one of
+		the channels in the mask */
+		if(chan_mask & (1 << adj_vif_chidx)) {
+			ch = adj_vif_ch;
+
+			if(!vif->ap_hold_conn)
+				ar->acs_in_prog = 0;
+		} else if(ar->mcc_adj_ch_spacing){
+			/* blank out "adj" affected channels */
+			for(i=1;i<ar->mcc_adj_ch_spacing/single_ch_width;i++) {
+				int neg_shift=adj_vif_chidx-i,
+					pos_shift=adj_vif_chidx+i;
+
+				if((pos_shift <= max_ch_idx) &&
+				(chan_mask & (1 << pos_shift))) {
+					chan_mask ^=
+						(1 << pos_shift);
+				}
+				if((neg_shift >= min_ch_idx) &&
+				(chan_mask & (1<<neg_shift))) {
+					chan_mask ^=
+						(1<<neg_shift);
+				}
+			}
+
+			/* If all channels are masked out, go for SCC */
+			if(!chan_mask) {
+			        ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s:"
+			"acs dropped, ch %d chosen \n", __func__,adj_vif_ch);
+				ch = adj_vif_ch;
+			}
+		}
+	}
+
+	if(acs_chan_mask)
+		*acs_chan_mask = chan_mask;
+
+	return ch;
+}
+
 static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_ap_settings *info)
 {
@@ -3317,15 +3370,24 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		else
 			ar->acs_in_prog = 1;
 
-		if (adj_vif_ch > 0) {
+		if (p.ch == AP_ACS_USER_DEFINED) {
+			u32 ch;
+			vif->acs_chan_mask = info->acs_chan_mask;
+
+			ch = ath6kl_process_user_defined_acs(ar,
+							vif,
+							adj_vif_ch,
+							p.ch,
+							&vif->acs_chan_mask);
+			if(ch != p.ch) {
+				p.ch = ch;
+			}
+		} else if (adj_vif_ch > 0) {
 			p.ch = adj_vif_ch;
 			ath6kl_warn("Override ACS to %d due to MCC intf\n",
-								 adj_vif_ch);
+				adj_vif_ch);
 			ar->acs_in_prog = 0;
 		}
-
-		if (p.ch == AP_ACS_USER_DEFINED)
-			vif->acs_chan_mask = info->acs_chan_mask;
 	} else {
                 p.ch = cpu_to_le16(info->channel->center_freq);
 
