@@ -2667,6 +2667,12 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 				sizeof(struct ath6kl_android_wifi_priv_cmd)))
 			ret = -EIO;
 		else {
+			if (android_cmd.used_len > android_cmd.total_len) {
+				ret = -EINVAL;
+				break;
+			}
+
+
 			user_cmd = kzalloc(android_cmd.total_len, GFP_KERNEL);
 			if (!user_cmd) {
 				ret = -ENOMEM;
@@ -2771,11 +2777,14 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					btcoex_cmd.cmd_len))
 				ret = -EIO;
 			else {
-				if (!ath6kl_ioctl_ready(vif))
+				if (!ath6kl_ioctl_ready(vif)) {
+					kfree(user_cmd);
 					return -EIO;
+				}
 
 				if (down_interruptible(&vif->ar->sem)) {
 					ath6kl_err("busy, couldn't get access\n");
+					kfree(user_cmd);
 					return -ERESTARTSYS;
 				}
 

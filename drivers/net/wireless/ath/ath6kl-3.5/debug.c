@@ -293,7 +293,7 @@ static ssize_t read_file_war_stats(struct file *file, char __user *user_buf,
 {
 	struct ath6kl *ar = file->private_data;
 	char *buf;
-	unsigned int len = 0, buf_len = 1500;
+	unsigned int len = 0, buf_len = 2048;
 	ssize_t ret_cnt;
 
 	buf = kzalloc(buf_len, GFP_KERNEL);
@@ -774,8 +774,10 @@ static ssize_t read_file_tgt_stats(struct file *file, char __user *user_buf,
 	len += scnprintf(buf + len, buf_len - len, "%20s %10u\n",
 		 "Wow host evt wakeups", tgt_stats->wow_host_evt_wakeups);
 
-	if (len > buf_len)
+	if (len > buf_len) {
 		len = buf_len;
+		ath6kl_err("Buffer to small, need to enlarge!\n");
+	}
 
 	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 
@@ -3977,17 +3979,23 @@ static ssize_t ath6kl_patterngen_write(struct file *file,
 
 		pattern_len = readpatternfile(token, pattern_buf, 1024);
 
-		if (!pattern_len || pattern_len > 1024)
+		if (!pattern_len || pattern_len > 1024) {
+			kfree(pattern_buf);
 			return -EINVAL;
+		}
 	}
 
 	vif = ath6kl_vif_first(ar);
-	if (!vif)
+	if (!vif) {
+		kfree(pattern_buf);
 		return -EIO;
+	}
 
 	/* If target is not associated */
-	if (!test_bit(CONNECTED, &vif->flags))
+	if (!test_bit(CONNECTED, &vif->flags)) {
+		kfree(pattern_buf);
 		return -EINVAL;
+	}
 
 	if (!test_bit(WMI_READY, &ar->flag) &&
 	    !test_bit(TESTMODE_EPPING, &ar->flag)) {

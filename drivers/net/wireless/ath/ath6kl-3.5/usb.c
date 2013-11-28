@@ -1855,8 +1855,10 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 
 		p_pmskb = kmalloc(sizeof(struct usb_pm_skb_queue_t),
 			GFP_ATOMIC);
-		if (p_pmskb == NULL)
+		if (p_pmskb == NULL) {
 			ath6kl_err("p_pmskb = kmalloc fail!\n");
+			BUG_ON(1); /* TODO */
+		}
 
 		p_pmskb->pipeID = PipeID;
 		p_pmskb->ar = ar;
