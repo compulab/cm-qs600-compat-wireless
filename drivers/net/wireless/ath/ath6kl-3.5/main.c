@@ -92,6 +92,30 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 	return conn;
 }
 
+struct ath6kl_sta *ath6kl_find_sta_any(struct ath6kl_vif *vif, u8 *node_addr)
+{
+	struct ath6kl_sta *conn = NULL;
+	u8 i, max_conn;
+
+	if (vif->nw_type != AP_NETWORK)
+		return &vif->sta_list[0];
+
+	if (is_zero_ether_addr(node_addr))
+		return NULL;
+
+	max_conn = (vif->nw_type == AP_NETWORK) ? AP_MAX_NUM_STA : 0;
+
+	for (i = 0; i < max_conn; i++) {
+		if (!is_zero_ether_addr(vif->sta_list[i].mac)) {
+			conn = &vif->sta_list[i];
+			break;
+		}
+	}
+
+	return conn;
+}
+
+
 static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 				u8 *wpaie, u8 ielen, u8 keymgmt, u8 ucipher,
 				u8 auth, u8 apsd_info, bool ht_support,
@@ -955,6 +979,51 @@ void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
 	return;
 }
 
+int ath6kl_bss_post_proc_dump(struct ath6kl_vif *vif, u8 *buf, int buf_len)
+{
+	struct bss_post_proc *post_proc = vif->bss_post_proc_ctx;
+	struct bss_info_entry *bss_info, *tmp;
+	int cnt = 0, len = 0;
+
+	if (!post_proc)
+		return 0;
+
+	len += snprintf(buf + len, buf_len - len,
+			"\nVIF%d flag 0x%08x stat 0x%lx aging %d NOW %ld\n",
+			vif->fw_vif_idx,
+			post_proc->flags,
+			post_proc->stat,
+			post_proc->aging_time,
+			jiffies);
+
+	spin_lock_bh(&post_proc->bss_info_lock);
+
+	list_for_each_entry_safe(bss_info,
+				tmp,
+				&post_proc->bss_info_list,
+				list) {
+		cnt++;
+
+		BUG_ON(!bss_info->mgmt);
+		len += snprintf(buf + len, buf_len - len,
+		" %s %pM %04d t %ld\n",
+				(bss_info->mgmt->frame_control == 0x0080 ?
+					"B" : "P"),
+				bss_info->mgmt->sa,
+				(bss_info->channel ?
+					(bss_info->channel->center_freq) :
+					-1),
+				bss_info->shoot_time);
+	}
+
+	spin_unlock_bh(&post_proc->bss_info_lock);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
+			"bss_proc dump, cnt %d\n", cnt);
+
+	return len;
+}
+
 enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 {
 	struct ath6kl *ar = devt;
@@ -1069,8 +1138,7 @@ static int ath6kl_cookie_pool_init(struct ath6kl *ar,
 	cookie_pool->cookie_peak_cnt = 0;
 	cookie_pool->cookie_fail_in_row = 0;
 
-	ath6kl_info("Create HTC cookie, type %d num %d\n"
-			"pool from vmalloc %d htc from vmalloc %d",
+	ath6kl_info("Create HTC cookie, type %d num %d, loc %d %d\n",
 			cookie_type,
 			cookie_num,
 			cookie_pool->cookie_mem->alloc_from_vmalloc,
@@ -1088,10 +1156,6 @@ static void ath6kl_cookie_pool_cleanup(struct ath6kl *ar,
 				cookie_pool->cookie_type,
 				cookie_pool->cookie_num,
 				cookie_pool->cookie_count);
-
-	ath6kl_info("Free HTC cookie, type %d curr_num %d\n",
-			cookie_pool->cookie_type,
-			cookie_pool->cookie_count);
 
 	cookie_pool->cookie_list = NULL;
 	cookie_pool->cookie_count = 0;
@@ -1783,19 +1847,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	vif->bss_ch = channel;
 
 	if ((vif->nw_type == INFRA_NETWORK)) {
-		if (ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM &&
-			vif->wdev.iftype == NL80211_IFTYPE_STATION) {
-			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
-				ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT);
-		} else {
-#ifdef CE_SUPPORT
-			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
-				0);
-#else
-			ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
-				ATH6KL_DISCONNECT_TIMEOUT);
-#endif
-		}
 		ath6kl_wmi_listeninterval_cmd(ar->wmi, vif->fw_vif_idx,
 					      ar->listen_intvl_t,
 					      ar->listen_intvl_b);
@@ -1865,6 +1916,38 @@ void ath6kl_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid, bool ismcast)
 	} else
 		ath6kl_cfg80211_tkip_micerr_event(vif, keyid, ismcast);
 
+}
+
+/* this is currently default to non-kmsg */
+static void ath6kl_dump_status(struct ath6kl_vif *vif, struct wmi_target_stats *tgt_stats)
+{
+	struct target_stats *stats = &vif->target_stats;
+	
+	if (tgt_stats->cserv_stats.cs_bmiss_cnt != 0 ||
+		tgt_stats->cserv_stats.cs_discon_cnt != 0 ||
+		tgt_stats->cserv_stats.cs_low_rssi_cnt != 0 ||
+		tgt_stats->cserv_stats.cs_roam_count != 0 ||
+		tgt_stats->cserv_stats.cs_connect_cnt != 0) {
+
+		ath6kl_printfwd("vif %d time %d\n"
+				   "bmiss %llu con %llu discon %llu\n"
+				   "averssi %d lrssi %llu roam %d\n",
+				   vif->fw_vif_idx, (unsigned int)stats->update_time.tv_sec,
+				   stats->cs_bmiss_cnt, stats->cs_connect_cnt,
+				   stats->cs_discon_cnt,stats->cs_ave_beacon_rssi,
+				   stats->cs_low_rssi_cnt, stats->cs_roam_cnt);
+
+		/* if we need kernel dump */
+		ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
+				   "vif %d time %d\n"
+				   "bmiss %llu con %llu discon %llu\n"
+				   "averssi %d lrssi %llu roam %d\n",
+				   vif->fw_vif_idx, (unsigned int)stats->update_time.tv_sec,
+				   stats->cs_bmiss_cnt, stats->cs_connect_cnt,
+				   stats->cs_discon_cnt,stats->cs_ave_beacon_rssi,
+				   stats->cs_low_rssi_cnt, stats->cs_roam_cnt);
+
+	}
 }
 
 static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
@@ -1979,6 +2062,7 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 		le16_to_cpu(tgt_stats->wow_stats.wow_evt_discarded);
 
 	do_gettimeofday(&stats->update_time);
+	ath6kl_dump_status(vif, tgt_stats);
 }
 
 static void ath6kl_add_le32(__le32 *var, __le32 val)
@@ -2245,7 +2329,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 	aggr_reset_state(vif->sta_list[0].aggr_conn_cntxt);
 
-	del_timer(&vif->disconnect_timer);
+	del_timer_sync(&vif->disconnect_timer);
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "disconnect reason is %d\n", reason);
 
@@ -2926,6 +3010,16 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 		int idx;
 
 		conn = ath6kl_find_sta(vif, macaddr);
+
+#ifdef CONFIG_ANDROID
+		/* WFD will query link speed with peer p2p0's macaddr.
+		 * However, what we actually need is peer P2P-GO/P2P-Client interface.
+		 * Such as p2p-p2p0-x. Here find out p2p-p2p-x if there is any.
+		 */
+		if (!conn)
+			conn = ath6kl_find_sta_any(vif, macaddr);
+#endif
+
 		if (conn) {
 			for (idx = 0; idx < AP_MAX_NUM_STA; idx++) {
 				if (conn->aid == ap->sta[idx].aid) {
@@ -2940,6 +3034,8 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	} else
 		rate = vif->target_stats.tx_ucast_rate;
 
+	if (test_bit(MCC_ENABLED, &ar->flag))
+		rate = (rate >> 1);
 	snprintf(user_cmd, 32, "%u", rate / 1000);
 	req->u.data.length = strlen(user_cmd);
 	user_cmd[req->u.data.length] = '\0';

@@ -676,6 +676,9 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 				cookie = ath6kl_alloc_cookie(ar,
 					COOKIE_TYPE_DATA);
 			}
+			if (vif->data_cookie_count >=
+				ATH6KL_NETIF_THRESH_HIGH)
+				cookie_run_out = true;
 		} else {
 			cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
 			cookie_run_out = ath6kl_cookie_is_almost_full(ar,
@@ -701,7 +704,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 
 	/* CR495283 */
 	if ((cookie_run_out) &&
-	    (ar->ac_stream_active_num <= 1) &&
+	    (ar->ac_stream_active_num <= 1 ||
+	    test_bit(MCC_ENABLED, &ar->flag)) &&
 	    (!test_and_set_bit(NETQ_STOPPED, &vif->flags)))
 		netif_stop_queue(vif->ndev);
 
@@ -1047,8 +1051,6 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif = NULL;
-	struct htc_endpoint *endpoint = NULL;
-	int txq_depth;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -1170,23 +1172,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 	__skb_queue_purge(&skb_queue);
 
 	if (test_bit(MCC_ENABLED, &ar->flag)) {
-		endpoint = &ar->htc_target->endpoint[eid];
-		/*if (ar && endpoint && packet && ar->htc_target) {*/
-		if (endpoint && packet && ar->htc_target) {
-			struct list_head *tx_queue;
-
-			tx_queue = &endpoint->txq;
-			if (tx_queue && vif && !flushing[vif->fw_vif_idx]) {
-				spin_lock_bh(&ar->htc_target->tx_lock);
-				txq_depth = get_queue_depth(tx_queue);
-				spin_unlock_bh(&ar->htc_target->tx_lock);
-
-				if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
-					ath6kl_p2p_flowctrl_netif_transition(
+		ath6kl_p2p_flowctrl_netif_transition(
 						ar,
-						ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
-			}
-		}
+						ATH6KL_NETIF_WAKE);
 	} else {
 		/* FIXME: Locking */
 		spin_lock_bh(&ar->list_lock);
@@ -2225,7 +2213,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	if (vif->nw_type != AP_NETWORK &&
 	    ((packet->act_len < min_hdr_len) ||
 	     (packet->act_len > WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH))) {
-		ath6kl_info("frame len is too short or too long\n");
+		ath6kl_info("frame len %d\n", packet->act_len);
 		vif->net_stats.rx_errors++;
 		vif->net_stats.rx_length_errors++;
 		dev_kfree_skb(skb);

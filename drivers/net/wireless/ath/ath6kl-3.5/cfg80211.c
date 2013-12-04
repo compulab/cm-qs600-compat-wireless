@@ -873,6 +873,7 @@ void ath6kl_switch_parameter_based_on_connection(
 	struct ath6kl_vif *vif_temp;
 	bool mcc = false;
 	u16 pre_vifch = 0;
+	bool stamode_connected = 0;
 
 	list_for_each_entry(vif_temp, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif_temp->flags)) {
@@ -883,6 +884,8 @@ void ath6kl_switch_parameter_based_on_connection(
 						pre_vifch != vif_temp->bss_ch) {
 				mcc = true;
 			}
+			if (vif->wdev.iftype == NL80211_IFTYPE_STATION)
+				stamode_connected = true;
 		}
 	}
 
@@ -1025,6 +1028,19 @@ void ath6kl_switch_parameter_based_on_connection(
 
 	/* Reconfigurate the PS mode case by case. */
 	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect, connected_count);
+
+	if ((ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM) &&
+		(connected_count > 1))
+		ath6kl_wmi_disctimeout_cmd(ar->wmi, 0,
+				ATH6KL_DISCONNECT_MULTI_TIMEOUT);
+	else if (stamode_connected &&
+		(connected_count == 1) &&
+		(ar->wiphy->flags & WIPHY_FLAG_SUPPORTS_FW_ROAM))
+		ath6kl_wmi_disctimeout_cmd(ar->wmi, 0,
+				ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT);
+	else
+		ath6kl_wmi_disctimeout_cmd(ar->wmi, vif->fw_vif_idx,
+				ATH6KL_DISCONNECT_TIMEOUT);
 
 #ifdef USB_AUTO_SUSPEND
 	ath6kl_check_autopm_onoff(ar, call_on_disconnect);
@@ -2742,7 +2758,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy,
 	if (((vif->auth_mode == WPA_PSK_AUTH)
 	     || (vif->auth_mode == WPA2_PSK_AUTH))
 	    && (key_usage & GROUP_USAGE))
-		del_timer(&vif->disconnect_timer);
+		del_timer_sync(&vif->disconnect_timer);
 
 	if (key_usage & GROUP_USAGE) {
 		if (vif->pend_skb) {

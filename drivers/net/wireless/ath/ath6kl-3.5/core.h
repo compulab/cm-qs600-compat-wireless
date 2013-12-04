@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.548)
+#define __BUILD_VERSION_ (3.5.0.553)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -373,6 +373,8 @@ extern atomic_t ath6kl_recover_state;
 
 #define ATH6KL_DISCONNECT_TIMEOUT	  3
 #define ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT	10
+#define ATH6KL_DISCONNECT_MULTI_TIMEOUT 1
+
 
 /* Channel dwell time in fg scan */
 #define ATH6KL_FG_SCAN_INTERVAL           100 /* in msec */
@@ -1914,6 +1916,8 @@ struct ath6kl {
 
 	u16 last_host_req_delay;
 	u32 last_wow_fliter;
+	u32 mcc_cc_state[10];
+	u32 mcc_p2p_dwell[10];
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -2142,6 +2146,7 @@ int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
 void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
 				bool cache_bss,
 				int aging_time);
+int ath6kl_bss_post_proc_dump(struct ath6kl_vif *vif, u8 *buf, int buf_len);
 
 #ifdef CONFIG_ANDROID
 void ath6kl_sdio_init_msm(void);

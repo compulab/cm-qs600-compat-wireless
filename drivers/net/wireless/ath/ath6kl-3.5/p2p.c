@@ -694,6 +694,11 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 		return NULL;
 	}
 
+	for (i=0; i<10; i++) {
+		ar->mcc_cc_state[i]=0;
+		ar->mcc_p2p_dwell[i]=0;
+	}
+
 	setup_timer(&ar->mcc_pause_ahead_timer,
 			ath6kl_mcc_pause_ahead_timeout_handler,
 			(unsigned long) ar);
@@ -915,20 +920,45 @@ void ath6kl_p2p_flowctrl_netif_transition(
 			struct ath6kl *ar, u8 new_state)
 {
 	struct ath6kl_vif *vif;
+	struct ath6kl_cookie_pool *cookie_pool;
+	int cookie_allocated = 0;
+	
+	BUG_ON(!ar);
 
+	cookie_pool = &ar->cookie_data;
+	cookie_allocated = cookie_pool->cookie_num - cookie_pool->cookie_count;
+	
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
-		spin_unlock_bh(&ar->list_lock);
-
-		if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_STOP &&
-				test_bit(CONNECTED, &vif->flags))
+		if (new_state == ATH6KL_NETIF_STOP &&
+				test_bit(CONNECTED, &vif->flags)) {
+			set_bit(NETQ_STOPPED, &vif->flags);
+			spin_unlock_bh(&ar->list_lock);
 			netif_stop_queue(vif->ndev);
-		else if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_WAKE &&
+			spin_lock_bh(&ar->list_lock);
+		}
+		else if (new_state == ATH6KL_NETIF_WAKE &&
 				(test_bit(CONNECTED, &vif->flags) ||
-				test_bit(TESTMODE_EPPING, &ar->flag)))
-			netif_wake_queue(vif->ndev);
-
-		spin_lock_bh(&ar->list_lock);
+				test_bit(TESTMODE_EPPING, &ar->flag))) {
+			if (test_bit(MCC_ENABLED, &ar->flag)) {
+				if (vif->data_cookie_count <
+					ATH6KL_NETIF_THRESH_LOW) {
+					clear_bit(NETQ_STOPPED, &vif->flags);
+					spin_unlock_bh(&ar->list_lock);
+					netif_wake_queue(vif->ndev);
+					spin_lock_bh(&ar->list_lock);
+				}
+			}
+			else {
+				if (cookie_allocated <
+					ATH6KL_NETIF_THRESH_LOW) {
+					clear_bit(NETQ_STOPPED, &vif->flags);
+					spin_unlock_bh(&ar->list_lock);
+					netif_wake_queue(vif->ndev);
+					spin_lock_bh(&ar->list_lock);
+				}
+			}
+		}
 	}
 	spin_unlock_bh(&ar->list_lock);
 
@@ -1136,7 +1166,7 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 	}
 
 	ath6kl_p2p_flowctrl_netif_transition(
-				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
+				ar, ATH6KL_NETIF_WAKE);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
 		"p2p_flowctrl state_change %p re_tx %d re_tx_aging %d\n",
@@ -1157,9 +1187,12 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	int i;
-	bool update_pause_ahead = false;
+	bool update_pause_ahead = false, wlan0_ocs = false;
 	struct ath6kl_vif *wlan_vif =
 		ath6kl_get_vif_by_index(ar, 0);
+	static unsigned long last_update_ms = 0, last_p2p_open_ms = 0;
+	unsigned long now = jiffies, update_diff_ms;
+	bool p2p_gate_opening = false, p2p_gate_closing = false;
 
 	WARN_ON(!p2p_flowctrl);
 	WARN_ON(numConn > NUM_CONN);
@@ -1171,17 +1204,114 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 		if (wlan_vif && (fw_conn->vif == wlan_vif)) {
 			if (fw_conn->ocs && !((ac_map[i] >> 5) & 0x1))
 				update_pause_ahead = true;
-			else if (!fw_conn->ocs && ((ac_map[i] >> 5) & 0x1))
+			else if (!fw_conn->ocs && ((ac_map[i] >> 5) & 0x1)) {
 				del_timer(&ar->mcc_pause_ahead_timer);
+				wlan0_ocs = true;
+			}
+		}
+		if (wlan_vif && (fw_conn->vif != wlan_vif)) {
+			if (fw_conn->ocs && !((ac_map[i] >> 5) & 0x1))
+				p2p_gate_opening = true;
+			else if (!fw_conn->ocs && ((ac_map[i] >> 5) & 0x1))
+				p2p_gate_closing = true;
 		}
 		fw_conn->connect_status = ac_map[i];
 	}
+	if (wlan0_ocs) {
+		for (i = 0; i < numConn; i++) {
+			fw_conn = &p2p_flowctrl->fw_conn_list[i];
+			if (wlan_vif && (fw_conn->vif != wlan_vif))
+				fw_conn->ocs = 0;
+		}
+	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
-	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
-		   "p2p_flowctrl state_update %p ac_map %02x %02x %02x %02x\n",
-		   ar,
-		   ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
+	if (p2p_gate_opening && last_update_ms) {
+		ar->mcc_cc_state[0]++;
+		update_diff_ms = jiffies_to_msecs(now) - last_update_ms;
+		last_p2p_open_ms = jiffies_to_msecs(now);
+		if (update_diff_ms > 200)
+			ar->mcc_cc_state[9]++;
+		else if (update_diff_ms > 40)
+			ar->mcc_cc_state[5]++;
+		else if (update_diff_ms > 30)
+			ar->mcc_cc_state[4]++;
+		else if (update_diff_ms > 20)
+			ar->mcc_cc_state[3]++;
+		else if (update_diff_ms > 15)
+			ar->mcc_cc_state[2]++;
+		else if (update_diff_ms > 10)
+			ar->mcc_cc_state[1]++;
+	}
+
+	if (p2p_gate_closing && last_update_ms) {
+		ar->mcc_p2p_dwell[0]++;
+		update_diff_ms = jiffies_to_msecs(now) - last_p2p_open_ms;
+		if (update_diff_ms > 60)
+			ar->mcc_p2p_dwell[9]++;
+		else if (update_diff_ms > 50)
+			ar->mcc_p2p_dwell[5]++;
+		else if (update_diff_ms > 40)
+			ar->mcc_p2p_dwell[4]++;
+		else if (update_diff_ms > 30)
+			ar->mcc_p2p_dwell[3]++;
+		else if (update_diff_ms > 20)
+			ar->mcc_p2p_dwell[2]++;
+		else
+			ar->mcc_p2p_dwell[1]++;
+		
+	}
+
+	if (ar->mcc_cc_state[0] && ((last_update_ms % 10000) < 30)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"\nTotal flow control events: %u\n", ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"CC 10ms ~ 15ms: %u, %u/10000\n", ar->mcc_cc_state[1],
+			ar->mcc_cc_state[1]*10000/ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"CC 15ms ~ 20ms: %u, %u/10000\n", ar->mcc_cc_state[2],
+			ar->mcc_cc_state[2]*10000/ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"CC 20ms ~ 30ms: %u, %u/10000\n", ar->mcc_cc_state[3],
+			ar->mcc_cc_state[3]*10000/ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"CC 30ms ~ 40ms: %u, %u/10000\n", ar->mcc_cc_state[4],
+			ar->mcc_cc_state[4]*10000/ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"CC 40ms ~ 200ms: %u, %u/10000\n", ar->mcc_cc_state[5],
+			ar->mcc_cc_state[5]*10000/ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"CC exceed 200ms: %u, %u/10000\n", ar->mcc_cc_state[9],
+			ar->mcc_cc_state[9]*10000/ar->mcc_cc_state[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time total: %u\n", ar->mcc_p2p_dwell[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time exceeded 60ms: %u, %u/10000\n", ar->mcc_p2p_dwell[9],
+			ar->mcc_p2p_dwell[9]*10000/ar->mcc_p2p_dwell[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time 50ms ~ 60ms: %u, %u/10000\n", ar->mcc_p2p_dwell[5],
+			ar->mcc_p2p_dwell[5]*10000/ar->mcc_p2p_dwell[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time 40ms ~ 50ms: %u, %u/10000\n", ar->mcc_p2p_dwell[4],
+			ar->mcc_p2p_dwell[4]*10000/ar->mcc_p2p_dwell[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time 30ms ~ 40ms: %u, %u/10000\n", ar->mcc_p2p_dwell[3],
+			ar->mcc_p2p_dwell[3]*10000/ar->mcc_p2p_dwell[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time 20ms ~ 30ms: %u, %u/10000\n", ar->mcc_p2p_dwell[2],
+			ar->mcc_p2p_dwell[2]*10000/ar->mcc_p2p_dwell[0]);
+		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
+			"p2p dwell time less than 20ms: %u, %u/10000\n", ar->mcc_p2p_dwell[1],
+			ar->mcc_p2p_dwell[1]*10000/ar->mcc_p2p_dwell[0]);
+	}
+	
+	last_update_ms = jiffies_to_msecs(now);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_FLCTL_MAP,
+		   "ac_map %02x %02x %02x %02x q_depth %02x %02x %02x %02x %02x %02x\n",
+		   ac_map[0], ac_map[1], ac_map[2], ac_map[3],
+		   ac_queue_depth[0], ac_queue_depth[1], ac_queue_depth[2],
+		   ac_queue_depth[3], ac_queue_depth[4], ac_queue_depth[5]);
 	if (update_pause_ahead)
 		mod_timer(&ar->mcc_pause_ahead_timer,
 			jiffies + msecs_to_jiffies(ATH6KL_MCC_WLAN0_PAUSE_PERIOD));

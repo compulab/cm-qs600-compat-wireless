@@ -206,7 +206,8 @@ enum ATH6K_DEBUG_MASK_EXT {
 	ATH6KL_DBG_EXT_SCAN	= BIT_OFFSET32(2),	/* Scan */
 	ATH6KL_DBG_EXT_BSS_PROC	= BIT_OFFSET32(3),	/* BSS post-proc */
 	ATH6KL_DBG_EXT_AUTOPM	= BIT_OFFSET32(4),	/* Auto Power-Management */
-
+	ATH6KL_DBG_EXT_MCC_CC	= BIT_OFFSET32(5),	/* MCC channel change time */
+	ATH6KL_DBG_EXT_FLCTL_MAP	= BIT_OFFSET32(6),
 	ATH6KL_DBG_EXT_DEF	= BIT_OFFSET32(31),	/* keep last */
 	ATH6KL_DBG_EXT_ANY	= 0xffffffff00000000ULL  /* enable all logs */
 };
@@ -233,9 +234,11 @@ enum ath6kl_war {
 };
 
 struct ath6kl_print_fwd_ctx {
-#define ATH6KL_PRINTK_FWD_MODE_ENABLE		(1 << 0)
-#define ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE	(1 << 1)
+#define ATH6KL_PRINTK_FWD_MODE_PURE_FWD			(1 << 0)
+#define ATH6KL_PRINTK_FWD_MODE_DUAL         	(1 << 1)
+
 	u32 flags;
+	bool init_lock;
 
 	struct ath6kl *ar;
 	struct ath6kl_vif *fwd_vif;
@@ -247,7 +250,7 @@ struct ath6kl_print_fwd_ctx {
 	int current_buf_idx;
 };
 
-void ath6kl_printk_fwd_setup(struct ath6kl *ar, bool enable);
+void ath6kl_printk_fwd_setup(struct ath6kl *ar, int mode);
 void ath6kl_printk_fwd_reset(struct ath6kl *ar);
 
 static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
@@ -305,6 +308,7 @@ void ath6kl_debug_set_keepalive(struct ath6kl *ar, u8 keepalive);
 void ath6kl_debug_set_disconnect_timeout(struct ath6kl *ar, u8 timeout);
 int ath6kl_debug_init(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
+bool ath6kl_printk_fwd_is_enable(void);
 
 #else
 static inline int ath6kl_dbg(unsigned long long int dbg_mask,
@@ -362,5 +366,8 @@ static inline void ath6kl_debug_cleanup(struct ath6kl *ar)
 {
 }
 
+bool ath6kl_printk_fwd_is_enable(void)
+{
+}
 #endif
 #endif

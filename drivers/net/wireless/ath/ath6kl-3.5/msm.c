@@ -602,7 +602,23 @@ static int ath6kl_toggle_radio(void *data, int on)
 	return ret;
 }
 
+bool ath6kl_is_bind_hsic(void)
+{
+	int ret;
+	char buf[4];
+
+	memset(buf, 0, 4);
+	ret = android_readwrite_file("/sys/devices/msm_hsic_host/usb1/version",
+				buf, NULL, 4);
+
+	if (ret <= 0)
+		return false;
+	else
+		return true;
+}
+
 #ifdef CONFIG_USE_OF
+
 int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 {
 	struct device_node *ehci_hsic_node;
@@ -657,8 +673,14 @@ int ath6kl_hsic_bind(int bind, bool recover)
 			"/sys/bus/platform/drivers/msm_hsic_host/bind",
 			NULL, buf, length);
 #ifdef CONFIG_USE_OF
-		if (ret == -ENODEV)
-			ath6kl_rebind_hsic_by_device_op(bind, recover);
+		/*
+		 * Kernel report the same error code in device-binded &
+		 * abnormal cases.
+		 */
+		if (ret == -ENODEV) {
+			if (!ath6kl_is_bind_hsic())
+				ath6kl_rebind_hsic_by_device_op(bind, recover);
+		}
 #endif
 	} else {
 		length = snprintf(buf, sizeof(buf), "%s\n", "msm_hsic_host");
@@ -781,8 +803,10 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 		if (pdata->wifi_chip_pwd != NULL) {
 			ret = ath6kl_platform_power(pdata, 1);
 
-			if (ret == 0 && ath6kl_bt_on == 0)
+			if ((ret == 0 && ath6kl_bt_on == 0) ||
+				ath6kl_is_bind_hsic() == false) {
 				ath6kl_hsic_bind(1, false);
+			}
 
 			*platform_has_vreg = 1;
 		}

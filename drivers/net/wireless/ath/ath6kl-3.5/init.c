@@ -3158,10 +3158,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 	if (ar->p2p_multichan_concurrent)
 		ar->conf_flags |= ATH6KL_CONF_ENABLE_FLOWCTRL;
 
-	ath6kl_info("P2P flowctrl %s\n",
-			ar->conf_flags & ATH6KL_CONF_ENABLE_FLOWCTRL ?
-			"enabled" : "disabled");
-
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_SUSPEND_CUTPOWER))
 		ar->conf_flags |= ATH6KL_CONF_SUSPEND_CUTPOWER;
 
@@ -3351,11 +3347,12 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 
 	clear_bit(WLAN_ENABLED, &vif->flags);
 
+	del_timer_sync(&vif->disconnect_timer);
+
 	if (wmi_ready) {
 		discon_issued = test_bit(CONNECTED, &vif->flags) ||
 				test_bit(CONNECT_PEND, &vif->flags);
 		ath6kl_disconnect(vif);
-		del_timer(&vif->disconnect_timer);
 
 		if (discon_issued)
 			ath6kl_disconnect_event(vif, DISCONNECT_CMD,

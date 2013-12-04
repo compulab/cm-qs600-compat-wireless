@@ -122,20 +122,20 @@ static void ath6kl_printk_fwd_send(u8 *mesg, int len)
 #undef IWEVCUSTOM_EV_ATH6KL_PRINTK_FWD
 }
 
-void ath6kl_printk_fwd_setup(struct ath6kl *ar, bool enable)
+void ath6kl_printk_fwd_setup(struct ath6kl *ar, int mode)
 {
 	struct ath6kl_print_fwd_ctx *print_fwd = &ath6kl_print_fwd;
 
 	print_fwd->ar = ar;
-	if (ar && enable)
-		print_fwd->flags |= ATH6KL_PRINTK_FWD_MODE_ENABLE;
+	if (ar && mode)
+		print_fwd->flags = mode;
 	else
-		print_fwd->flags &= ~ATH6KL_PRINTK_FWD_MODE_ENABLE;
+		print_fwd->flags = 0;
 
 	/* Only need to initial once. */
-	if (!(print_fwd->flags & ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE)) {
+	if (!(print_fwd->init_lock)) {
 		spin_lock_init(&print_fwd->lock);
-		print_fwd->flags |= ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE;
+		print_fwd->init_lock = true;
 	}
 
 	return;
@@ -144,6 +144,7 @@ void ath6kl_printk_fwd_setup(struct ath6kl *ar, bool enable)
 void ath6kl_printk_fwd_reset(struct ath6kl *ar)
 {
 	struct ath6kl_print_fwd_ctx *print_fwd = &ath6kl_print_fwd;
+	unsigned long flags;
 
 	/* Whether printk_fw already turn-on before. */
 	if ((print_fwd->ar) &&
@@ -153,16 +154,21 @@ void ath6kl_printk_fwd_reset(struct ath6kl *ar)
 		 * Just update ar and clean vif then next printk
 		 * will get new vif again.
 		 */
+		spin_lock_irqsave(&print_fwd->lock, flags);
 		print_fwd->ar = ar;
 		print_fwd->fwd_vif = NULL;
+		spin_unlock_irqrestore(&print_fwd->lock, flags);
 	}
 
 	return;
 }
 
-static bool ath6kl_printk_fwd_is_enable(void)
+bool ath6kl_printk_fwd_is_enable(void)
 {
-	if (ath6kl_print_fwd.flags & ATH6KL_PRINTK_FWD_MODE_ENABLE)
+
+	if (ath6kl_print_fwd.ar &&
+		(!test_bit(DESTROY_IN_PROGRESS, &ath6kl_print_fwd.ar->flag))&&
+		ath6kl_print_fwd.flags)
 		return true;
 	else
 		return false;
@@ -173,6 +179,7 @@ int ath6kl_printk(const char *level, const char *fmt, ...)
 	struct va_format vaf;
 	va_list args;
 	int rtn = 0;
+	u8 mesg[256];
 
 	va_start(args, fmt);
 
@@ -180,18 +187,44 @@ int ath6kl_printk(const char *level, const char *fmt, ...)
 	vaf.va = &args;
 
 	if (ath6kl_printk_fwd_is_enable()) {
-		u8 mesg[256];
 
 		memset(mesg, 0, 256);
 		snprintf(mesg, 256 - 2, "%pV", &vaf);
 		ath6kl_printk_fwd_send(mesg, strlen(mesg));
-	} else
+	}
+
+	if (!(ath6kl_print_fwd.flags & ATH6KL_PRINTK_FWD_MODE_PURE_FWD))
 		rtn = printk(KERN_INFO "%sath6kl: %pV", level, &vaf);
 
 	va_end(args);
 
 	return rtn;
 }
+
+int ath6kl_printfwd(const char *fmt, ...)
+{
+	struct va_format vaf;
+	va_list args;
+	int rtn = 0;
+	u8 mesg[256];
+
+	va_start(args, fmt);
+
+	vaf.fmt = fmt;
+	vaf.va = &args;
+
+	if (ath6kl_printk_fwd_is_enable()) {
+
+		memset(mesg, 0, 256);
+		snprintf(mesg, 256 - 2, "%pV", &vaf);
+		ath6kl_printk_fwd_send(mesg, strlen(mesg));
+	}
+
+	va_end(args);
+
+	return rtn;
+}
+
 
 #define EVENT_ID_LEN 2
 #define INTF_ID_LEN 1
@@ -6244,6 +6277,38 @@ static const struct file_operations fops_ap_rc = {
 };
 
 /* File operation for BSS Post-Proc */
+static ssize_t ath6kl_bss_proc_read(struct file *file,
+				char __user *user_buf,
+				size_t count, loff_t *ppos)
+{
+#define _BUF_SIZE	(8192)
+	struct ath6kl *ar = file->private_data;
+	u8 *buf;
+	unsigned int len = 0;
+	ssize_t ret_cnt;
+	struct ath6kl_vif *vif;
+	int i;
+
+	buf = kmalloc(_BUF_SIZE, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	for (i = 0; i < ar->vif_max; i++) {
+		vif = ath6kl_get_vif_by_index(ar, i);
+		if ((vif) && (_BUF_SIZE - len > 0))
+			len += ath6kl_bss_post_proc_dump(vif,
+							buf + len,
+							_BUF_SIZE - len);
+	}
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+
+	return ret_cnt;
+#undef _BUF_SIZE
+}
+
 static ssize_t ath6kl_bss_proc_write(struct file *file,
 				const char __user *user_buf,
 				size_t count, loff_t *ppos)
@@ -6284,6 +6349,7 @@ static ssize_t ath6kl_bss_proc_write(struct file *file,
 
 /* debug fs for BSS Post-Proc. */
 static const struct file_operations fops_bss_proc = {
+	.read = ath6kl_bss_proc_read,
 	.write = ath6kl_bss_proc_write,
 	.open = ath6kl_debugfs_open,
 	.owner = THIS_MODULE,
@@ -6346,16 +6412,14 @@ static ssize_t ath6kl_printk_fwd(struct file *file,
 				size_t count, loff_t *ppos)
 {
 	struct ath6kl *ar = file->private_data;
-	int enable, ret;
+	int mode, ret;
 
-	ret = kstrtou32_from_user(user_buf, count, 0, &enable);
+	ret = kstrtou32_from_user(user_buf, count, 0, &mode);
 	if (ret)
 		return ret;
 
-	if (enable)
-		ath6kl_printk_fwd_setup(ar, true);
-	else
-		ath6kl_printk_fwd_setup(ar, false);
+	if (mode)
+		ath6kl_printk_fwd_setup(ar, mode);
 
 	return count;
 }
@@ -6371,6 +6435,8 @@ static const struct file_operations fops_printk_fwd = {
 
 int ath6kl_debug_init(struct ath6kl *ar)
 {
+	ath6kl_info("debugfs init %p\n", ath6kl_debugfs_open);
+	
 	skb_queue_head_init(&ar->debug.fwlog_queue);
 	init_completion(&ar->debug.fwlog_completion);
 
@@ -6614,7 +6680,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 	debugfs_create_file("ap_rc", S_IWUSR,
 				ar->debugfs_phy, ar, &fops_ap_rc);
 
-	debugfs_create_file("bss_proc", S_IWUSR,
+	debugfs_create_file("bss_proc", S_IRUSR | S_IWUSR,
 				ar->debugfs_phy, ar, &fops_bss_proc);
 
 	debugfs_create_file("p2p_war", S_IWUSR,
@@ -6622,6 +6688,7 @@ int ath6kl_debug_init(struct ath6kl *ar)
 
 	debugfs_create_file("printk_fwd", S_IWUSR,
 				ar->debugfs_phy, ar, &fops_printk_fwd);
+	ath6kl_printk_fwd_setup(ar, ATH6KL_PRINTK_FWD_MODE_DUAL);
 
 	return 0;
 }
