@@ -912,6 +912,8 @@ enum auth_mode {
 						   40 rates */
 #define ATH6KL_RATE_MASK	0x00000fffffffffff /* Rate mask to enable all
 						      the rates */
+#define ATH6KL_HT_OPMODE_SWITCH_TO_20 1
+#define ATH6KL_HT_OPMODE_SWITCH_TO_40 2
 
 #define ATH_OUI_TYPE            0x01
 #define WPA_OUI_TYPE            0x01
