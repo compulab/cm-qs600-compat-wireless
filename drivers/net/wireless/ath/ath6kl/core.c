@@ -35,6 +35,7 @@ static unsigned int devmode = ATH6KL_DEFAULT_DEV_MODE;
 static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
 static unsigned int mcc_adj_ch_spacing = ATH6KL_DEF_MCC_ADJ_CH_SPACING;
 static unsigned int heart_beat_poll;
+static unsigned int lte_margin = ATH6KL_DEF_LTE_MARGIN;
 
 module_param(debug_mask, uint, 0644);
 module_param(wow_mode, uint, 0644);
@@ -43,6 +44,7 @@ module_param(debug_quirks, uint, 0644);
 module_param(devmode, uint, 0644);
 module_param(mcc_adj_ch_spacing, uint, 0644);
 module_param(heart_beat_poll, uint, 0644);
+module_param(lte_margin, uint, 0644);
 
 struct ath6kl_fw_err_recovery *fw_recovery;
 
@@ -416,6 +418,7 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 	ret = ath6kl_lte_coex_init(ar);
 	if (ret)
 		goto err_rxbuf_cleanup;
+	ar->lte_margin = lte_margin;
 
 	if (heart_beat_poll &&
 			test_bit(ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,

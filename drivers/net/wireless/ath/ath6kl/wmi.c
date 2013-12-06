@@ -3496,8 +3496,8 @@ int ath6kl_wmi_ap_profile_commit(struct wmi *wmip, u8 if_idx,
 					 vif->phy_mode);
 	res = ath6kl_wmi_cmd_send(wmip, if_idx, skb, WMI_AP_CONFIG_COMMIT_CMDID,
 				  NO_SYNC_WMIFLAG);
-	ath6kl_info("%s: nw_type=%u auth_mode=%u ch=%u ctrl_flags=0x%x-> res=%d\n",
-		   __func__, p->nw_type, p->auth_mode, le16_to_cpu(cm->ch),
+	ath6kl_info("%s: vif=%pM nw_type=%u auth_mode=%u ch=%u ctrl_flags=0x%x-> res=%d\n",
+		   __func__, vif->ndev->dev_addr, p->nw_type, p->auth_mode, le16_to_cpu(cm->ch),
 		   le32_to_cpu(p->ctrl_flags), res);
 	return res;
 }

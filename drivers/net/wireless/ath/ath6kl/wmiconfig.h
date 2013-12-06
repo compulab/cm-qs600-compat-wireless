@@ -24,12 +24,11 @@ void ath6kl_wmicfg_send_stats(struct ath6kl_vif *vif,
 			      struct target_stats *stats);
 
 struct ath6kl_coex_dev_ctx {
-	uint32_t op_freq;
-	uint8_t  acs_evt;
+	u32 ap_oper_chan_mask;
 };
 
 struct ath6kl_lte_coex_priv {
-	struct wmi_set_lte_coex_state_cmd wmi_lte_data;
+	u8 wwan_state;
 	uint16_t acs_chan_mask;
 	uint8_t wwan_band;
 	uint32_t wwan_freq;

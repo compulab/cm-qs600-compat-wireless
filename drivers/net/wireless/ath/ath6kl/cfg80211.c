@@ -3409,9 +3409,29 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 {
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
+	struct ath6kl_vif *vif_tmp = NULL;
+	int res = 0;
 
 	if (vif->nw_type != AP_NETWORK)
 		return -EOPNOTSUPP;
+
+	list_for_each_entry(vif_tmp, &ar->vif_list, list) {
+		if (vif_tmp->nw_type == AP_NETWORK) {
+			if (vif_tmp->ap_hold_conn) {
+				vif_tmp->ap_hold_conn = 0;
+				ar->acs_in_prog = 1;
+				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Apply ACS for next AP\n");
+				res = ath6kl_wmi_ap_profile_commit(ar->wmi,
+						vif_tmp->fw_vif_idx, &vif_tmp->profile);
+				if (res)
+					ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+							"Ap profile commit failure");
+			} else
+				ar->acs_in_prog = 0;
+		}
+	}
+
 	if (!test_bit(CONNECTED, &vif->flags))
 		return -ENOTCONN;
 
