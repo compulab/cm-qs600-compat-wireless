@@ -3094,6 +3094,33 @@ u16 ath6kl_process_user_defined_acs(struct ath6kl *ar,
 	return ch;
 }
 
+u32 ath6kl_get_chmask_for_acstype(struct ath6kl_vif *vif, u32 ch) {
+	u32 chan_mask = vif->acs_chan_mask;
+	u16 dis_ch11_mask = 0x21, inc_ch13_mask=0x1111, dis_ch1_mask=0x420,
+			dis_ch1_6_mask = 0x400;
+
+	/* change ACS type to USER_DEFINED with
+		appropriate masks */
+	switch(ch) {
+		case AP_ACS_DISABLE_CH11:
+			chan_mask = dis_ch11_mask;;
+			break;
+		case AP_ACS_INCLUDE_CH13:
+			chan_mask = inc_ch13_mask;
+			break;
+		case AP_ACS_DISABLE_CH1:
+			chan_mask = dis_ch1_mask;
+			break;
+		case AP_ACS_DISABLE_CH1_6:
+			chan_mask = dis_ch1_6_mask;
+			break;
+		default:
+			break;
+	}
+
+	return chan_mask;
+}
+
 static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			   struct cfg80211_ap_settings *info)
 {
@@ -3370,23 +3397,36 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		else
 			ar->acs_in_prog = 1;
 
-		if (p.ch == AP_ACS_USER_DEFINED) {
-			u32 ch;
-			vif->acs_chan_mask = info->acs_chan_mask;
+		vif->acs_chan_mask = info->acs_chan_mask;
 
-			ch = ath6kl_process_user_defined_acs(ar,
+		if(!vif->ap_hold_conn) {
+			if((p.ch > AP_ACS_NORMAL) &&
+				(p.ch < AP_ACS_USER_DEFINED)) {
+				/* change ACS type to USER_DEFINED with
+				appropriate masks */
+				vif->acs_chan_mask =
+				ath6kl_get_chmask_for_acstype(vif, p.ch);
+
+				p.ch = AP_ACS_USER_DEFINED;
+			}
+
+			/* apply adjacent interference & force SCC policy */
+			if (p.ch == AP_ACS_USER_DEFINED) {
+				u32 ch;
+
+				ch = ath6kl_process_user_defined_acs(ar,
 							vif,
 							adj_vif_ch,
 							p.ch,
 							&vif->acs_chan_mask);
-			if(ch != p.ch) {
-				p.ch = ch;
+				if(ch != p.ch)
+					p.ch = ch;
+			} else if (adj_vif_ch > 0) {
+				p.ch = adj_vif_ch;
+				ath6kl_warn("Override ACS to %d due"
+				"to MCC intf\n", adj_vif_ch);
+				ar->acs_in_prog = 0;
 			}
-		} else if (adj_vif_ch > 0) {
-			p.ch = adj_vif_ch;
-			ath6kl_warn("Override ACS to %d due to MCC intf\n",
-				adj_vif_ch);
-			ar->acs_in_prog = 0;
 		}
 	} else {
                 p.ch = cpu_to_le16(info->channel->center_freq);

@@ -1298,4 +1298,5 @@ u16 ath6kl_process_user_defined_acs(struct ath6kl *ar,
                                 u16 adj_vif_ch,
                                 u16 cur_vif_ch,
                                 u32 *acs_chan_mask);
+u32 ath6kl_get_chmask_for_acstype(struct ath6kl_vif *vif, u32 ch);
 #endif /* CORE_H */
