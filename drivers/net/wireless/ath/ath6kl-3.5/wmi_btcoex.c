@@ -18,6 +18,9 @@
 #include "core.h"
 #include "wmi_btcoex.h"
 #include "debug.h"
+#ifdef CONFIG_ANDROID
+#include <mach/socinfo.h>
+#endif
 
 #define BDATA_ANTCONF_OFFSET	4069
 #define BDATA_BTDEV_OFFSET	4070
@@ -40,7 +43,6 @@
 	(30 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
 #define BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME     \
 	(60 << BTCOEX_A2DP_MAX_BLUETOOTH_TIME_LSB)
-#define BTCOEX_A2DP_BDR_MIN_BURST_CNT          5
 #define BTCOEX_A2DP_WLAN_MAX_DUR			   25
 #define BTCOEX_A2DP_BDR_WLAN_MAX_DUR           20
 #define BTCOEX_APMODE_A2DP_BDR_WLAN_MAX_DUR    40
@@ -156,6 +158,49 @@ static int ath6kl_get_wmi_cmd(int nl_cmd)
 	return wmi_cmd;
 }
 
+u8 fe_antenna_type(struct ath6kl *ar)
+{
+	/* default setting for McK */
+	u8 fe_antenna = WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
+
+	if (ar->version.target_ver == AR6004_HW_3_0_VERSION) {
+#ifdef CONFIG_ANDROID
+		if (machine_is_apq8064_dma() ||
+			machine_is_apq8064_bueller())
+			fe_antenna =
+				WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO;
+		else
+			fe_antenna =
+				WMI_BTCOEX_FE_ANT_DUAL_SH_BT_HIGH_ISO;
+#endif
+	} else {
+		/* fill in correct antenna configuration from
+		   board data if valid */
+		if (ar->fw_board[BDATA_ANTCONF_OFFSET])
+			fe_antenna =
+				ar->fw_board[BDATA_ANTCONF_OFFSET];
+	}
+	switch (fe_antenna) {
+	case WMI_BTCOEX_FE_ANT_SINGLE:
+		ath6kl_info("antenna config = single antenna\n");
+		break;
+	case WMI_BTCOEX_FE_ANT_DUAL_SH_BT_LOW_ISO:
+		ath6kl_info("antenna config = daul ant. low isolation\n");
+		break;
+	case WMI_BTCOEX_FE_ANT_DUAL_SH_BT_HIGH_ISO:
+		ath6kl_info("antenna config = dual ant. high isolation\n");
+		break;
+	case WMI_BTCOEX_FE_ANT_TRIPLE:
+		ath6kl_info("antenna config = triple antenna\n");
+		break;
+	default:
+		ath6kl_info("antenna config = invalid config!\n");
+		break;
+	}
+
+	return fe_antenna;
+}
+
 void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 			int wmi_cmd, u8 *buf)
 {
@@ -164,11 +209,13 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 	{
 		struct wmi_set_btcoex_fe_antenna_cmd *cmd =
 			(struct wmi_set_btcoex_fe_antenna_cmd *)buf;
-		/* fill in correct antenna configuration from
-		   board data if valid */
-		if (ar->fw_board[BDATA_ANTCONF_OFFSET])
-			cmd->fe_antenna_type =
-				ar->fw_board[BDATA_ANTCONF_OFFSET];
+
+		cmd->fe_antenna_type = fe_antenna_type(ar);
+
+		/* disable green tx if it's enabled & BT is on */
+		ar->green_tx_params.enable = false;
+		ath6kl_wmi_set_green_tx_params(ar->wmi,
+			&ar->green_tx_params);
 	}
 	break;
 	case WMI_SET_BTCOEX_COLOCATED_BT_DEV_CMDID:
@@ -226,8 +273,6 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 			/* A2DP BDR config overwrites */
 			a2dp_config->a2dp_flags |= cpu_to_le32(
 				BTCOEX_A2DP_BDR_MAX_BLUETOOTH_TIME);
-			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-				BTCOEX_A2DP_BDR_MIN_BURST_CNT);
 			pspoll_config->a2dp_wlan_max_dur =
 				BTCOEX_A2DP_BDR_WLAN_MAX_DUR;
 		}
@@ -251,8 +296,10 @@ void ath6kl_btcoex_adjust_params(struct ath6kl *ar,
 				BTCOEX_APMODE_A2DP_BDR_MAX_BLUETOOTH_TIME);
 			}
 
-			pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
-				BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
+			if (ar->version.target_ver == AR6004_HW_1_3_VERSION) {
+				pspoll_config->a2dp_min_bus_cnt = cpu_to_le32(
+					BTCOEX_APMODE_A2DP_MIN_BURST_CNT);
+			}
 		}
 	}
 	break;

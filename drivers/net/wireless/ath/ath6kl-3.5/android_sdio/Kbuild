@@ -23,6 +23,8 @@ wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/msm.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/htc.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/hif.o
 wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/sdio.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/reg.o
+wlan-y += src/drivers/net/wireless/ath/ath6kl-3.5/regdb.o
 endif
 
 ifeq ($(HAVE_CFG80211), 1)
@@ -63,4 +65,7 @@ ccflags-y += -DATH6KL_SUPPORT_NL80211_KERNEL3_6
 ccflags-y += -DATH6KL_SUPPORT_NETLINK_KERNEL3_6
 ccflags-y += -DATH6KL_SUPPORT_NETLINK_KERNEL3_7
 endif
+ccflags-y += -DCONFIG_ATH6KL_DEBUG
+ccflags-y += -DCONFIG_ATH6KL_REGDOMAIN
+ccflags-y += -D__CHECK_ENDIAN__
 endif

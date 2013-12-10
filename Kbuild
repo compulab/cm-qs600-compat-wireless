@@ -20,15 +20,15 @@ wlan-y += drivers/net/wireless/ath/ath6kl-3.5/ath_netlink.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/pm.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/p2p.o
 wlan-y += drivers/net/wireless/ath/ath6kl-3.5/ap.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/reg.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/regdb.o
+wlan-y += drivers/net/wireless/ath/ath6kl-3.5/msm.o
 
-ccflags-y += -DCONFIG_ATH6KL_UB134
-ccflags-y += -DCONFIG_ATH6KL_SCAN_RETRY
-ifneq ($(filter user userdebug, $(TARGET_BUILD_VARIANT)),)
-ccflags-y += -DCONFIG_ATH6KL_RECOVERY_MODE_USER=2
-else
-ccflags-y += -DCONFIG_ATH6KL_RECOVERY_MODE_USER=0
+ccflags-y += -DCONFIG_ATH6KL_UB134 -DUSB_AUTO_SUSPEND
+
+ifeq ($(HAVE_BUS_VOTE), 1)
+ccflags-y += -DATH6KL_BUS_VOTE
 endif
-
 
 endif
 
@@ -97,6 +97,8 @@ ccflags-y += -DATH6KL_SUPPORT_NETLINK_KERNEL3_6
 ccflags-y += -DATH6KL_SUPPORT_NETLINK_KERNEL3_7
 endif
 ccflags-y += -DCONFIG_ATH6KL_DEBUG
+ccflags-y += -DCONFIG_ATH6KL_REGDOMAIN
+ccflags-y += -D__CHECK_ENDIAN__
 endif
 
 ifeq ($(BUILD_ATH_ETH_ALX), 1)

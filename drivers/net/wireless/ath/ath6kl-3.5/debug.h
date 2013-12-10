@@ -47,7 +47,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable max. fw vif */
 	ATH6KL_MODULE_P2P_MAX_FW_VIF	= BIT(8),
 
-	/* hole */
+	/* Disable skb_copy when clone/duplicate*/
+	ATH6KL_MODULE_DISABLE_SKB_DUP	= BIT(9),
 
 	/* enable usb remote wakeup support */
 	ATH6KL_MODULE_ENABLE_USB_REMOTE_WKUP = BIT(10),
@@ -61,7 +62,8 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* Disable USB Auto-suspend */
 	ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND = BIT(13),
 
-	/* hole */
+	/* Enable single chain in wow */
+	ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN = BIT(14),
 
 	/* offload AP keep-alive to supplicant */
 	ATH6KL_MODULE_KEEPALIVE_BY_SUPP	= BIT(15),
@@ -84,11 +86,27 @@ enum ATH6KL_MODULE_QUIRKS {
 	/* enable fw crash notify function */
 	ATH6KL_MODULE_ENABLE_FW_CRASH_NOTIFY = BIT(21),
 
-	/* enable usb auto power management feathre */
-	ATH6KL_MODULE_ENABLE_USB_AUTO_PM = BIT(22),
+	/* disable usb auto power management feature */
+	ATH6KL_MODULE_DISABLE_USB_AUTO_PM = BIT(22),
 
 	/* disable wmi sync mechanism */
 	ATH6KL_MODULE_DISABLE_WMI_SYC = BIT(23),
+
+	/* hole */
+
+	/* Config AP keep-alive from supplicant */
+	ATH6KL_MODULE_KEEPALIVE_CONFIG_BY_SUPP	= BIT(25),
+
+	/* hole */
+
+	/* config AP-ACL from NL80211 */
+	ATH6KL_MODULE_AP_ACL_BY_NL80211  = BIT(27),
+
+	/* enable Diagnostic */
+	ATH6KL_MODULE_ENABLE_DIAGNOSTIC = BIT(28),
+
+	/* enable RTT */
+	ATH6KL_MODULE_ENABLE_RTT = BIT(29),
 };
 
 enum ATH6KL_MODULE_P2P {
@@ -111,6 +129,12 @@ enum ATH6KL_MODULE_P2P {
 
 	/* enable p2p_concurrent with softAP */
 	ATH6KL_MODULEP2P_CONCURRENT_AP			= BIT(8),
+
+	/* enable p2p_in_pasv_chan */
+	ATH6KL_MODULEP2P_P2P_IN_PASSIVE_CHAN		= BIT(9),
+
+	/* enable p2p_wise_scan */
+	ATH6KL_MODULEP2P_P2P_WISE_SCAN			= BIT(10),
 };
 
 enum ATH6KL_MODULE_ROAM {
@@ -130,9 +154,10 @@ enum ATH6KL_MODULE_ROAM {
 	ATH6KL_MODULEROAM_DISABLE		= BIT(4),
 };
 
+/* debug_mask */
 enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_CREDIT	= BIT(0),
-	/* hole */
+	ATH6KL_DBG_REGDB	= BIT(1),
 	ATH6KL_DBG_WLAN_TX      = BIT(2),     /* wlan tx */
 	ATH6KL_DBG_WLAN_RX      = BIT(3),     /* wlan rx */
 	ATH6KL_DBG_BMI		= BIT(4),     /* bmi tracing */
@@ -140,7 +165,9 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_HIF		= BIT(6),
 	ATH6KL_DBG_IRQ		= BIT(7),     /* interrupt processing */
 	ATH6KL_DBG_ACL		= BIT(8),     /* access control list */
-	/* hole */
+	ATH6KL_DBG_ADMC		= ATH6KL_DBG_ACL,     /* admission control */
+	ATH6KL_DBG_RC		= BIT(9),     /* P2P recommend channel */
+	ATH6KL_DBG_AP_RC	= ATH6KL_DBG_RC,      /* AP recommend channel */
 	ATH6KL_DBG_WMI          = BIT(10),    /* wmi tracing */
 	ATH6KL_DBG_TRC	        = BIT(11),    /* generic func tracing */
 	ATH6KL_DBG_SCATTER	= BIT(12),    /* hif scatter tracing */
@@ -161,12 +188,32 @@ enum ATH6K_DEBUG_MASK {
 	ATH6KL_DBG_RTT          = BIT(27),
 	ATH6KL_DBG_FLOWCTRL     = BIT(28),    /* P2P flowctrl */
 	ATH6KL_DBG_KEEPALIVE    = BIT(29),    /* AP keep-alive */
+#ifdef ACS_SUPPORT
+	ATH6KL_DBG_ACS       = BIT(30),              /* ACS */
+#else
 	/* hole */
+#endif
 	ATH6KL_DBG_INFO		= BIT(31),    /* keep last */
 	ATH6KL_DBG_ANY		= 0xffffffff  /* enable all logs */
 };
 
+/* debug_mask_ext */
+#define BIT_OFFSET32(nr)	(1ULL << ((nr) + 32))
+
+enum ATH6K_DEBUG_MASK_EXT {
+	ATH6KL_DBG_EXT_INFO1	= BIT_OFFSET32(0),
+	ATH6KL_DBG_EXT_ROC	= BIT_OFFSET32(1),	/* Remain-on-Channel */
+	ATH6KL_DBG_EXT_SCAN	= BIT_OFFSET32(2),	/* Scan */
+	ATH6KL_DBG_EXT_BSS_PROC	= BIT_OFFSET32(3),	/* BSS post-proc */
+	ATH6KL_DBG_EXT_AUTOPM	= BIT_OFFSET32(4),	/* Auto Power-Management */
+	ATH6KL_DBG_EXT_MCC_CC	= BIT_OFFSET32(5),	/* MCC channel change time */
+	ATH6KL_DBG_EXT_FLCTL_MAP	= BIT_OFFSET32(6),
+	ATH6KL_DBG_EXT_DEF	= BIT_OFFSET32(31),	/* keep last */
+	ATH6KL_DBG_EXT_ANY	= 0xffffffff00000000ULL  /* enable all logs */
+};
+
 extern unsigned int debug_mask;
+extern unsigned int debug_mask_ext;
 extern unsigned int debug_quirks;
 extern __printf(2, 3)
 int ath6kl_printk(const char *level, const char *fmt, ...);
@@ -177,12 +224,34 @@ int ath6kl_printk(const char *level, const char *fmt, ...);
 	ath6kl_printk(KERN_ERR, fmt, ##__VA_ARGS__)
 #define ath6kl_warn(fmt, ...)					\
 	ath6kl_printk(KERN_WARNING, fmt, ##__VA_ARGS__)
+#define ath6kl_debug(fmt, ...)				\
+	printk(KERN_DEBUG fmt, ##__VA_ARGS__)
 
 #define AR_DBG_LVL_CHECK(mask)	(debug_mask & mask)
 
 enum ath6kl_war {
 	ATH6KL_WAR_INVALID_RATE,
 };
+
+struct ath6kl_print_fwd_ctx {
+#define ATH6KL_PRINTK_FWD_MODE_PURE_FWD			(1 << 0)
+#define ATH6KL_PRINTK_FWD_MODE_DUAL         	(1 << 1)
+
+	u32 flags;
+	bool init_lock;
+
+	struct ath6kl *ar;
+	struct ath6kl_vif *fwd_vif;
+	spinlock_t lock;
+
+#define ATH6KL_PRINTK_FWD_MAX_BUF_SIZE	(256)
+	u8 fwd_buf[2][ATH6KL_PRINTK_FWD_MAX_BUF_SIZE];
+	int current_len;
+	int current_buf_idx;
+};
+
+void ath6kl_printk_fwd_setup(struct ath6kl *ar, int mode);
+void ath6kl_printk_fwd_reset(struct ath6kl *ar);
 
 static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
 	enum ATH6KL_MODULE_QUIRKS mask)
@@ -201,20 +270,13 @@ void ath6kl_send_genevent_to_app(struct net_device *dev,
 					u16 event_id, u8 ifid,
 					u8 *datap, int len);
 
-#ifdef CONFIG_QC_INTERNAL
-int ath6kl_set_rd(struct ath6kl *ar);
-#else
-static inline int ath6kl_set_rd(struct ath6kl *ar)
-{
-	return 0;
-}
-#endif
-
 #ifdef CONFIG_ATH6KL_DEBUG
 #define ath6kl_dbg(mask, fmt, ...)					\
 	({								\
 	 int rtn;							\
-	 if (debug_mask & mask)						\
+	 if ((debug_mask & (unsigned int)(mask)) ||	\
+		 (debug_mask_ext &	\
+		 (unsigned int)((unsigned long long)(mask)>>32)))	\
 		rtn = ath6kl_printk(KERN_DEBUG, fmt, ##__VA_ARGS__);	\
 	 else								\
 		rtn = 0;						\
@@ -246,9 +308,10 @@ void ath6kl_debug_set_keepalive(struct ath6kl *ar, u8 keepalive);
 void ath6kl_debug_set_disconnect_timeout(struct ath6kl *ar, u8 timeout);
 int ath6kl_debug_init(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
+bool ath6kl_printk_fwd_is_enable(void);
 
 #else
-static inline int ath6kl_dbg(enum ATH6K_DEBUG_MASK dbg_mask,
+static inline int ath6kl_dbg(unsigned long long int dbg_mask,
 			     const char *fmt, ...)
 {
 	return 0;
@@ -303,5 +366,8 @@ static inline void ath6kl_debug_cleanup(struct ath6kl *ar)
 {
 }
 
+bool ath6kl_printk_fwd_is_enable(void)
+{
+}
 #endif
 #endif

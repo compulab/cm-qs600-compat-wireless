@@ -841,7 +841,9 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 	flags = sdio_get_host_pm_caps(func);
 
-	ath6kl_dbg(ATH6KL_DBG_SUSPEND, "sdio suspend pm_caps 0x%x\n", flags);
+	ath6kl_dbg(ATH6KL_DBG_SUSPEND | ATH6KL_DBG_EXT_INFO1,
+			"sdio suspend pm_caps 0x%x\n",
+			flags);
 
 	if (!(flags & MMC_PM_KEEP_POWER) ||
 	    (ar->conf_flags & ATH6KL_CONF_SUSPEND_CUTPOWER)) {
@@ -883,6 +885,8 @@ static int ath6kl_sdio_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 
 static int ath6kl_sdio_resume(struct ath6kl *ar)
 {
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "sdio resume: state %d\n", ar->state);
+
 	switch (ar->state) {
 	case ATH6KL_STATE_OFF:
 	case ATH6KL_STATE_CUTPOWER:
@@ -900,6 +904,12 @@ static int ath6kl_sdio_resume(struct ath6kl *ar)
 		break;
 
 	case ATH6KL_STATE_WOW:
+		break;
+
+	case ATH6KL_STATE_PRE_SUSPEND:
+		break;
+
+	case ATH6KL_STATE_PRE_SUSPEND_DEEPSLEEP:
 		break;
 	}
 
@@ -1222,6 +1232,49 @@ static int ath6kl_sdio_bus_config(struct ath6kl *ar)
 	return 0;
 }
 
+static int ath6kl_sdio_diag_warm_reset(struct ath6kl *ar)
+{
+	return 0;
+}
+
+#ifdef USB_AUTO_SUSPEND
+static void sdio_auto_pm_disable(struct ath6kl *ar)
+{
+
+}
+
+static void sdio_auto_pm_enable(struct ath6kl *ar)
+{
+
+}
+
+static void sdio_auto_pm_turnon(struct ath6kl *ar)
+{
+
+}
+
+
+static void sdio_auto_pm_turnoff(struct ath6kl *ar)
+{
+
+}
+
+int sdio_debugfs_get_pm_usage_cnt(struct ath6kl *ar)
+{
+	return 0;
+}
+
+void sdio_auto_pm_set_delay(struct ath6kl *ar, int delay)
+{
+
+}
+#endif
+
+static void ath6kl_sdio_set_max_queue_number(struct ath6kl *ar, bool limitEnable)
+{
+	/* TBD */
+}
+
 static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.read_write_sync = ath6kl_sdio_read_write_sync,
 	.write_async = ath6kl_sdio_write_async,
@@ -1242,11 +1295,21 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.power_off = ath6kl_sdio_power_off,
 	.stop = ath6kl_sdio_stop,
 	.get_stat = ath6kl_sdio_stat,
+	.diag_warm_reset = ath6kl_sdio_diag_warm_reset,
 #ifdef CONFIG_HAS_EARLYSUSPEND
 	.early_suspend = ath6kl_sdio_early_suspend,
 	.late_resume = ath6kl_sdio_late_resume,
 #endif
 	.bus_config = ath6kl_sdio_bus_config,
+#ifdef USB_AUTO_SUSPEND
+	.auto_pm_disable = sdio_auto_pm_disable,
+	.auto_pm_enable = sdio_auto_pm_enable,
+	.auto_pm_turnon = sdio_auto_pm_turnon,
+	.auto_pm_turnoff = sdio_auto_pm_turnoff,
+	.auto_pm_get_usage_cnt = sdio_debugfs_get_pm_usage_cnt,
+	.auto_pm_set_delay = sdio_auto_pm_set_delay,
+#endif
+	.pipe_set_max_queue_number = ath6kl_sdio_set_max_queue_number,
 };
 
 #ifdef CONFIG_PM_SLEEP
@@ -1391,6 +1454,7 @@ static const struct sdio_device_id ath6kl_sdio_devices[] = {
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6003_BASE | 0x1))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x0))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x1))},
+	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6004_BASE | 0x2))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x0))},
 	{SDIO_DEVICE(MANUFACTURER_CODE, (MANUFACTURER_ID_AR6006_BASE | 0x1))},
 	{},
