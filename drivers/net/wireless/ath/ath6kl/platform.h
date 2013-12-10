@@ -52,4 +52,5 @@ struct ath6kl_platform_data {
 int ath6kl_platform_driver_register(void);
 void ath6kl_platform_driver_unregister(void);
 void ath6kl_hsic_bind(int bind);
+void ath6kl_recover_firmware(void);
 

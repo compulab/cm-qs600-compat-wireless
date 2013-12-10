@@ -22,6 +22,8 @@
 
 #define ATH6KL_DBGPRNT_FREQ 1000
 
+#define ATH6KL_RECOVERY_CRASH_DUMP_FILE	"/tmp/crash_dump"
+
 enum ATH6KL_MODULE_QUIRKS {
 	/* Enable Cut power mode */
 	ATH6KL_MODULE_SUSPEND_CUTPOWER		= BIT(0),
@@ -172,6 +174,7 @@ void ath6kl_debug_set_disconnect_timeout(struct ath6kl *ar, u8 timeout);
 void ath6kl_debug_init(struct ath6kl *ar);
 int ath6kl_debug_init_fs(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
+void ath6kl_recovery_dump_crash_info(struct ath6kl *ar);
 
 #else
 static inline int ath6kl_dbg(enum ATH6K_DEBUG_MASK dbg_mask,

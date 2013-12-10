@@ -766,7 +766,8 @@ enum ath6kl_state {
 };
 
 /* Fw error recovery */
-#define ATH6KL_HB_RESP_MISS_THRES      5
+#define ATH6KL_HB_RESP_MISS_THRES	3
+#define ATH6KL_SUSPEND_HB_DELAY	5
 
 enum ath6kl_fw_recovery_state {
 	ATH6KL_FW_RECOVERY_NONE,
@@ -1242,7 +1243,7 @@ int _string_to_mac(char *string, int len, u8 *macaddr);
 void ath6kl_recovery_work(struct work_struct *work);
 void ath6kl_recovery_init(struct ath6kl *ar);
 void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason);
-void ath6kl_recovery_hb_event(struct ath6kl *ar, u32 cookie);
+void ath6kl_update_hb_event(struct ath6kl *ar);
 void ath6kl_init_hw_restart(struct ath6kl *ar);
 void ath6kl_init_hw_cold_restart(struct ath6kl *ar);
 void ath6kl_recovery_cleanup(struct ath6kl *ar);

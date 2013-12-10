@@ -60,9 +60,9 @@ void ath6kl_core_rx_complete(struct ath6kl *ar, struct sk_buff *skb, u8 pipe)
 }
 EXPORT_SYMBOL(ath6kl_core_rx_complete);
 
-void ath6kl_recovery_hb_event(struct ath6kl *ar, u32 cookie)
+void ath6kl_update_hb_event(struct ath6kl *ar)
 {
-	if (cookie == ar->fw_recovery->seq_num)
+	if (ar->fw_recovery)
 		ar->fw_recovery->hb_pending = false;
 }
 
@@ -98,7 +98,7 @@ static void ath6kl_recovery_hb_timer(unsigned long data)
 				err);
 
 	mod_timer(&ar->fw_recovery->hb_timer, jiffies +
-			msecs_to_jiffies(ar->fw_recovery->hb_poll));
+			ar->fw_recovery->hb_poll);
 }
 
 void ath6kl_recovery_work(struct work_struct *work)
@@ -118,10 +118,6 @@ void ath6kl_recovery_work(struct work_struct *work)
 
 	ar->state = ATH6KL_STATE_ON;
 	ar->fw_recovery->err_reason = 0;
-
-	if (ar->fw_recovery->hb_poll)
-		mod_timer(&ar->fw_recovery->hb_timer, jiffies +
-				msecs_to_jiffies(ar->fw_recovery->hb_poll));
 }
 
 void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason)
@@ -129,10 +125,14 @@ void ath6kl_recovery_err_notify(struct ath6kl *ar, enum ath6kl_fw_err reason)
 	if (!ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY))
 		return;
 
+	if (!test_bit(WMI_READY, &ar->flag))
+		return;
+
 	ath6kl_info("Fw error detected, reason :: %d trying to recover\n",
 			reason);
 
 	if (ar->fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
+		ath6kl_recovery_dump_crash_info(ar);
 		set_bit(reason, &ar->fw_recovery->err_reason);
 		ar->fw_recovery->state = ATH6KL_FW_RECOVERY_INPROGRESS;
 		clear_bit(WMI_CTRL_EP_FULL, &ar->flag);
@@ -151,19 +151,18 @@ void ath6kl_recovery_init(struct ath6kl *ar)
 	if (fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
 		fw_recovery->state = ATH6KL_FW_RECOVERY_NONE;
 		INIT_WORK(&fw_recovery->recovery_work, ath6kl_recovery_work);
-
 		ar->fw_recovery->hb_timer.function = ath6kl_recovery_hb_timer;
-		ar->fw_recovery->hb_timer.data = (unsigned long) ar;
 		init_timer_deferrable(&ar->fw_recovery->hb_timer);
 	}
 
+	ar->fw_recovery->hb_timer.data = (unsigned long)ar;
 	recovery->seq_num = 0;
 	recovery->hb_misscnt = 0;
 	ar->fw_recovery->hb_pending = false;
 
 	if (ar->fw_recovery->hb_poll)
 		mod_timer(&ar->fw_recovery->hb_timer, jiffies +
-			msecs_to_jiffies(ar->fw_recovery->hb_poll));
+				ar->fw_recovery->hb_poll);
 }
 
 void ath6kl_recovery_cleanup(struct ath6kl *ar)
@@ -220,8 +219,8 @@ void ath6kl_recovery_resume(struct ath6kl *ar)
 	ar->fw_recovery->hb_pending = false;
 	ar->fw_recovery->seq_num = 0;
 	ar->fw_recovery->hb_misscnt = 0;
-	mod_timer(&ar->fw_recovery->hb_timer,
-			jiffies + msecs_to_jiffies(ar->fw_recovery->hb_poll));
+	mod_timer(&ar->fw_recovery->hb_timer, jiffies +
+			ar->fw_recovery->hb_poll);
 }
 
 static int ath6kl_get_bootstrap_mode(struct ath6kl *ar)
@@ -420,10 +419,14 @@ int ath6kl_core_init(struct ath6kl *ar, enum ath6kl_htc_type htc_type)
 		goto err_rxbuf_cleanup;
 	ar->lte_margin = lte_margin;
 
-	if (heart_beat_poll &&
-			test_bit(ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
-				ar->fw_capabilities))
-		ar->fw_recovery->hb_poll = heart_beat_poll;
+	if (heart_beat_poll && test_bit(ATH6KL_FW_CAPABILITY_HEART_BEAT_POLL,
+			ar->fw_capabilities)) {
+		/* store the hb timeout value in terms of jiffies
+		 * 1 sec = 60 jiffies, user configured value is in seconds
+		 * so converting to jiffies
+		 */
+		ar->fw_recovery->hb_poll = heart_beat_poll * 60;
+	}
 
 	ath6kl_recovery_init(ar);
 

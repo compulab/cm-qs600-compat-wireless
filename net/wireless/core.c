@@ -36,6 +36,8 @@ MODULE_AUTHOR("Johannes Berg");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("wireless configuration support");
 
+static int wiphy_counter;
+
 /* RCU-protected (and cfg80211_mutex for writers) */
 LIST_HEAD(cfg80211_rdev_list);
 int cfg80211_rdev_list_generation;
@@ -266,8 +268,6 @@ static void cfg80211_event_work(struct work_struct *work)
 
 struct wiphy *wiphy_new(const struct cfg80211_ops *ops, int sizeof_priv)
 {
-	static int wiphy_counter;
-
 	struct cfg80211_registered_device *rdev;
 	int alloc_size;
 
@@ -676,6 +676,7 @@ void wiphy_unregister(struct wiphy *wiphy)
 	if (rdev->wowlan && rdev->ops->set_wakeup)
 		rdev->ops->set_wakeup(&rdev->wiphy, false);
 	cfg80211_rdev_free_wowlan(rdev);
+	wiphy_counter--;
 }
 EXPORT_SYMBOL(wiphy_unregister);
 
@@ -1109,7 +1110,7 @@ subsys_initcall(cfg80211_init);
 
 static void __exit cfg80211_exit(void)
 {
-	debugfs_remove(ieee80211_debugfs_dir);
+	debugfs_remove_recursive(ieee80211_debugfs_dir);
 	nl80211_exit();
 	unregister_netdevice_notifier(&cfg80211_netdev_notifier);
 	wiphy_sysfs_exit();
