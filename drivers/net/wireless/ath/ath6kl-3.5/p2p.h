@@ -17,12 +17,14 @@
 #ifndef P2P_H
 #define P2P_H
 
+#define ATH6KL_P2P_BMISS_TIME				(100)
+
 #define ATH6KL_P2P_PS_MAX_NOA_DESCRIPTORS		4
 
 #define ATH6KL_P2P_PS_FLAGS_NOA_ENABLED			BIT(0)
 #define ATH6KL_P2P_PS_FLAGS_OPPPS_ENABLED		BIT(1)
 
-#define NL80211_IFTYPE_P2P_DEVICE			(0xff)
+#define NL80211_IFTYPE_P2P_DEVICE_QCA			(0xff)
 
 enum {
 	IEEE80211_P2P_ATTR_NOTICE_OF_ABSENCE = 12,
@@ -106,10 +108,11 @@ struct p2p_ps_info {
 #define ATH6KL_P2P_FLOWCTRL_NULL_CONNID			(0xff)
 #define ATH6KL_P2P_FLOWCTRL_RECYCLE_LIMIT		(10)
 
-#define ATH6KL_P2P_FLOWCTRL_NETIF_STOP			(0x00)
-#define ATH6KL_P2P_FLOWCTRL_NETIF_WAKE			(0x01)
+#define ATH6KL_NETIF_STOP			(0x00)
+#define ATH6KL_NETIF_WAKE			(0x01)
+#define ATH6KL_NETIF_THRESH_HIGH	(MAX_VIF_COOKIE_NUM - 100)
+#define ATH6KL_NETIF_THRESH_LOW		(400)
 
-#define ATH6KL_P2P_FLOWCTRL_REQ_STEP			(30)
 #define ATH6KL_P2P_FLOWCTRL_TXQ_LIMIT			(50)
 
 struct ath6kl_fw_conn_list {
@@ -158,6 +161,121 @@ struct ath6kl_p2p_flowctrl {
 	u32 p2p_flowctrl_event_cnt;
 };
 
+/* P2P RecommendChannel */
+#define ATH6KL_RC_FLAGS_NEED_UPDATED		(1 << 0)
+#define ATH6KL_RC_FLAGS_DONE			(1 << 1)
+#define ATH6KL_RC_FLAGS_HIGH_CHAN		(1 << 2)
+#define ATH6KL_RC_FLAGS_ALWAYS_FRESH		(1 << 3)
+#define ATH6KL_RC_FLAGS_CHAN_RECORD_FETCHED	(1 << 4)
+
+#define ATH6KL_RC_MAX_2G_CHAN_RECORD	(14)
+#define ATH6KL_RC_MAX_5G_CHAN_RECORD	(66)
+#define ATH6KL_RC_MAX_CHAN_RECORD	(ATH6KL_RC_MAX_2G_CHAN_RECORD + \
+					ATH6KL_RC_MAX_5G_CHAN_RECORD)
+
+#define ATH6KL_RC_AVERAGE_CHAN_CNT	(5)	/* 20MHz width */
+#define ATH6KL_RC_AVERAGE_CHAN_OFFSET	(2)	/* 10MHz plus or minus */
+#define ATH6KL_RC_AVERAGE_CHAN_START	(2412)	/* Channel 1 */
+#define ATH6KL_RC_AVERAGE_CHAN_END	(2472)	/* Channel 13 */
+
+#define ATH6KL_RC_FRESH_TIME		msecs_to_jiffies(5 * 60 * 1000)
+
+enum p2p_rc_user_chan_type {
+	P2P_RC_USER_BLACK_CHAN,		/* Black channel list */
+	P2P_RC_USER_WHITE_CHAN,		/* White channel list */
+};
+
+enum p2p_rc_type {
+	P2P_RC_TYPE_2GALL,	/* the best in all 2G channels */
+	P2P_RC_TYPE_5GALL,	/* the best in all 5G channels */
+	P2P_RC_TYPE_OVERALL,	/* the best in all channels */
+	P2P_RC_TYPE_SOCAIL,	/* the best in 1, 6 abd 11 channels */
+	P2P_RC_TYPE_2GP2P,	/* the best in P2P 2G channels */
+	P2P_RC_TYPE_5GP2P,	/* the best in P2P 5G channels */
+	P2P_RC_TYPE_ALLP2P,	/* the best in P2P channels */
+	P2P_RC_TYPE_5GNODFS,	/* the best in all 5G channels w/o DFS */
+	P2P_RC_TYPE_OVERALLNODFS, /* the best in all channels w/o DFS */
+	P2P_RC_TYPE_2GNOLTE,	/* the best in 2G channels w/o LTE */
+	P2P_RC_TYPE_OVERALLNOLTE, /* the best in all channels w/o LTE */
+	P2P_RC_TYPE_OVERALLNOLTEDFS, /* the best in all channels w/o LTE/DFS */
+	P2P_RC_TYPE_USER_CHAN,	/* the best in user's channels */
+
+	P2P_RC_TYPE_MAX,	/* keep last */
+};
+
+struct p2p_rc_bss_info {
+	struct list_head list;
+	struct ieee80211_channel *channel;
+	u8 rssi;
+};
+
+struct p2p_rc_chan_record {
+	struct ieee80211_channel *channel;
+
+#define P2P_RC_MAX_SNR		(96)
+#define P2P_RC_NULL_SNR		(P2P_RC_MAX_SNR + 1)
+	u8 best_snr;
+	u8 aver_snr;	/* for 2G */
+};
+
+struct ath6kl_p2p_rc_info {
+	struct ath6kl *ar;
+	u32 flags;
+	spinlock_t p2p_rc_lock;
+	int chan_record_cnt;
+	struct p2p_rc_chan_record chan_record[ATH6KL_RC_MAX_CHAN_RECORD];
+	unsigned long last_update;		/* in jiffies */
+
+#define P2P_RC_DEF_SNR_COMP		(0)
+	int snr_compensation;
+
+	enum p2p_rc_user_chan_type user_chan_type;
+	u16 user_chan_list[ATH6KL_RC_MAX_CHAN_RECORD];
+
+	/* Keep the latest result. */
+	struct p2p_rc_chan_record *last_p2p_rc[P2P_RC_TYPE_MAX];
+};
+
+struct ath6kl_rc_report {
+	u16 rc_2g;
+	u16 rc_5g;
+	u16 rc_all;
+	u16 rc_p2p_so;
+	u16 rc_p2p_2g;
+	u16 rc_p2p_5g;
+	u16 rc_p2p_all;
+	u16 rc_5g_nodfs;
+	u16 rc_all_nodfs;
+	u16 rc_2g_nolte;
+	u16 rc_all_nolte;
+	u16 rc_user_chan;
+	u16 rc_all_noltedfs;
+};
+
+struct p2p_oper_chan {
+	u16 oper_class;
+	u32 min_chan_freq;
+	u32 max_chan_freq;
+	u32 inc_freq;
+
+#define P2P_OPER_CHAN_BW_NULL		0
+#define P2P_OPER_CHAN_BW_HT20		1
+#define P2P_OPER_CHAN_BW_HT40_PLUS	2
+#define P2P_OPER_CHAN_BW_HT40_MINUS	3
+	u8 bw;
+};
+
+struct p2p_pending_connect_info {
+#define ATH6KL_P2P_MAX_PENDING_INFO_IELEN	512
+	u8 bssid[ETH_ALEN];
+	u8 req_ie[ATH6KL_P2P_MAX_PENDING_INFO_IELEN];
+	size_t req_ie_len;
+	u8 resp_ie[ATH6KL_P2P_MAX_PENDING_INFO_IELEN];
+	size_t resp_ie_len;
+	u16 status;
+	gfp_t gfp;
+};
+
 struct p2p_ps_info *ath6kl_p2p_ps_init(struct ath6kl_vif *vif);
 void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif);
 
@@ -188,6 +306,9 @@ int ath6kl_p2p_utils_check_port(struct ath6kl_vif *vif,
 
 struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 	struct ath6kl *ar);
+void ath6kl_p2p_flowctrl_conn_collect_by_conn(
+	struct ath6kl_fw_conn_list *fw_conn, struct list_head *pcontainer,
+	int *preclaim);
 void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup(struct ath6kl *ar);
 void ath6kl_p2p_flowctrl_conn_list_cleanup_by_if(struct ath6kl_vif *vif);
@@ -208,7 +329,48 @@ u8 ath6kl_p2p_flowctrl_get_conn_id(struct ath6kl_vif *vif,
 int ath6kl_p2p_flowctrl_stat(struct ath6kl *ar,
 			     u8 *buf, int buf_len);
 
+
+struct ath6kl_p2p_rc_info *ath6kl_p2p_rc_init(struct ath6kl *ar);
+void ath6kl_p2p_rc_deinit(struct ath6kl *ar);
+void ath6kl_p2p_rc_fetch_chan(struct ath6kl *ar);
+void ath6kl_p2p_rc_bss_info(struct ath6kl_vif *vif,
+			    u8 snr,
+			    struct ieee80211_channel *channel);
+void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif, bool local_scan);
+int ath6kl_p2p_rc_scan_complete_event(struct ath6kl_vif *vif, bool aborted);
+int ath6kl_p2p_rc_get(struct ath6kl *ar, struct ath6kl_rc_report *rc_report);
+int ath6kl_p2p_rc_dump(struct ath6kl *ar, u8 *buf, int buf_len);
+void ath6kl_p2p_rc_config(struct ath6kl *ar, u16 freq, int type);
+
 bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len);
 bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, const u8 *frm, size_t len);
+void ath6kl_p2p_connect_event(struct ath6kl_vif *vif,
+				u8 beacon_ie_len,
+				u8 assoc_req_len,
+				u8 assoc_resp_len,
+				u8 *assoc_info);
+void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
+			bool mcc,
+			bool call_on_disconnect,
+			u8 connected_count);
+bool ath6kl_p2p_pending_connect_event(struct ath6kl_vif *vif,
+					const u8 *bssid,
+					const u8 *req_ie,
+					size_t req_ie_len,
+					const u8 *resp_ie,
+					size_t resp_ie_len,
+					u16 status,
+					gfp_t gfp);
+void ath6kl_p2p_pending_disconnect_event(struct ath6kl_vif *vif,
+					u16 reason,
+					u8 *ie,
+					size_t ie_len,
+					gfp_t gfp);
+bool ath6kl_p2p_ie_append(struct ath6kl_vif *vif, u8 mgmt_frame_type);
+bool ath6kl_p2p_is_p2p_channel(u32 freq);
+bool ath6kl_p2p_is_social_channel(u32 freq);
+int ath6kl_p2p_build_scan_chan(struct ath6kl_vif *vif,
+				u32 req_chan_num,
+				u16 *chan_list);
 #endif
 

@@ -20,6 +20,10 @@
 
 #include <asm/byteorder.h>
 
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+#include <asm/unaligned.h>
+#endif
+
 #define HTC_PACKET_CONTAINER_ALLOCATION 32
 #define HTC_CONTROL_BUFFER_SIZE (HTC_MAX_CTRL_MSG_LEN + HTC_HDR_LENGTH)
 #define DATA_EP_SIZE 4
@@ -105,6 +109,7 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 	u8 send_flags;
 	struct htc_packet *packet;
 	unsigned int transfer_len;
+	int starving = ep->starving;
 	int msgs_upper_limit =
 		(htc_bundle_send) ? HTC_HOST_MAX_MSG_PER_BUNDLE : 1;
 
@@ -112,7 +117,6 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 		return;
 
 	/* NOTE : the TX lock is held when this function is called */
-
 	/* loop until we can grab as many packets out of the queue as we can */
 	while (true) {
 		send_flags = 0;
@@ -165,6 +169,9 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 			target->avail_tx_credits -= credits_required;
 			ep->ep_st.cred_cosumd += credits_required;
 
+			ep->starving = 0;
+			ep->last_sent = jiffies;
+
 			if (target->avail_tx_credits < 1) {
 				/* tell the target we need credits ASAP! */
 				send_flags |= HTC_FLAGS_NEED_CREDIT_UPDATE;
@@ -211,6 +218,10 @@ static void get_htc_packet_credit_based(struct htc_target *target,
 
 		if (htc_bundle_send)
 			msgs_upper_limit--;
+
+		/* if it is a starving EP, consumes only one credit */
+		if (starving)
+			break;
 	}
 
 }
@@ -328,6 +339,10 @@ static int htc_issue_packets(struct htc_target *target,
 				target->avail_tx_credits += bundle_credit_used;
 			else
 				ep->cred_dist.credits += bundle_credit_used;
+
+			ep->ep_st.cred_retnd += bundle_credit_used;
+			ep->ep_st.tx_dropped += bundle_credit_used;
+
 			spin_unlock_bh(&target->tx_lock);
 		}
 	} else {
@@ -394,6 +409,11 @@ static int htc_issue_packets(struct htc_target *target,
 				else
 					ep->cred_dist.credits +=
 						packet->info.tx.cred_used;
+
+				ep->ep_st.tx_dropped +=
+					packet->info.tx.cred_used;
+				ep->ep_st.cred_retnd +=
+					packet->info.tx.cred_used;
 				spin_unlock_bh(&target->tx_lock);
 				/* put it back into the callers queue */
 				list_add(&packet->list, pkt_queue);
@@ -420,8 +440,6 @@ static int htc_issue_packets(struct htc_target *target,
 	return status;
 }
 
-#define HTC_BUNDLE_SEND_TH  6000
-
 static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 					  struct htc_endpoint *ep,
 					  struct list_head *callers_send_queue)
@@ -430,6 +448,7 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 	struct htc_packet *packet, *tmp_pkt;
 	struct ath6kl *ar = target->dev->ar;
 	int tx_resources;
+	int starving;
 	int overflow, txqueue_depth;
 
 	ath6kl_dbg(ATH6KL_DBG_HTC,
@@ -603,6 +622,7 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 	 * now drain the endpoint TX queue for transmission as long as we have
 	 * enough transmit resources
 	 */
+	starving = ep->starving;
 	while (true) {
 
 		if (get_queue_depth(&ep->txq) == 0)
@@ -641,7 +661,9 @@ static enum htc_send_queue_result htc_try_send(struct htc_target *target,
 		}
 
 		spin_lock_bh(&target->tx_lock);
-
+		/* if it is a starving EP, consumes only one credit */
+		if (starving)
+			break;
 	}
 	/* done with this endpoint, we can clear the count */
 	ep->tx_proc_cnt = 0;
@@ -654,10 +676,8 @@ static void htc_tx_bundle_timer_handler(unsigned long ptr)
 {
 	struct htc_target *target = (struct htc_target *)ptr;
 	struct htc_endpoint *endpoint = &target->endpoint[ENDPOINT_2];
-	static u32 count;
-	static u32 tx_issued;
-	count = 0;
-	tx_issued = 0;
+	u32 count = 0;
+	u32 tx_issued = 0;
 
 	endpoint->call_by_timer = 1;
 	count++;
@@ -667,7 +687,7 @@ static void htc_tx_bundle_timer_handler(unsigned long ptr)
 		* endpoint->ep_st.tx_issued-tx_issued);
 		*/
 		if ((endpoint->ep_st.tx_issued - tx_issued)
-		     > HTC_BUNDLE_SEND_TH)
+		     > htc_bundle_send_th)
 			endpoint->pass_th = 1;
 		else
 			endpoint->pass_th = 0;
@@ -903,6 +923,8 @@ static void htc_process_credit_report(struct htc_target *target,
 			int epid_idx;
 
 			target->avail_tx_credits += rpt->credits;
+			ep->ep_st.cred_retnd += rpt->credits;
+			ep->ep_st.tx_cred_rpt++;
 
 			for (epid_idx = 0; epid_idx < DATA_EP_SIZE;
 			     epid_idx++) {
@@ -911,10 +933,23 @@ static void htc_process_credit_report(struct htc_target *target,
 					break;
 			}
 			spin_unlock_bh(&target->tx_lock);
+
+			for (epid_idx = 0; epid_idx < DATA_EP_SIZE;
+				epid_idx++) {
+				struct htc_endpoint *starving_ep;
+				starving_ep = &target->endpoint[eid[epid_idx]];
+				if (ep == starving_ep)
+					continue;
+
+				if (starving_ep->starving)
+					htc_try_send(target, starving_ep, NULL);
+			}
 			htc_try_send(target, ep, NULL);
 			spin_lock_bh(&target->tx_lock);
 		} else {
 			ep->cred_dist.credits += rpt->credits;
+			ep->ep_st.cred_retnd += rpt->credits;
+			ep->ep_st.tx_cred_rpt++;
 
 			if (ep->cred_dist.credits &&
 			    get_queue_depth(&ep->txq)) {
@@ -1022,6 +1057,16 @@ static int htc_tx_completion(struct htc_target *context, struct sk_buff *netbuf)
 		send_packet_completion(target, packet);
 	}
 	netbuf = NULL;
+
+	for (epid_idx = 0; epid_idx < DATA_EP_SIZE; epid_idx++) {
+		struct htc_endpoint *starving_ep;
+		starving_ep = &target->endpoint[eid[epid_idx]];
+		if (ep == starving_ep)
+			continue;
+		if (starving_ep->starving)
+			htc_try_send(target, starving_ep, NULL);
+	}
+
 	ar = target->dev->ar;
 
 	if (!ep->tx_credit_flow_enabled) {
@@ -1127,10 +1172,6 @@ static int htc_send_pkts_sched_check(struct htc_target *target,
 	spin_unlock_bh(&target->tx_lock);
 
 	switch (id) {
-	case ENDPOINT_2: /* BE */
-		status = ac_queue_status[0] && ac_queue_status[2] &&
-			 ac_queue_status[3];
-		break;
 	case ENDPOINT_3: /* BK */
 		status = ac_queue_status[0] && ac_queue_status[1] &&
 			 ac_queue_status[2] && ac_queue_status[3];
@@ -1141,8 +1182,9 @@ static int htc_send_pkts_sched_check(struct htc_target *target,
 	case ENDPOINT_5: /* VO */
 		status = ac_queue_status[3];
 		break;
-	default:
-		status = 0;
+	default: /* BE */
+		status = ac_queue_status[0] && ac_queue_status[2] &&
+			 ac_queue_status[3];
 		break;
 	}
 	return status;
@@ -1192,7 +1234,7 @@ static int htc_send_pkts_sched_queue(struct htc_target *target,
 	} else if (test_bit(MCC_ENABLED, &ar->flag)) {
 		if (get_queue_depth(tx_queue) > ATH6KL_P2P_FLOWCTRL_TXQ_LIMIT)
 			ath6kl_p2p_flowctrl_netif_transition(
-				ar, ATH6KL_P2P_FLOWCTRL_NETIF_STOP);
+				ar, ATH6KL_NETIF_STOP);
 	}
 
 	spin_unlock_bh(&target->tx_lock);
@@ -1224,9 +1266,14 @@ static int htc_send_packets_multiple(struct htc_target *handle,
 	ep = &target->endpoint[packet->endpoint];
 
 	if (ar->hw.flags & ATH6KL_HW_SINGLE_PIPE_SCHED) {
-		if (!htc_send_pkts_sched_check(target, ep->eid))
+		if (!htc_send_pkts_sched_check(target, ep->eid)) {
 			htc_send_pkts_sched_queue(target, pkt_queue, ep->eid);
-		else
+
+			/* checking for starving */
+			if (ar->starving_prevention &&
+				time_after(jiffies, ep->last_sent + (HZ >> 3)))
+				ep->starving = 1;
+		} else
 			htc_try_send(target, ep, pkt_queue);
 	} else {
 		htc_try_send(target, ep, pkt_queue);
@@ -1341,9 +1388,6 @@ static int htc_process_trailer(struct htc_target *target,
 			break;
 		}
 
-		if (status != 0)
-			break;
-
 		/* advance buffer past this record for next time around */
 		buffer += record->len;
 		len -= record->len;
@@ -1356,6 +1400,8 @@ static void do_recv_completion(struct htc_endpoint *ep,
 			       struct list_head *queue_to_indicate)
 {
 	struct htc_packet *packet;
+	struct htc_target *target = (struct htc_target *)
+				    ep->target;
 	if (list_empty(queue_to_indicate)) {
 		/* nothing to indicate */
 		return;
@@ -1363,13 +1409,13 @@ static void do_recv_completion(struct htc_endpoint *ep,
 
 	/* using legacy EpRecv */
 	while (!list_empty(queue_to_indicate)) {
+		spin_lock_bh(&target->rx_lock);
 		packet = list_first_entry(queue_to_indicate,
 					struct htc_packet, list);
 		list_del(&packet->list);
-		ep->ep_cb.rx((struct htc_target *)
-				    ep->target, packet);
+		spin_unlock_bh(&target->rx_lock);
+		ep->ep_cb.rx(target, packet);
 	}
-
 	return;
 }
 
@@ -1378,8 +1424,10 @@ static void recv_packet_completion(struct htc_target *target,
 				   struct htc_packet *packet)
 {
 	struct list_head container;
+	spin_lock_bh(&target->rx_lock);	
 	INIT_LIST_HEAD(&container);
 	list_add_tail(&packet->list, &container);
+	spin_unlock_bh(&target->rx_lock);	
 	/* do completion */
 	do_recv_completion(ep, &container);
 }
@@ -1389,7 +1437,7 @@ struct sk_buff *rx_sg_to_single_netbuf(struct htc_target *target)
 	struct sk_buff *skb;
 	u8 *anbdata;
 	u8 *anbdata_new;
-	u32 anblen;
+	u32 anblen = 0;
 	struct sk_buff *new_skb = NULL;
 	struct sk_buff_head *rx_sg_queue = &target->rx_sg_q;
 
@@ -1401,22 +1449,23 @@ struct sk_buff *rx_sg_to_single_netbuf(struct htc_target *target)
 
 	new_skb = __dev_alloc_skb(target->rx_sg_total_len_exp, GFP_ATOMIC);
 	if (new_skb == NULL) {
-		ath6kl_dbg(ATH6KL_DBG_HTC,
-			"%s: can't allocate %u size netbuf\n",
+		ath6kl_err("%s: can't allocate %u size netbuf\n",
 			__func__, target->rx_sg_total_len_exp);
 		goto _failed;
 	}
 
 	anbdata_new = new_skb->data;
-	anblen = new_skb->len;
 
 	while ((skb = skb_dequeue(rx_sg_queue))) {
 		anbdata = skb->data;
 		memcpy(anbdata_new, anbdata, skb->len);
 		skb_put(new_skb, skb->len);
 		anbdata_new += skb->len;
+		anblen += skb->len;
 		dev_kfree_skb(skb);
 	};
+
+	BUG_ON(anblen > target->rx_sg_total_len_exp);
 
 	target->rx_sg_total_len_exp = 0;
 	target->rx_sg_total_len_cur = 0;
@@ -1434,6 +1483,72 @@ _failed:
 	return NULL;
 }
 
+#ifdef CONFIG_CRASH_DUMP
+static int dump_fw_crash_to_file(struct htc_target *target, u8 *netdata)
+{
+	char *buf;
+	unsigned int len = 0, buf_len = DUMP_BUF_SIZE;
+	int i;
+	int status = 0;
+
+	status = check_dump_file_size();
+	if (status)
+		ath6kl_info("crash log file check status code 0x%x\n", status);
+
+	buf = kmalloc(buf_len, GFP_ATOMIC);
+
+	if (buf == NULL)
+		return -ENOMEM;
+
+	memset(buf, 0, buf_len);
+
+	len = snprintf(buf + len, buf_len - len, "Drv ver %s\n",
+		DRV_VERSION);
+	len += snprintf(buf + len, buf_len - len, "FW ver %s\n",
+		target->dev->ar->wiphy->fw_version);
+
+	len += scnprintf(buf + len, buf_len - len,
+		"\n++++++++++crash log sart+++++++++++\n");
+
+	for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
+		len += scnprintf(buf + len, buf_len - len,
+			"%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
+			be32_to_cpu(*(u32 *)(netdata+i)),
+			be32_to_cpu(*(u32 *)(netdata+i + 4)),
+			be32_to_cpu(*(u32 *)(netdata+i + 8)),
+			be32_to_cpu(*(u32 *)(netdata+i + 12)));
+	}
+
+	for (; i < EXTRA_DUMP_MAX; i += 16) {
+
+		if ((*(u32 *)(netdata+i) == DELIMITER) ||
+			((*(u32 *)(netdata+i) == 0)))
+			break;
+
+		len += scnprintf(buf + len, buf_len - len,
+			"%d: 0x%08x 0x%08x "
+			"0x%08x 0x%08x\n", i/4,
+			be32_to_cpu(*(u32 *)(netdata+i)),
+			be32_to_cpu(*(u32 *)(netdata+i + 4)),
+			be32_to_cpu(*(u32 *)(netdata+i + 8)),
+			be32_to_cpu(*(u32 *)(netdata+i + 12)));
+	}
+	len += scnprintf(buf + len, buf_len - len,
+			"----------crash log end-------------\n");
+
+	status = _readwrite_file(CRASH_DUMP_FILE, NULL,
+			buf, len, (O_WRONLY | O_APPEND | O_CREAT));
+	if (status < 0)
+		ath6kl_info("write failed with status code 0x%x\n", status);
+
+	kfree(buf);
+	return status;
+}
+
+
+#endif
+
+
 static int htc_rx_completion(struct htc_target *context,
 				struct sk_buff *netbuf, u8 pipeid)
 {
@@ -1447,7 +1562,6 @@ static int htc_rx_completion(struct htc_target *context,
 	struct htc_packet *packet;
 	u16 payload_len;
 	u32 trailerlen = 0;
-
 	int i;
 
 	static u32 assert_pattern = cpu_to_be32(0x0000c600);
@@ -1475,23 +1589,26 @@ static int htc_rx_completion(struct htc_target *context,
 	netdata = netbuf->data;
 	netlen = netbuf->len;
 
-#define CONFIG_CRASH_DUMP 1
-#if CONFIG_CRASH_DUMP
+#ifdef CONFIG_CRASH_DUMP
 	if (!memcmp(netdata, &assert_pattern, sizeof(assert_pattern))) {
 
-#define REG_DUMP_COUNT_AR6004   76
 		netdata += 4;
 
+		dump_fw_crash_to_file(target, netdata);
+
 		ath6kl_info("Firmware crash detected...\n");
-		for (i = 0; i < REG_DUMP_COUNT_AR6004 * 4; i += 16) {
+		ath6kl_info("Driver version %s\n", DRV_VERSION);
+		ath6kl_info("Firmware version %s\n",
+					target->dev->ar->wiphy->fw_version);
+
+		for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
 			ath6kl_info("%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
 				be32_to_cpu(*(u32 *)(netdata+i)),
 				be32_to_cpu(*(u32 *)(netdata+i + 4)),
 				be32_to_cpu(*(u32 *)(netdata+i + 8)),
 				be32_to_cpu(*(u32 *)(netdata+i + 12)));
 		}
-#define EXTRA_DUMP_MAX (500 + REG_DUMP_COUNT_AR6004 * 4)
-#define DELIMITER 0xaaaaaaaa
+
 		for (; i < EXTRA_DUMP_MAX; i += 16) {
 
 			if ((*(u32 *)(netdata+i) == DELIMITER) ||
@@ -1621,6 +1738,7 @@ static int htc_rx_completion(struct htc_target *context,
 	/* TODO: for backwards compatibility */
 	packet->buf = skb_push(netbuf, 0) + HTC_HDR_LENGTH;
 	packet->act_len = netlen - HTC_HDR_LENGTH - trailerlen;
+	ep->ep_st.rx_pkts++;
 
 	/*
 	 * TODO: this is a hack because the driver layer will set the
@@ -1676,7 +1794,7 @@ static void htc_flush_rx_queue(struct htc_target *target,
 /* polling routine to wait for a control packet to be received */
 static int htc_wait_recv_ctrl_message(struct htc_target *target)
 {
-	int count = HTC_TARGET_RESPONSE_POLL_COUNT;
+	int ret, count = HTC_TARGET_RESPONSE_POLL_COUNT;
 
 	while (count > 0) {
 		spin_lock_bh(&target->rx_lock);
@@ -1692,7 +1810,8 @@ static int htc_wait_recv_ctrl_message(struct htc_target *target)
 		count--;
 
 		set_current_state(TASK_INTERRUPTIBLE);
-		schedule_timeout(msecs_to_jiffies(HTC_TARGET_RESPONSE_POLL_MS));
+		ret = schedule_timeout(msecs_to_jiffies(
+			HTC_TARGET_RESPONSE_POLL_MS));
 		set_current_state(TASK_RUNNING);
 	}
 	if (count <= 0) {
@@ -1742,6 +1861,10 @@ static void reset_endpoint_states(struct htc_target *target)
 		INIT_LIST_HEAD(&ep->rx_bufq);
 		ep->target = target;
 		ep->tx_credit_flow_enabled = (bool) 1;
+#ifdef USB_AUTO_SUSPEND
+			if (i == ENDPOINT_1)
+				ep->tx_credit_flow_enabled = (bool) 0;
+#endif
 	}
 }
 
@@ -1903,7 +2026,8 @@ static int ath6kl_htc_pipe_conn_service(struct htc_target *handle,
 	/* the rest are parameter checks so set the error status */
 	status = -EINVAL;
 
-	if (assigned_epid >= ENDPOINT_MAX) {
+	if (assigned_epid >= ENDPOINT_MAX
+		|| assigned_epid <= ENDPOINT_UNUSED) {
 		WARN_ON(1);
 		goto free_packet;
 	}
@@ -2356,7 +2480,7 @@ int ath6kl_htc_pipe_stat(struct htc_target *target,
 			target->avail_tx_credits,
 			target->tgt_creds);
 
-	for (i = ENDPOINT_2; i <= ENDPOINT_5; i++) {
+	for (i = ENDPOINT_1; i <= ENDPOINT_5; i++) {
 		len += snprintf(buf + len, buf_len - len, "EP-%d\n", i);
 
 		ep = &target->endpoint[i];
@@ -2376,54 +2500,49 @@ int ath6kl_htc_pipe_stat(struct htc_target *target,
 		len += snprintf(buf + len, buf_len - len,
 				" seq_no              : %d\n",
 				ep->seqno);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_low_indicate   : %d\n",
-				ep_st->cred_low_indicate);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_rpt_from_rx    : %d\n",
-				ep_st->cred_rpt_from_rx);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_rpt_from_other : %d\n",
-				ep_st->cred_rpt_from_other);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_rpt_ep0        : %d\n",
-				ep_st->cred_rpt_ep0);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_from_rx        : %d\n",
-				ep_st->cred_from_rx);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_from_other     : %d\n",
-				ep_st->cred_from_other);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_from_ep0       : %d\n",
-				ep_st->cred_from_ep0);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_cosumd         : %d\n",
-				ep_st->cred_cosumd);
-		len += snprintf(buf + len, buf_len - len,
-				" cred_retnd          : %d\n",
-				ep_st->cred_retnd);
+		if (ep->tx_credit_flow_enabled) {
+			len += snprintf(buf + len, buf_len - len,
+					" cred_low_indicate   : %d\n",
+					ep_st->cred_low_indicate);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_rpt_from_rx    : %d\n",
+					ep_st->cred_rpt_from_rx);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_rpt_from_other : %d\n",
+					ep_st->cred_rpt_from_other);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_rpt_ep0        : %d\n",
+					ep_st->cred_rpt_ep0);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_from_rx        : %d\n",
+					ep_st->cred_from_rx);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_from_other     : %d\n",
+					ep_st->cred_from_other);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_from_ep0       : %d\n",
+					ep_st->cred_from_ep0);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_cosumd         : %d\n",
+					ep_st->cred_cosumd);
+			len += snprintf(buf + len, buf_len - len,
+					" cred_retnd          : %d\n",
+					ep_st->cred_retnd);
+		}
 		len += snprintf(buf + len, buf_len - len,
 				" tx_issued           : %d\n",
 				ep_st->tx_issued);
 		len += snprintf(buf + len, buf_len - len,
 				" tx_dropped          : %d\n",
 				ep_st->tx_dropped);
-		len += snprintf(buf + len, buf_len - len,
-				" tx_cred_rpt         : %d\n",
-				ep_st->tx_cred_rpt);
+		if (ep->tx_credit_flow_enabled) {
+			len += snprintf(buf + len, buf_len - len,
+					" tx_cred_rpt         : %d\n",
+					ep_st->tx_cred_rpt);
+		}
 		len += snprintf(buf + len, buf_len - len,
 				" rx_pkts             : %d\n",
 				ep_st->rx_pkts);
-		len += snprintf(buf + len, buf_len - len,
-				" rx_lkahds           : %d\n",
-				ep_st->rx_lkahds);
-		len += snprintf(buf + len, buf_len - len,
-				" rx_alloc_thresh_hit : %d\n",
-				ep_st->rx_alloc_thresh_hit);
-		len += snprintf(buf + len, buf_len - len,
-				" rxalloc_thresh_byte : %d\n",
-				ep_st->rxalloc_thresh_byte);
 
 		/* Bundle mode */
 		if (htc_bundle_recv || htc_bundle_send) {
@@ -2456,7 +2575,12 @@ int ath6kl_htc_pipe_stop_netif_queue_full(struct htc_target *target)
 int ath6kl_htc_pipe_wmm_schedule_change(struct htc_target *target,
 		bool change)
 {
-	return 0;
+	struct ath6kl *ar = target->dev->ar;
+
+	if (ar->target_type == TARGET_TYPE_AR6006) /* For KingFisher Only */
+		return 1;
+	else
+		return 0;
 }
 
 int ath6kl_htc_pipe_change_credit_bypass(struct htc_target *target,
@@ -2464,6 +2588,57 @@ int ath6kl_htc_pipe_change_credit_bypass(struct htc_target *target,
 {
 	return 0;
 }
+
+#ifdef USB_AUTO_SUSPEND
+bool ath6kl_htc_pipe_skip_usb_mark_busy(struct ath6kl *ar, struct sk_buff *skb)
+{
+	struct htc_frame_hdr *htc_hdr;
+	struct wmi_data_hdr *dhdr;
+	bool is_amsdu, ret = false;
+	u8 dot11_hdr = 0, pad_before_data_start;
+	u16 pull_hdr = 0;
+
+	htc_hdr = (struct htc_frame_hdr *)skb->data;
+
+	if (htc_hdr->eid != ar->ctrl_ep) {
+		pull_hdr += HTC_HDR_LENGTH;
+
+		dhdr = (struct wmi_data_hdr *)(skb->data + pull_hdr);
+		is_amsdu = wmi_data_hdr_is_amsdu(dhdr) ? true : false;
+		dot11_hdr = wmi_data_hdr_get_dot11(dhdr);
+		pad_before_data_start =	(le16_to_cpu(dhdr->info3)
+					>> WMI_DATA_HDR_PAD_BEFORE_DATA_SHIFT)
+					& WMI_DATA_HDR_PAD_BEFORE_DATA_MASK;
+		pull_hdr += sizeof(struct wmi_data_hdr);
+		pull_hdr += pad_before_data_start;
+
+		if (dot11_hdr) {
+			struct ieee80211_hdr_3addr wh;
+			memcpy((u8 *) &wh, (skb->data + pull_hdr),
+				sizeof(struct ieee80211_hdr_3addr));
+
+			switch ((le16_to_cpu(wh.frame_control)) &
+				(IEEE80211_FCTL_FROMDS | IEEE80211_FCTL_TODS)) {
+			case 0:
+			case IEEE80211_FCTL_FROMDS:
+				if (is_multicast_ether_addr(wh.addr1))
+					ret = true;
+				break;
+			case IEEE80211_FCTL_TODS:
+				if (is_multicast_ether_addr(wh.addr3))
+					ret = true;
+				break;
+			}
+		} else if (!is_amsdu) {
+			struct ethhdr *datap =
+				(struct ethhdr *)(skb->data + pull_hdr);
+			if (is_multicast_ether_addr(datap->h_dest))
+				ret = true;
+		}
+	}
+	return ret;
+}
+#endif
 
 static const struct ath6kl_htc_ops ath6kl_htc_pipe_ops = {
 	.create = ath6kl_htc_pipe_create,
@@ -2483,6 +2658,9 @@ static const struct ath6kl_htc_ops ath6kl_htc_pipe_ops = {
 	.stop_netif_queue_full = ath6kl_htc_pipe_stop_netif_queue_full,
 	.indicate_wmm_schedule_change = ath6kl_htc_pipe_wmm_schedule_change,
 	.change_credit_bypass = ath6kl_htc_pipe_change_credit_bypass,
+#ifdef USB_AUTO_SUSPEND
+	.skip_usb_mark_busy = ath6kl_htc_pipe_skip_usb_mark_busy,
+#endif
 };
 
 void ath6kl_htc_pipe_attach(struct ath6kl *ar)

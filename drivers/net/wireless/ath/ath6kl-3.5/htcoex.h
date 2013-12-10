@@ -119,4 +119,6 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif);
 void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif);
 int ath6kl_htcoex_config(struct ath6kl_vif *vif,
 	u32 interval, u8 rate_rollback);
+void htcoex_ht40_rateset(struct ath6kl_vif *vif, struct htcoex *coex,
+	bool enabled);
 #endif

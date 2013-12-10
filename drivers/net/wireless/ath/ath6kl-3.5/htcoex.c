@@ -100,7 +100,8 @@ static void htcoex_get_coexinfo(struct htcoex_bss_info *coex_bss,
 		}
 
 		if (i == coex_info->num_chans) {
-			BUG_ON(coex_info->num_chans > 14);
+			/* chans only get size 14 */
+			BUG_ON(coex_info->num_chans >= 14);
 			coex_info->chans[coex_info->num_chans++] = chan_id;
 		}
 	}
@@ -117,9 +118,11 @@ static void htcoex_scan_start(unsigned long arg)
 
 	BUG_ON(!vif);
 
+	ar = vif->ar;
 	if ((vif->nw_type != INFRA_NETWORK) ||
 		!test_bit(CONNECTED, &vif->flags) ||
-		vif->scan_req)
+		vif->scan_req ||
+		test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag))
 		goto resche;
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
@@ -127,7 +130,6 @@ static void htcoex_scan_start(unsigned long arg)
 		   vif,
 		   coex->num_scan);
 
-	ar = vif->ar;
 	if (!vif->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
 		ret = ath6kl_wmi_bssfilter_cmd(
@@ -238,7 +240,7 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 
 }
 
-static void htcoex_ht40_rateset(struct ath6kl_vif *vif,
+void htcoex_ht40_rateset(struct ath6kl_vif *vif,
 				struct htcoex *coex,
 				bool enabled)
 {
@@ -344,7 +346,11 @@ struct htcoex *ath6kl_htcoex_init(struct ath6kl_vif *vif)
 	coex->scan_timer.function = htcoex_scan_start;
 	coex->scan_timer.data = (unsigned long) coex;
 
+#ifdef CFG80211_NETDEV_REPLACED_BY_WDEV
+	coex->request.wdev = &vif->wdev;
+#else
 	coex->request.dev = vif->ndev;
+#endif
 	coex->request.wiphy = vif->ar->wiphy;
 
 	coex->num_scan_channels = 0;
@@ -452,6 +458,11 @@ int ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	struct htcoex_coex_info coex_info;
 	int ret = HTCOEX_PASS_SCAN_DONE;
 
+	if (!coex) {
+		ath6kl_err("%s %lu\n",__func__, vif->ar->flag);
+		return ret;
+	}
+
 	/* Send Action frame even scan issue by user. */
 	if (!(coex->flags & ATH6KL_HTCOEX_FLAGS_START) ||
 		(vif->nw_type != INFRA_NETWORK) ||
@@ -503,11 +514,13 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 {
 	struct htcoex *coex = vif->htcoex_ctx;
 	struct cfg80211_bss *bss;
+	u8 *ies = NULL;
+	u16 ies_len = 0;
 
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
 
-	bss = cfg80211_get_bss(vif->wdev.wiphy,
+	bss = ath6kl_bss_get(vif->ar,
 				NULL,
 				vif->bssid,
 				vif->ssid,
@@ -519,12 +532,25 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 		return;
 	}
 
+#ifdef CFG80211_SAFE_BSS_INFO_ACCESS
+	rcu_read_lock();
+	if (bss->ies) {
+		ies = (u8 *)(bss->ies->data);
+		ies_len = bss->ies->len;
+	}
+#else
+	if (bss->information_elements) {
+		ies = bss->information_elements;
+		ies_len = bss->len_information_elements;
+	}
+#endif
+
 	/* Start if BSS is 11n and 2G channel. */
 	if ((coex->flags & ATH6KL_HTCOEX_FLAGS_ENABLED) &&
 		(bss->channel->band == IEEE80211_BAND_2GHZ) &&
 		(htcoex_get_elem(WLAN_EID_HT_CAPABILITY,
-				 bss->information_elements,
-				 bss->len_information_elements) != NULL)){
+				 ies,
+				 ies_len) != NULL)){
 		if (coex->flags & ATH6KL_HTCOEX_FLAGS_START)
 			del_timer(&coex->scan_timer);
 
@@ -544,12 +570,16 @@ void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
 	} else
 		coex->flags &= ~ATH6KL_HTCOEX_FLAGS_START;
 
+#ifdef CFG80211_SAFE_BSS_INFO_ACCESS
+	rcu_read_unlock();
+#endif
+
 	coex->num_scan = 0;
 	coex->tolerant40_cnt = 0;
 	coex->current_ratemask = ATH6KL_HTCOEX_RATEMASK_FULL;
 	htcoex_flush_bss_info(coex);
 
-	cfg80211_put_bss(bss);
+	ath6kl_bss_put(vif->ar, bss);
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
 		   "htcoex connect (vif %p) flags %x interval %d cycle %d\n",
@@ -567,6 +597,11 @@ void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif)
 
 	if (vif->nw_type != INFRA_NETWORK)
 		return;
+
+	if (!coex) {
+		ath6kl_err("%s %lu\n",__func__, vif->ar->flag);
+		return;
+	}
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
 		   "htcoex disconnect (vif %p) flags %x\n",

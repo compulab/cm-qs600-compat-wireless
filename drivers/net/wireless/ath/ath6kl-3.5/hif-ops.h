@@ -212,12 +212,27 @@ static inline u16 ath6kl_hif_pipe_get_max_queue_number(struct ath6kl *ar,
 	return ar->hif_ops->pipe_get_max_queue_number(ar, pipe);
 }
 
+static inline void ath6kl_hif_pipe_set_max_queue_number(struct ath6kl *ar,
+	bool limitEnable)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set max queue number\n");
+
+	ar->hif_ops->pipe_set_max_queue_number(ar, limitEnable);
+}
+
 static inline u16 ath6kl_hif_pipe_set_max_sche(struct ath6kl *ar,
 	u32 max_sche_tx, u32 max_sche_rx)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set max scheduled packages\n");
 
 	return ar->hif_ops->pipe_set_max_sche(ar, max_sche_tx, max_sche_rx);
+}
+
+static inline int ath6kl_hif_diag_warm_reset(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif diag warm reset\n");
+
+	return ar->hif_ops->diag_warm_reset(ar);
 }
 
 #ifdef CONFIG_HAS_EARLYSUSPEND
@@ -241,5 +256,64 @@ static inline int ath6kl_hif_bus_config(struct ath6kl *ar)
 
 	return ar->hif_ops->bus_config(ar);
 }
+
+#ifdef USB_AUTO_SUSPEND
+static inline int ath6kl_hif_auto_pm_disable(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_disable\n");
+
+	return ar->hif_ops->auto_pm_disable(ar);
+}
+
+static inline void ath6kl_hif_auto_pm_enable(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_enable\n");
+
+	ar->hif_ops->auto_pm_enable(ar);
+}
+
+static inline void ath6kl_hif_auto_pm_turnon(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_turnon\n");
+	ar->hif_ops->auto_pm_turnon(ar);
+}
+
+static inline void ath6kl_hif_auto_pm_turnoff(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_turnoff\n");
+	ar->hif_ops->auto_pm_turnoff(ar);
+}
+
+static inline int ath6kl_hif_auto_pm_get_usage_cnt(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif auto_pm_get_usage_cnt\n");
+
+	return ar->hif_ops->auto_pm_get_usage_cnt(ar);
+}
+
+static inline void ath6kl_hif_auto_pm_set_delay(struct ath6kl *ar, int delay)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif ath6kl_hif_auto_pm_set_delay\n");
+
+	ar->hif_ops->auto_pm_set_delay(ar, delay);
+}
+#endif
+
+static inline u16 ath6kl_hif_pipe_set_rxq_threshold(struct ath6kl *ar,
+		u32 rxq_threshold)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif pipe set RX queue threshold\n");
+
+	return ar->hif_ops->pipe_set_rxq_threshold(ar, rxq_threshold);
+}
+
+#ifdef ATH6KL_HSIC_RECOVER
+static inline int ath6kl_hif_sw_recover(struct ath6kl *ar)
+{
+	ath6kl_dbg(ATH6KL_DBG_HIF, "hif start sw recover\n");
+
+	return ar->hif_ops->sw_recover(ar);
+}
+#endif
 
 #endif

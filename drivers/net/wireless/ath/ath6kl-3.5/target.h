@@ -126,6 +126,10 @@
 #define GPIO_BASE_ADDRESS		0x00014000
 #define MBOX_BASE_ADDRESS		0x00018000
 #define ANALOG_INTF_BASE_ADDRESS	0x0001c000
+#define WLAN_BOOTSTRAP_ADDRESS          0x00014140
+
+#define BOOTSTRAP_IS_HSIC(v)            ((v) & (1 << 10))
+#define BOOTSTRAP_IS_USB(v)             ((v) & (1 << 11))
 
 /* real name of the register is unknown */
 #define ATH6KL_ANALOG_PLL_REGISTER	(ANALOG_INTF_BASE_ADDRESS + 0x284)
@@ -144,6 +148,17 @@
 #define ATH6KL_AR6003_HI_START_ADDR           0x00540600
 #define ATH6KL_AR6004_HI_START_ADDR           0x00400800
 #define ATH6KL_AR6006_HI_START_ADDR           0x00428800
+
+/*
+ * USB Cast Core address
+ */
+#define USB_DMA_RESET_CHANNEL_ADDR            0x000841d4
+
+#define USB_EP1_OUT_DMA_CTRL_ADDR             0x0008442c
+#define USB_EP2_OUT_DMA_CTRL_ADDR             0x0008444c
+
+#define USB_DMA_RESET_OUT_MASK                0xfffe0000
+#define USB_OUT_DMA_RESTART_MASK              0x00140000
 
 /*
  * These are items that the Host may need to access
@@ -341,7 +356,25 @@ struct host_interest {
 #define HI_OPTION_FW_CRASH_COLD_RESET          0x100000
 
 /*Enable watchdog*/
-#define HI_OPTION_FW_WATCHDOG_ENABLE          0x200000
+#define HI_OPTION_FW_WATCHDOG_ENABLE		0x200000
+
+/*Enable AMSDU WAR*/
+#define HI_OPTION_ENABLE_PANASONIC_WAR 0x1000000
+
+/* Enable one shot noa */
+#define HI_OPTION_ONE_SHOT_NOA_ENABLE		0x2000000
+
+/* Enable SB specific function */
+#define HI_OPTION_ENABLE_SB_SPECIFIC      0x4000000
+
+/* Enable single chain in wow */
+#define HI_OPTION_WOW_SINGLE_CHAIN		0x8000000
+
+/*Enable/Disable Wifi Heart Beat Feature*/
+#define HI_OPTION_ENABLE_WLAN_HB              0x10000000
+
+/* Enable Multichannel Concurrency (MCC) - last bit to sync with mainline */
+#define HI_OPTION_MCC_ENABLE                  0x80000000
 
 /*Enable/Disable Wifi Heart Beat Feature*/
 #define HI_OPTION_ENABLE_WLAN_HB              0x10000000
