@@ -282,7 +282,7 @@ struct ath6kl_hif_ops {
 	int (*pipe_set_max_sche)(struct ath6kl *ar, u32 max_sche_tx,
 		u32 max_sche_rx);
 	int (*diag_warm_reset)(struct ath6kl *ar);
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 	void (*early_suspend)(struct ath6kl *ar);
 	void (*late_resume)(struct ath6kl *ar);
 #endif
@@ -300,6 +300,9 @@ struct ath6kl_hif_ops {
 #ifdef ATH6KL_HSIC_RECOVER
 	int (*sw_recover)(struct ath6kl *ar);
 #endif
+	void (*bus_pm_migrate)(struct ath6kl *ar, int level);
+	void (*bus_pm_migrate_get_cnt)(struct ath6kl *ar, u32 migrate_cnt[]);
+	void (*bus_pm_clock)(struct ath6kl *ar, int level);
 };
 
 int ath6kl_hif_setup(struct ath6kl_device *dev);

@@ -34,9 +34,6 @@
 #include "rttm.h"
 
 unsigned int debug_quirks = ATH6KL_MODULE_DEF_DEBUG_QUIRKS;
-struct timer_list fw_ping_timer;
-int fw_ping_count;
-
 
 module_param(debug_quirks, uint, 0644);
 
@@ -868,7 +865,6 @@ void ath6kl_switch_parameter_based_on_connection(
 			bool call_on_disconnect)
 {
 	struct ath6kl *ar = vif->ar;
-	struct ath6kl_vif *wlan_vif = NULL;
 	u8 connected_count = 0;
 	struct ath6kl_vif *vif_temp;
 	bool mcc = false;
@@ -915,7 +911,7 @@ void ath6kl_switch_parameter_based_on_connection(
 		if ((connected_count == 0) ||
 		    (ar->eapol_shprotect_vif == (1 << vif->fw_vif_idx))) {
 			clear_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
-			del_timer(&ar->eapol_shprotect_timer);
+			del_timer_sync(&ar->eapol_shprotect_timer);
 		}
 	}
 
@@ -990,41 +986,14 @@ void ath6kl_switch_parameter_based_on_connection(
 		}
 	}
 
-	wlan_vif = ath6kl_get_vif_by_index(ar, 0);
-
-	if (wlan_vif != NULL) {
-		/* Update HIF queue policy */
-		if (connected_count > 1) {
-			ath6kl_hif_pipe_set_max_queue_number(ar, true);
-			if (test_bit(CONNECTED, &wlan_vif->flags)) {
-
-				if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
-					wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
-					htcoex_ht40_rateset(wlan_vif,
-						wlan_vif->htcoex_ctx, false);
-			}
-			list_for_each_entry(vif_temp, &ar->vif_list, list) {
-				if (test_bit(CONNECTED, &vif_temp->flags))
-					ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
-						vif_temp->fw_vif_idx,
-						ATH6KL_RTS_THRESHOLD);
-			}
-		} else {
-			ath6kl_hif_pipe_set_max_queue_number(ar, false);
-			if ((call_on_disconnect) &&
-				test_bit(CONNECTED, &wlan_vif->flags)) {
-				if (wlan_vif->phymode == ATH6KL_PHY_MODE_11NA_HT40 ||
-					wlan_vif->phymode == ATH6KL_PHY_MODE_11NG_HT40)
-					htcoex_ht40_rateset(wlan_vif,
-						wlan_vif->htcoex_ctx, true);
-			}
-			list_for_each_entry(vif_temp, &ar->vif_list, list) {
-				if (test_bit(CONNECTED, &vif_temp->flags))
-					ath6kl_wmi_set_rts_cmd(vif_temp->ar->wmi,
-						vif_temp->fw_vif_idx, 0);
-			}
-		}
-	}
+	/* NOTE_ath6kl_3.5.4 : Credit-based solution not really need this. */
+#ifndef ATH6KL_3_5_4
+	/* Update HIF queue policy */
+	if (connected_count > 1)
+		ath6kl_hif_pipe_set_max_queue_number(ar, true);
+	else
+		ath6kl_hif_pipe_set_max_queue_number(ar, false);
+#endif
 
 	/* Reconfigurate the PS mode case by case. */
 	ath6kl_p2p_reconfig_ps(ar, mcc, call_on_disconnect, connected_count);
@@ -1134,6 +1103,11 @@ static inline void _change_p2p_scan_plan(struct ath6kl_vif *vif)
 void ath6kl_change_scan_plan(struct ath6kl_vif *vif, bool reset)
 {
 	struct ath6kl *ar = vif->ar;
+
+	/* NOTE_ath6kl_3.5.4 : No scan-plan support. */
+#ifdef ATH6KL_3_5_4
+	return;
+#endif
 
 	/* Default */
 	vif->scan_plan.type = ATH6KL_SCAN_PLAN_REVERSE_ORDER;
@@ -1310,8 +1284,11 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 
 	ath6kl_judge_roam_parameter(vif, false);
 
+	/* NOTE_ath6kl_3.5.4 : No Green-TX support. */
+#ifndef ATH6KL_3_5_4
 	if (vif->wdev.iftype == NL80211_IFTYPE_STATION)
 		ath6kl_wmi_set_green_tx_params(ar->wmi, &ar->green_tx_params);
+#endif
 
 	if (ath6kl_wmi_set_rate_ctrl_cmd(ar->wmi,
 				vif->fw_vif_idx, RATECTRL_MODE_PERONLY))
@@ -1591,7 +1568,7 @@ static bool ath6kl_handshake_protect(struct ath6kl_vif *vif, u8 *bssid)
 		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 		if (vif->pend_skb)
 			ath6kl_flush_pend_skb(vif);
-		del_timer(&vif->shprotect_timer);
+		del_timer_sync(&vif->shprotect_timer);
 		spin_unlock_bh(&vif->if_lock);
 		reset_handshake_pro = false;
 	}
@@ -1685,6 +1662,9 @@ void ath6kl_cfg80211_connect_event(struct ath6kl_vif *vif, u16 channel,
 	 */
 	vif->assoc_bss_beacon_int = beacon_intvl;
 	clear_bit(DTIM_PERIOD_AVAIL, &vif->flags);
+
+	/* Reset BMISS time */
+	ath6kl_bmiss_reset(vif);
 
 	if (nw_type & ADHOC_NETWORK) {
 		if (vif->wdev.iftype != NL80211_IFTYPE_ADHOC) {
@@ -1846,6 +1826,7 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 				      u8 *assoc_info, u16 proto_reason)
 {
 	struct ath6kl *ar = vif->ar;
+	struct cfg80211_scan_request *scan_request;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 		ATH6KL_DBG_EXT_INFO1 |
@@ -1859,10 +1840,17 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 		return;
 	}
 
-	if (vif->scan_req) {
-		del_timer(&vif->vifscan_timer);
-		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
-		cfg80211_scan_done(vif->scan_req, true);
+	spin_lock_bh(&vif->if_lock);
+	scan_request = vif->scan_req;
+	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
+
+	if (scan_request) {
+		ath6kl_cfg80211_report_scan_done(vif,
+						scan_request,
+						true,
+						true,
+						true);
 
 #ifdef USB_AUTO_SUSPEND
 		if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
@@ -1875,9 +1863,6 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 		} else
 			ath6kl_hif_auto_pm_enable(ar);
 #endif
-
-		vif->scan_req = NULL;
-		clear_bit(SCANNING, &vif->flags);
 	}
 
 	if (vif->nw_type & ADHOC_NETWORK) {
@@ -1981,7 +1966,10 @@ static int ath6kl_cfg80211_change_bss(struct wiphy *wiphy,
 void ath6kl_scan_timer_handler(unsigned long ptr)
 {
 	struct ath6kl_vif *vif = (struct ath6kl_vif *)ptr;
+#if defined(USB_AUTO_SUSPEND) || defined(ATH6KL_HSIC_RECOVER)
 	struct ath6kl *ar = vif->ar;
+#endif
+	struct cfg80211_scan_request *scan_request;
 
 	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
 		   ATH6KL_DBG_EXT_SCAN |
@@ -1991,9 +1979,18 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 		   vif->fw_vif_idx,
 		   test_bit(SCANNING, &vif->flags));
 
-	if (vif->scan_req) {
-		ath6kl_wmi_abort_scan_cmd(ar->wmi, vif->fw_vif_idx);
-		cfg80211_scan_done(vif->scan_req, true);
+	spin_lock_bh(&vif->if_lock);
+	scan_request = vif->scan_req;
+	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
+
+	/* This timer currently only for user & htcoex scan. */
+	if (scan_request) {
+		ath6kl_cfg80211_report_scan_done(vif,
+						scan_request,
+						true,
+						false,
+						true);
 
 #ifdef USB_AUTO_SUSPEND
 		/*
@@ -2011,15 +2008,17 @@ void ath6kl_scan_timer_handler(unsigned long ptr)
 		} else
 			ath6kl_hif_auto_pm_enable(ar);
 #endif
+	}
 
-		vif->scan_req = NULL;
-		clear_bit(SCANNING, &vif->flags);
-	}
-	if (!test_bit(RECOVER_IN_PROCESS, &ar->flag)) {
-		fw_ping_count = 0;
-		mod_timer(&fw_ping_timer,
-				jiffies + ATH6KL_FW_PING_PERIOD);
-	}
+#ifdef ATH6KL_HSIC_RECOVER
+	/*
+	 * This could happend but not means fw got problem.
+	 * Only trigger this hint for HSIC interface currently.
+	 */
+	ath6kl_fw_ping_hint(vif->ar, ATH6KL_FW_PING_HINT_SCAN_STUCK);
+#endif
+
+	return;
 }
 
 /* assume we support not more than two differnet channels */
@@ -2270,6 +2269,17 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -EIO;
 	}
 
+	/*
+	 * If the user already request to suspend in connection state then
+	 * no meaning to do scan.
+	 */
+	if (test_bit(CONNECTED, &vif->flags) &&
+	    test_bit(USER_SUSPEND, &ar->flag)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+			"user suspended, scan is disabled temporarily\n");
+		return -EIO;
+	}
+
 	if (!ath6kl_cfg80211_ready(vif))
 		return -EIO;
 
@@ -2278,10 +2288,14 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return -ERESTARTSYS;
 	}
 
-	if (test_bit(CONNECT_PEND, &vif->flags) &&
-		!test_bit(CONNECTED, &vif->flags)) {
-		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_INFO1,
-			"Connection on-going, reject scan, vif %d\n",
+	if ((test_bit(CONNECT_PEND, &vif->flags) &&
+	    !test_bit(CONNECTED, &vif->flags)) ||
+	    test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN |
+			ATH6KL_DBG_EXT_INFO1,
+			"Connection on-going, reject scan (%d/%d), vif %d\n",
+			test_bit(CONNECT_PEND, &vif->flags),
+			test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag),
 			vif->fw_vif_idx);
 		up(&ar->sem);
 		return -EBUSY;
@@ -2291,10 +2305,11 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 			ATH6KL_DBG_EXT_SCAN |
 			ATH6KL_DBG_EXT_INFO1 |
 			ATH6KL_DBG_EXT_DEF,
-		"%s: vif %d n_chan %d\n",
+		"%s: vif %d n_chan %d 0x%lx\n",
 		__func__,
 		vif->fw_vif_idx,
-		(request ? request->n_channels : -1));
+		(request ? request->n_channels : -1),
+		vif->flags);
 
 	/*
 	 * Last Cancel-RoC not yet finished. To update vif->last_cancel_roc_id
@@ -2376,7 +2391,7 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	}
 
 	if ((request->n_ssids && request->ssids[0].ssid_len) &&
-	    (!sche_scan_trig)) {
+		(!sche_scan_trig)) {
 		u8 i;
 
 		if (request->n_ssids > (MAX_PROBED_SSID_INDEX - 1))
@@ -2437,19 +2452,25 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 	if (test_bit(CONNECTED, &vif->flags))
 		force_fg_scan = 1;
 
-	if (test_and_set_bit(SCANNING, &vif->flags)) {
+	if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags)) {
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
+			"Connect_handshake_protect, reject scan\n");
 		kfree(channels);
 		up(&ar->sem);
 		return -EBUSY;
 	}
 
-	if (test_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags) ||
-	    test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag)) {
-		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
-			"EAPOL %s_handshake_protect reject scan\n",
-			(test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag) ?
-			 "rekey" : "connect"));
-		clear_bit(SCANNING, &vif->flags);
+	if (test_and_set_bit(SCANNING, &vif->flags)) {
+		/*
+		 * A corner case that the SCANNING not yet clear but
+		 * cfg80211_scan_done() already be scheduled in
+		 * ath6kl_cfg80211_report_scan_done().
+		 */
+		ath6kl_dbg(ATH6KL_DBG_EXT_SCAN |
+			   ATH6KL_DBG_EXT_DEF,
+			   "Last vif%d scan not yet finised? 0x%lx\n",
+			   vif->fw_vif_idx,
+			   vif->flags);
 		kfree(channels);
 		up(&ar->sem);
 		return -EBUSY;
@@ -2475,15 +2496,22 @@ static int _ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 		return ret;
 	}
 
+	WARN_ON_ONCE(vif->scan_req);
+
 	ret = ath6kl_wmi_startscan_cmd(ar->wmi, vif->fw_vif_idx, WMI_LONG_SCAN,
 					force_fg_scan, false, 0,
 					ATH6KL_FG_SCAN_INTERVAL,
 					n_channels, channels);
 	if (ret) {
-		ath6kl_err("wmi_startscan_cmd failed\n");
+		ath6kl_err("%s: vif%d wmi_startscan_cmd failed\n",
+				__func__,
+				vif->fw_vif_idx);
 		clear_bit(SCANNING, &vif->flags);
 	} else {
+		spin_lock_bh(&vif->if_lock);
 		vif->scan_req = request;
+		spin_unlock_bh(&vif->if_lock);
+
 		mod_timer(&vif->vifscan_timer,
 			jiffies + ath6kl_scan_timeout_cal(ar));
 
@@ -2523,36 +2551,77 @@ static int ath6kl_cfg80211_scan(struct wiphy *wiphy, struct net_device *ndev,
 }
 #endif
 
+void ath6kl_cfg80211_report_scan_done(struct ath6kl_vif *vif,
+				struct cfg80211_scan_request *scan_request,
+				bool aborted,
+				bool del_timer,
+				bool abort_scan)
+{
+	bool driver_scan = false;
+
+	BUG_ON(!scan_request);
+	WARN_ON(!test_bit(SCANNING, &vif->flags));
+
+	/* If this's a htcoex scan then don't need to report to cfg80211. */
+	if (ath6kl_htcoex_is_htcoex_scan(vif, scan_request))
+		driver_scan = true;
+
+	/*
+	 * Should call this API to judge if need to report to cfg80211 or not.
+	 * And, if need, also disable scan timer or/and stop target's scan.
+	 */
+	if (del_timer)
+		del_timer_sync(&vif->vifscan_timer);
+
+	if (abort_scan)
+		ath6kl_wmi_abort_scan_cmd(vif->ar->wmi,
+					  vif->fw_vif_idx);
+
+	if (!driver_scan)
+		cfg80211_scan_done(scan_request, aborted);
+
+	/*
+	 * For a succeaaful scan, the SCANNING bit should ONLY be cleared here.
+	 */
+	clear_bit(SCANNING, &vif->flags);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_SCAN |
+		   ATH6KL_DBG_EXT_DEF,
+		   "scan vif%d report scan done%s%s%s%s 0x%lx\n",
+		   vif->fw_vif_idx,
+		   (aborted ? ", aborted" : ", complete"),
+		   (del_timer ? ", del timer" : ""),
+		   (abort_scan ? ", abort scan" : ""),
+		   (driver_scan ? ", driver scan" : ""),
+		   vif->flags);
+
+	return;
+}
+
 void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 {
 	struct ath6kl *ar = vif->ar;
-	struct cfg80211_scan_request *scan_request;
+	struct cfg80211_scan_request *scan_request = NULL;
 	int i;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG | ATH6KL_DBG_EXT_SCAN | ATH6KL_DBG_EXT_DEF,
-		"%s: status%s\n", __func__,
-		aborted ? " aborted" : " complete");
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+		   ATH6KL_DBG_EXT_SCAN |
+		   ATH6KL_DBG_EXT_DEF,
+		   "%s: vif%d, status%s\n",
+		   __func__,
+		   vif->fw_vif_idx,
+		   aborted ? " aborted" : " complete");
 
-#ifdef USB_AUTO_SUSPEND
 	/*
-	 * Here maybe flase alarm. Ex, th6kl_cfg80211_stop() try
-	 * to finish all actions after stop the device and not really
-	 * wait event back, or this interface will be deleted later
-	 * (like p2p-p2p0-x) for some reaseon.
+	 * All kind of scan (user or driver scan) should arise SCANNING bit
+	 * then clear it in ath6kl_cfg80211_report_scan_done().
 	 */
-	if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
-		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
-			   ATH6KL_DBG_EXT_SCAN |
-			   ATH6KL_DBG_EXT_AUTOPM,
-			   "%s: warnning refcnt=0, my=%d/%d\n",
-			   __func__,
-			   ar->auto_pm_cnt,
-			   ar->auto_pm_fail_cnt);
-	} else
-		ath6kl_hif_auto_pm_enable(ar);
-#endif
+	if (!test_bit(SCANNING, &vif->flags)) {
+		ath6kl_info("vif%d unexpect scan-complete event?\n",
+				   vif->fw_vif_idx);
 
-	del_timer(&vif->vifscan_timer);
+		goto done;
+	}
 
 	if (test_bit(SCANNING_WAIT, &vif->flags)) {
 		clear_bit(SCANNING_WAIT, &vif->flags);
@@ -2560,15 +2629,18 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 	}
 
 	spin_lock_bh(&vif->if_lock);
+	if (!vif->scan_req) {
+		spin_unlock_bh(&vif->if_lock);
+
+		goto done;
+	}
+
 	scan_request = vif->scan_req;
 	vif->scan_req = NULL;
 	spin_unlock_bh(&vif->if_lock);
 
-	if (!scan_request)
-		return;
-
 	if (aborted)
-		goto out;
+		goto report_scan_done;
 
 	if (scan_request->n_ssids && scan_request->ssids[0].ssid_len) {
 		for (i = 0; i < scan_request->n_ssids; i++) {
@@ -2582,9 +2654,35 @@ void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 						  DISABLE_SSID_FLAG,
 						  0, NULL);
 
-out:
-	cfg80211_scan_done(scan_request, aborted);
-	clear_bit(SCANNING, &vif->flags);
+report_scan_done:
+	ath6kl_cfg80211_report_scan_done(vif,
+					scan_request,
+					aborted,
+					true,
+					false);
+
+done:
+#ifdef USB_AUTO_SUSPEND
+	/*
+	 * Here maybe flase alarm. Ex, th6kl_cfg80211_stop() try
+	 * to finish all actions after stop the device and not really
+	 * wait event back, or this interface will be deleted later
+	 * (like p2p-p2p0-x) for some reaseon.
+	 */
+	if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
+		ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+			   ATH6KL_DBG_EXT_SCAN |
+			   ATH6KL_DBG_EXT_AUTOPM |
+			   ATH6KL_DBG_EXT_DEF,
+			   "%s: warnning refcnt=0, my=%d/%d\n",
+			   __func__,
+			   ar->auto_pm_cnt,
+			   ar->auto_pm_fail_cnt);
+	} else
+		ath6kl_hif_auto_pm_enable(ar);
+#endif
+
+	return;
 }
 
 #ifdef PMF_SUPPORT
@@ -2768,7 +2866,7 @@ static int ath6kl_cfg80211_add_key(struct wiphy *wiphy,
 
 		spin_lock_bh(&vif->if_lock);
 		clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
-		del_timer(&vif->shprotect_timer);
+		del_timer_sync(&vif->shprotect_timer);
 		spin_unlock_bh(&vif->if_lock);
 	}
 
@@ -3820,6 +3918,7 @@ static int ath6kl_get_station(struct wiphy *wiphy, struct net_device *dev,
 	set_bit(STATS_UPDATE_PEND, &vif->flags);
 
 	if (ath6kl_wmi_get_stats_cmd(ar->wmi, vif->fw_vif_idx)) {
+		clear_bit(STATS_UPDATE_PEND, &vif->flags);
 		up(&ar->sem);
 		return -EIO;
 	}
@@ -3902,6 +4001,7 @@ static int ath6kl_dump_station(struct wiphy *wiphy, struct net_device *dev,
 	set_bit(STATS_UPDATE_PEND, &vif->flags);
 
 	if (ath6kl_wmi_get_stats_cmd(ar->wmi, vif->fw_vif_idx)) {
+		clear_bit(STATS_UPDATE_PEND, &vif->flags);
 		up(&ar->sem);
 		return -EIO;
 	}
@@ -4076,11 +4176,12 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	u32 filter = 0;
 	u8 mask[WOW_MASK_SIZE];
 #endif
+#ifndef ATH6KL_3_5_4
 	u16 i;
 	struct in_device *in_dev;
 	struct in_ifaddr *ifa;
 	unsigned char src_ip[4];
-
+#endif
 	/*if already in wow state just return without error*/
 	if (ar->state == ATH6KL_STATE_WOW)
 		return 0;
@@ -4191,6 +4292,10 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 	}
 #endif /*!CONFIG_ANDROID*/
 
+	/*
+	 * NOTE_ath6kl_3.5.4 : not support ARP offload.
+	 */
+#ifndef ATH6KL_3_5_4
 	/* Setup own IP addr for ARP agent. */
 	for (i = 0; i < ar->vif_max; i++) {
 		struct ath6kl_vif *mvif = ath6kl_get_vif_by_index(ar, i);
@@ -4230,7 +4335,7 @@ static int ath6kl_wow_suspend(struct ath6kl *ar, struct cfg80211_wowlan *wow)
 			}
 		}
 	}
-
+#endif
 	clear_bit(HOST_SLEEP_MODE_CMD_PROCESSED, &vif->flags);
 
 	ret = ath6kl_wmi_set_host_sleep_mode_cmd(ar->wmi, vif->fw_vif_idx,
@@ -4438,22 +4543,6 @@ static int ath6kl_cfg80211_deepsleep_suspend(struct ath6kl *ar)
 	return ret;
 }
 
-void ath6kl_fw_ping_timeout_handler(unsigned long ptr)
-{
-	struct ath6kl *ar = (struct ath6kl *)ptr;
-
-	if (test_bit(RECOVER_IN_PROCESS, &ar->flag))
-		return;
-
-	ath6kl_wmi_get_stats_cmd(ar->wmi, 0);
-	if (fw_ping_count <= ATH6KL_FW_PING_MAX) {
-		mod_timer(&fw_ping_timer,
-			jiffies + ATH6KL_FW_PING_PERIOD);
-		fw_ping_count++;
-	} else
-		fw_ping_count = 0;
-}
-
 static char *_get_suspend_mode_string(enum ath6kl_cfg_suspend_mode mode)
 {
 	if (mode == ATH6KL_CFG_SUSPEND_DEEPSLEEP)
@@ -4528,11 +4617,8 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 				}
 #endif
 
-			if (!test_bit(RECOVER_IN_PROCESS, &ar->flag)) {
-				fw_ping_count = 0;
-				mod_timer(&fw_ping_timer,
-					jiffies + ATH6KL_FW_PING_PERIOD);
-			}
+			ath6kl_fw_ping_hint(ar, ATH6KL_FW_PING_HINT_WOW_FAIL);
+
 			return ret;
 		}
 		spin_lock_bh(&ar->state_lock);
@@ -4731,24 +4817,32 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 static int __ath6kl_cfg80211_suspend(struct wiphy *wiphy,
 				 struct cfg80211_wowlan *wow)
 {
-	struct ath6kl *ar = wiphy_priv(wiphy);
-
-#if defined(USB_AUTO_SUSPEND)
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
-		return 0;
+	/*
+	 * If auto suspend support and the bus-driver will call HIF's
+	 * suspend/resume call-back function. To avoid race-condition
+	 * between cfg80211 & bus-driver and ignore cfg80211's suspend
+	 * call.
+	 */
+#ifdef USB_AUTO_SUSPEND
+	return 0;
+#else
+	return ath6kl_hif_suspend(wiphy_priv(wiphy), wow);
 #endif
-
-	return ath6kl_hif_suspend(ar, wow);
 }
 
 static int __ath6kl_cfg80211_resume(struct wiphy *wiphy)
 {
-	struct ath6kl *ar = wiphy_priv(wiphy);
-
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
-		return 0;
-
-	return ath6kl_hif_resume(ar);
+	/*
+	 * If auto suspend support and the bus-driver will call HIF's
+	 * suspend/resume call-back function. To avoid race-condition
+	 * between cfg80211 & bus-driver and ignore cfg80211's resume
+	 * call.
+	 */
+#ifdef USB_AUTO_SUSPEND
+	return 0;
+#else
+	return ath6kl_hif_resume(wiphy_priv(wiphy));
+#endif
 }
 
 /*
@@ -5134,6 +5228,22 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 		return -EOPNOTSUPP;
 	}
 
+	/* NOTE_ath6kl_3.5.4 : CR588755 - Disable 2.4GHT40 in SoftAP mode */
+	if (vif->fw_vif_idx == ATH6KL_24GHZ_HT40_DEF_STA_IDX) {
+		res = ath6kl_wmi_set_ht_cap_cmd(ar->wmi,
+			vif->fw_vif_idx,
+			A_BAND_24GHZ,
+			ATH6KL_24GHZ_HT40_WIDTH_DISABLE,
+			ATH6KL_24GHZ_HT40_SGI_DISABLE,
+			ATH6KL_24GHZ_HT40_DEF_INTOLR40);
+
+		if (res) {
+			ath6kl_err("unable to set HT CAP\n");
+			up(&ar->sem);
+			return res;
+		}
+	}
+
 	if (info->beacon_ies) {
 		u8 *beacon_ies = (u8 *)info->beacon_ies;
 		size_t beacon_ies_len = info->beacon_ies_len;
@@ -5162,7 +5272,8 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	ath6kl_wmi_set_dtim_cmd(ar->wmi, vif->fw_vif_idx, 1);
 
 	if (info->proberesp_ies) {
-		res = ath6kl_set_ap_probe_resp_ies(vif, info->proberesp_ies,
+		res = ath6kl_set_ap_probe_resp_ies(vif,
+						   info->proberesp_ies,
 						   info->proberesp_ies_len);
 		if (res) {
 			up(&ar->sem);
@@ -5661,7 +5772,7 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 {
 #define MAX_ROC_PERIOD \
 	(ATH6KL_ROC_MAX_PERIOD * HZ + HZ / ATH6KL_ROC_MAX_PERIOD)
-#define MAX_SCAN_PERIOD (ATH6KL_SCAN_FG_MAX_PERIOD * HZ)
+#define MAX_SCAN_PERIOD (ATH6KL_SCAN_TIMEOUT_LONG + (HZ / 2))
 	struct ath6kl *ar = ath6kl_priv(dev);
 	struct ath6kl_vif *vif = netdev_priv(dev);
 	u32 id;
@@ -5685,13 +5796,13 @@ static int _ath6kl_remain_on_channel(struct wiphy *wiphy,
 #endif
 
 	/* If already ongoing scan then wait it finish. */
-	if (vif->scan_req) {
+	if (test_bit(SCANNING, &vif->flags)) {
 		ath6kl_dbg(ATH6KL_DBG_EXT_ROC,
 			"RoC : Schedule a RoC but on-going Scan %x\n",
 				vif->last_roc_id);
 
 		wait_event_interruptible_timeout(ar->event_wq,
-						 !vif->scan_req,
+					!test_bit(SCANNING, &vif->flags),
 						 MAX_SCAN_PERIOD);
 
 		if (signal_pending(current)) {
@@ -6322,16 +6433,6 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 	if (!ar->get_wow_pattern && WARN_ON(!wow))
 		goto FAIL;
 
-	/* Reset wakeup delay time to 2 secs for sdio, keep 5 secs for
-	 * usb now
-	 */
-	if (ar->hif_type == ATH6KL_HIF_TYPE_SDIO)
-		host_req_delay = 2000;
-
-	/* for hsic mode, reduce the wakeup time to 2 secs */
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
-		host_req_delay = 2000;
-
 	/* Clear existing WOW patterns */
 	if (!ar->get_wow_pattern) {
 		for (i = 0; i < WOW_MAX_FILTERS_PER_LIST; i++)
@@ -6421,10 +6522,15 @@ int ath6kl_set_wow_mode(struct wiphy *wiphy, struct cfg80211_wowlan *wow)
 			filter |= WOW_FILTER_OPTION_8021X_4WAYHS;
 		}
 
+		/*
+		 * NOTE_ath6kl_3.5.4 : not support ARP offload.
+		 */
+#ifndef ATH6KL_3_5_4
 		if (vif->arp_offload_ip_set || wow->any) {
 			ath6kl_dbg(ATH6KL_DBG_WOWLAN, "filter: WOW_FILTER_OPTION_OFFLOAD_ARP\n");
 			filter |= WOW_FILTER_OPTION_OFFLOAD_ARP;
 		}
+#endif
 	}
 
 	/*Do GTK offload in WPA/WPA2 auth mode connection.*/
@@ -6623,7 +6729,7 @@ void ath6kl_cfg80211_stop(struct ath6kl_vif *vif)
 	clear_bit(CONNECT_PEND, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 	clear_bit(PS_STICK, &vif->flags);
-	del_timer(&vif->shprotect_timer);
+	del_timer_sync(&vif->shprotect_timer);
 
 	/* disable scanning */
 	if (ath6kl_wmi_scanparams_cmd(vif->ar->wmi, vif->fw_vif_idx,
@@ -6891,10 +6997,6 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 			ath6kl_eapol_shprotect_timer_handler,
 			(unsigned long) ar);
 
-	setup_timer(&fw_ping_timer,
-			ath6kl_fw_ping_timeout_handler,
-			(unsigned long) ar);
-
 	clear_bit(WMI_ENABLED, &ar->flag);
 	clear_bit(SKIP_SCAN, &ar->flag);
 	clear_bit(DESTROY_IN_PROGRESS, &ar->flag);
@@ -6918,11 +7020,6 @@ struct ath6kl *ath6kl_core_alloc(struct device *dev)
 	    (ar->p2p_dedicate))
 		ar->sche_scan = ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_ENABLE_SCHE_SCAN);
-
-#ifdef CONFIG_ANDROID
-	if (machine_is_apq8064_dma() || machine_is_apq8064_bueller())
-		ath6kl_roam_mode = ATH6KL_MODULEROAM_DISABLE;
-#endif
 
 	ar->roam_mode = ath6kl_roam_mode;
 
@@ -7235,7 +7332,15 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 		return -ENOMEM;
 	}
 
+	/* NOTE_ath6kl_3.5.4 : CR589201 - For some reason, disable Pure-AP's ADMC. */
+#ifdef ATH6KL_3_5_4
+	if (vif->fw_vif_idx == 0) 
+		vif->ap_admc_ctx = ath6kl_ap_admc_init(vif, AP_ADMC_MODE_DISABLE);
+	else
+		vif->ap_admc_ctx = ath6kl_ap_admc_init(vif, AP_ADMC_MODE_ACCEPT_ALWAYS);
+#else
 	vif->ap_admc_ctx = ath6kl_ap_admc_init(vif, AP_ADMC_MODE_ACCEPT_ALWAYS);
+#endif
 	if (!vif->ap_admc_ctx) {
 		ath6kl_err("failed to initialize ap_admc\n");
 		return -ENOMEM;
@@ -7255,15 +7360,20 @@ static int ath6kl_init_if_data(struct ath6kl_vif *vif)
 			(unsigned long) vif);
 	spin_lock_init(&vif->pend_skb_lock);
 
+	spin_lock_bh(&vif->if_lock);
 	vif->scan_req = NULL;
+	spin_unlock_bh(&vif->if_lock);
+
 	vif->pend_skb = NULL;
 
 	vif->scanband_chan = 0;
-	if (ar->p2p_wise_scan &&
-	    (vif->fw_vif_idx != 0) &&
-	    (vif->fw_vif_idx != (ar->vif_max - 1))) {
+	if ((ar->p2p_wise_scan) &&
+	    (vif->fw_vif_idx != 0)) {
 		/* Only apply to P2P interfaces. */
-		vif->scanband_type = SCANBAND_TYPE_2_P2PCHAN;
+		if (vif->fw_vif_idx == (ar->vif_max - 1))
+			vif->scanband_type = SCANBAND_TYPE_P2PCHAN;
+		else
+			vif->scanband_type = SCANBAND_TYPE_2_P2PCHAN;
 	} else
 		vif->scanband_type = SCANBAND_TYPE_ALL;
 
@@ -7325,7 +7435,7 @@ void ath6kl_deinit_if_data(struct ath6kl_vif *vif)
 	if (vif->nw_type == ADHOC_NETWORK)
 		ar->ibss_if_active = false;
 
-	del_timer(&vif->vifscan_timer);
+	del_timer_sync(&vif->vifscan_timer);
 
 	unregister_netdevice(vif->ndev);
 
@@ -7705,18 +7815,3 @@ int ath6kl_enable_wow_hb(struct ath6kl *ar)
 	return ret;
 }
 #endif
-
-bool gApMode;
-void ath6kl_check_apmode(struct ath6kl *ar)
-{
-	struct ath6kl_vif *vif;
-
-	gApMode = false;
-
-	if (!ar)
-		return;
-
-	vif = ath6kl_get_vif_by_index(ar, 0);
-	if (vif && (vif->nw_type == AP_NETWORK))
-		gApMode = true;
-}
