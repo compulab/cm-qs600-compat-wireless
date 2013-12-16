@@ -47,6 +47,10 @@ ifeq ($(BOARD_HAS_ATH_WLAN_AR6004), true)
 
 export BUILD_ATH6KL_VER_35=1
 
+ifeq ($(BOARD_HAS_ATH6KL_3_5_4), true)
+export HAVE_ATH6KL_3_5_4=1
+endif
+
 ifeq ($(call is-board-platform,msm8974),true)
 export HAVE_BUS_VOTE=1
 endif
