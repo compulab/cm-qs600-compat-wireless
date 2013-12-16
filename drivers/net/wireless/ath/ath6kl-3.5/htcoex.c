@@ -16,6 +16,7 @@
 
 #include "core.h"
 #include "debug.h"
+#include "hif-ops.h"
 
 static u8 *htcoex_get_elem(int elem_id, u8 *start, u16 len)
 {
@@ -112,49 +113,72 @@ static void htcoex_get_coexinfo(struct htcoex_bss_info *coex_bss,
 static void htcoex_scan_start(unsigned long arg)
 {
 	struct htcoex *coex = (struct htcoex *) arg;
-	struct ath6kl_vif *vif = coex->vif;
+	struct ath6kl_vif *vif_temp, *vif = coex->vif;
 	struct ath6kl *ar;
 	int ret;
 
 	BUG_ON(!vif);
 
 	ar = vif->ar;
-	if ((vif->nw_type != INFRA_NETWORK) ||
-		!test_bit(CONNECTED, &vif->flags) ||
-		vif->scan_req ||
-		test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag))
-		goto resche;
+	list_for_each_entry(vif_temp, &ar->vif_list, list) {
+		/* Any other interface's offchannel is on-going, ignore it. */
+		if (test_bit(ROC_PEND, &vif_temp->flags) ||
+		    test_bit(USER_SUSPEND, &ar->flag) ||
+		    test_bit(SCANNING, &vif_temp->flags) ||
+		    test_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag))
+			goto resche;
 
+		/* Disable it in concurrent mode. */
+		if (vif_temp != vif) {
+			if (test_bit(CONNECTED, &vif_temp->flags))
+				goto resche;
+		} else if ((vif_temp->nw_type != INFRA_NETWORK) ||
+			 !test_bit(CONNECTED, &vif_temp->flags))
+			goto resche;
+	}
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
-		   "htcoex scan (vif %p) num_scan %d\n",
+		   "htcoex scan (vif %p) num_scan %d chans %d\n",
 		   vif,
-		   coex->num_scan);
+		   coex->num_scan,
+		   coex->num_scan_channels);
+
+	if (test_and_set_bit(SCANNING, &vif->flags))
+		goto resche;
 
 	if (!vif->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
-		ret = ath6kl_wmi_bssfilter_cmd(
-						ar->wmi,
+		ret = ath6kl_wmi_bssfilter_cmd(ar->wmi,
 						vif->fw_vif_idx,
-						ALL_BUT_BSS_FILTER,
+						ALL_BSS_FILTER,
 						0);
 		if (ret) {
+			clear_bit(SCANNING, &vif->flags);
 			ath6kl_err("couldn't set bss filtering\n");
 			goto resche;
 		}
 	}
 
-	/* bypass this time if ROC is ongoing. */
-	if (test_bit(ROC_PEND, &vif->flags))
-		goto resche;
-
 	ret = ath6kl_wmi_startscan_cmd(ar->wmi, vif->fw_vif_idx, WMI_LONG_SCAN,
 				       0, false, 0, 0,
 				       coex->num_scan_channels,
 				       coex->scan_channels);
-	if (ret)
-		ath6kl_err("wmi_startscan_cmd failed\n");
-	else {
+	if (ret) {
+		clear_bit(SCANNING, &vif->flags);
+		ath6kl_err("%s: vif%d wmi_startscan_cmd failed\n",
+				__func__,
+				vif->fw_vif_idx);
+	} else {
+		spin_lock_bh(&vif->if_lock);
 		vif->scan_req = &coex->request;
+		spin_unlock_bh(&vif->if_lock);
+
+		mod_timer(&vif->vifscan_timer,
+			jiffies + ATH6KL_SCAN_TIMEOUT_HTCOEX);
+
+#ifdef USB_AUTO_SUSPEND
+		/* Disable autopm until scan finished. */
+		ath6kl_hif_auto_pm_disable(ar);
+#endif
 		coex->num_scan++;
 	}
 
@@ -240,7 +264,7 @@ static void htcoex_send_action(struct ath6kl_vif *vif,
 
 }
 
-void htcoex_ht40_rateset(struct ath6kl_vif *vif,
+static void htcoex_ht40_rateset(struct ath6kl_vif *vif,
 				struct htcoex *coex,
 				bool enabled)
 {
@@ -407,10 +431,11 @@ void ath6kl_htcoex_bss_info(struct ath6kl_vif *vif,
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
 		   "htcoex bssinfo (vif %p) BSSID "
-		   "%02x:%02x:%02x:%02x:%02x:%02x\n",
+		   "%02x:%02x:%02x:%02x:%02x:%02x %dHz\n",
 		   vif,
 		   mgmt->bssid[0], mgmt->bssid[1], mgmt->bssid[2],
-		   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5]);
+		   mgmt->bssid[3], mgmt->bssid[4], mgmt->bssid[5],
+		   (channel ? channel->center_freq : 0));
 
 	if (!list_empty(&coex->bss_info_list)) {
 		list_for_each_entry_safe(coex_bss, tmp,
@@ -451,23 +476,49 @@ void ath6kl_htcoex_bss_info(struct ath6kl_vif *vif,
 	return;
 }
 
-int ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
+bool ath6kl_htcoex_is_htcoex_scan(struct ath6kl_vif *vif,
+				struct cfg80211_scan_request *scan_request)
+{
+	struct htcoex *coex = vif->htcoex_ctx;
+
+	if (!coex)
+		return false;
+
+	if (scan_request == &coex->request)
+		return true;
+
+	return false;
+}
+
+void ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 {
 	struct htcoex *coex = vif->htcoex_ctx;
 	struct htcoex_bss_info *coex_bss, *tmp;
 	struct htcoex_coex_info coex_info;
-	int ret = HTCOEX_PASS_SCAN_DONE;
 
 	if (!coex) {
-		ath6kl_err("%s %lu\n",__func__, vif->ar->flag);
-		return ret;
+		ath6kl_err("%s %lu\n", __func__, vif->ar->flag);
+		return;
 	}
 
 	/* Send Action frame even scan issue by user. */
 	if (!(coex->flags & ATH6KL_HTCOEX_FLAGS_START) ||
 		(vif->nw_type != INFRA_NETWORK) ||
-		(!vif->scan_req))
+		(!test_bit(SCANNING, &vif->flags))) {
 		goto done;
+	}
+
+	/* If this event is target-oriented then ignore it. */
+	spin_lock_bh(&vif->if_lock);
+	if (!vif->scan_req) {
+		spin_unlock_bh(&vif->if_lock);
+
+		ath6kl_dbg(ATH6KL_DBG_HTCOEX,
+				"htcoex (vif %p) ignore scan event\n",
+				vif);
+		return;
+	}
+	spin_unlock_bh(&vif->if_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_HTCOEX,
 		   "htcoex scan done (vif %p aborted %d) flags %x\n",
@@ -497,17 +548,11 @@ int ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted)
 			htcoex_ht40_rateset(vif, coex, true);
 	}
 
-	/* Issue by htcoex. */
-	if (vif->scan_req == &coex->request) {
-		vif->scan_req = NULL;
-		ret = HTCOEX_PORC_SCAN_DONE;
-	}
-
 done:
 	/* Always flush it. */
 	htcoex_flush_bss_info(coex);
 
-	return ret;
+	return;
 }
 
 void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif)
@@ -599,7 +644,7 @@ void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif)
 		return;
 
 	if (!coex) {
-		ath6kl_err("%s %lu\n",__func__, vif->ar->flag);
+		ath6kl_err("%s %lu\n", __func__, vif->ar->flag);
 		return;
 	}
 

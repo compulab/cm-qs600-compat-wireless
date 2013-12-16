@@ -205,9 +205,11 @@ enum ATH6K_DEBUG_MASK_EXT {
 	ATH6KL_DBG_EXT_ROC	= BIT_OFFSET32(1),	/* Remain-on-Channel */
 	ATH6KL_DBG_EXT_SCAN	= BIT_OFFSET32(2),	/* Scan */
 	ATH6KL_DBG_EXT_BSS_PROC	= BIT_OFFSET32(3),	/* BSS post-proc */
-	ATH6KL_DBG_EXT_AUTOPM	= BIT_OFFSET32(4),	/* Auto Power-Management */
-	ATH6KL_DBG_EXT_MCC_CC	= BIT_OFFSET32(5),	/* MCC channel change time */
-	ATH6KL_DBG_EXT_FLCTL_MAP	= BIT_OFFSET32(6),
+	ATH6KL_DBG_EXT_AUTOPM	= BIT_OFFSET32(4),	/* Auto PM */
+	ATH6KL_DBG_EXT_TRAMOR	= BIT_OFFSET32(5),	/* Traffic Monitor */
+	ATH6KL_DBG_EXT_RTSP	= BIT_OFFSET32(6),	/* RTSP frame dump */
+	ATH6KL_DBG_EXT_FW_RECOV	= BIT_OFFSET32(7),	/* FW recovery */
+
 	ATH6KL_DBG_EXT_DEF	= BIT_OFFSET32(31),	/* keep last */
 	ATH6KL_DBG_EXT_ANY	= 0xffffffff00000000ULL  /* enable all logs */
 };
@@ -234,11 +236,9 @@ enum ath6kl_war {
 };
 
 struct ath6kl_print_fwd_ctx {
-#define ATH6KL_PRINTK_FWD_MODE_PURE_FWD			(1 << 0)
-#define ATH6KL_PRINTK_FWD_MODE_DUAL         	(1 << 1)
-
+#define ATH6KL_PRINTK_FWD_MODE_ENABLE		(1 << 0)
+#define ATH6KL_PRINTK_FWD_LOCKER_INIT_DONE	(1 << 1)
 	u32 flags;
-	bool init_lock;
 
 	struct ath6kl *ar;
 	struct ath6kl_vif *fwd_vif;
@@ -250,7 +250,7 @@ struct ath6kl_print_fwd_ctx {
 	int current_buf_idx;
 };
 
-void ath6kl_printk_fwd_setup(struct ath6kl *ar, int mode);
+void ath6kl_printk_fwd_setup(struct ath6kl *ar, bool enable);
 void ath6kl_printk_fwd_reset(struct ath6kl *ar);
 
 static inline int ath6kl_mod_debug_quirks(struct ath6kl *ar,
@@ -284,6 +284,60 @@ void ath6kl_send_genevent_to_app(struct net_device *dev,
 	 rtn;								\
 	 })
 
+static inline void ath6kl_dbg_rtsp_dump(enum ATH6K_DEBUG_MASK_EXT mask,
+					bool tx,
+					const void *buf,
+					size_t len)
+{
+	/*
+	 * Only for WFD debug purpose and some hard coding here to not to
+	 * increase loading to much.
+	 *
+	 * Now only filter specific RTSP port.
+	 *     [TX tcp-src-port = 0x1c44 || RX tcp-des-port = 0x1c44]
+	 *
+	 * Only for WFD-source and only dump to kernel message.
+	 */
+	if (debug_mask_ext & (unsigned int)((ATH6KL_DBG_EXT_RTSP) >> 32)) {
+		int iph_len, tcph_len, tcpdata_len;
+		u8 *tcp_hdr, *tcp_data, *data = (u8 *)buf;
+		int i;
+
+		if ((data[12] == 0x08) &&
+		    (data[13] == 0x00) &&
+		    (data[23] == 0x06)) {
+			iph_len = ((data[14] & 0x0f) * 4);
+			tcph_len = ((data[14 + iph_len + 12] >> 4) & 0x0f) * 4;
+			tcpdata_len = len - 14 - iph_len - tcph_len;
+			tcp_hdr = data + 14 + iph_len;
+
+			if ((tx && (tcp_hdr[0] == 0x1c) &&
+				   (tcp_hdr[1] == 0x44)) ||
+			    (!tx && (tcp_hdr[2] == 0x1c) &&
+				    (tcp_hdr[3] == 0x44))) {
+				if (tcpdata_len >= 0) {
+					printk("%s %d seq %04x ack %04x\n",
+					       tx ? ">>RTSP-TX" : "<<RTSP-RX",
+					       tcpdata_len,
+					       ((tcp_hdr[6] << 8) |
+								tcp_hdr[7]),
+					       ((tcp_hdr[10] << 8) |
+								tcp_hdr[11]));
+					if (tcpdata_len > 0) {
+						tcp_data = tcp_hdr + tcph_len;
+						for (i = 0;
+						     i < tcpdata_len;
+						     i++)
+							printk("%c",
+							       tcp_data[i]);
+						printk("\n");
+					}
+				}
+			}
+		}
+	}
+}
+
 static inline void ath6kl_dbg_dump(enum ATH6K_DEBUG_MASK mask,
 				   const char *msg, const char *prefix,
 				   const void *buf, size_t len)
@@ -308,13 +362,19 @@ void ath6kl_debug_set_keepalive(struct ath6kl *ar, u8 keepalive);
 void ath6kl_debug_set_disconnect_timeout(struct ath6kl *ar, u8 timeout);
 int ath6kl_debug_init(struct ath6kl *ar);
 void ath6kl_debug_cleanup(struct ath6kl *ar);
-bool ath6kl_printk_fwd_is_enable(void);
 
 #else
 static inline int ath6kl_dbg(unsigned long long int dbg_mask,
 			     const char *fmt, ...)
 {
 	return 0;
+}
+
+static inline void ath6kl_dbg_rtsp_dump(enum ATH6K_DEBUG_MASK_EXT mask,
+					bool tx,
+					const void *buf,
+					size_t len)
+{
 }
 
 static inline void ath6kl_dbg_dump(enum ATH6K_DEBUG_MASK mask,
@@ -366,8 +426,5 @@ static inline void ath6kl_debug_cleanup(struct ath6kl *ar)
 {
 }
 
-bool ath6kl_printk_fwd_is_enable(void)
-{
-}
 #endif
 #endif

@@ -590,16 +590,6 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 			WARN_ON(left <= 0);
 
 			if (type == NL80211_IFTYPE_P2P_CLIENT) {
-				/*
-				 * P2P-GO will dissolve P2P-Group immediately
-				 * when P2P-Client disconnect in Android.
-				 * A larger bmiss time to avoid this in noisy
-				 * environment.
-				 */
-				ath6kl_wmi_set_bmiss_time(ar->wmi,
-							vif->fw_vif_idx,
-							ATH6KL_P2P_BMISS_TIME);
-
 				/* p2p client shall not do normal roam */
 				if (vif->sc_params.scan_ctrl_flags &
 					ROAM_SCAN_CTRL_FLAGS)
@@ -615,25 +605,6 @@ int ath6kl_p2p_utils_init_port(struct ath6kl_vif *vif,
 		} else
 			return -ENOTSUPP;
 	}
-
-#ifdef CONFIG_ANDROID
-
-	if ((fw_vif_idx == 0) &&
-		(vif->nw_type == INFRA_NETWORK)) {
-		/* WAR: in extremely loud environment. */
-
-		 ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
-						"Prolong BMISS time");
-		if (machine_is_apq8064_bueller())
-			ath6kl_wmi_set_bmiss_time(ar->wmi,
-				vif->fw_vif_idx,
-				 50);
-		 else
-			ath6kl_wmi_set_bmiss_time(ar->wmi,
-				vif->fw_vif_idx,
-				30);
-	}
-#endif
 
 	return 0;
 }
@@ -651,14 +622,13 @@ int ath6kl_p2p_utils_check_port(struct ath6kl_vif *vif,
 	return 0;
 }
 
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
 void ath6kl_mcc_pause_ahead_timeout_handler(unsigned long ptr)
 {
 	struct ath6kl *ar = (struct ath6kl *)ptr;
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	int i;
-	struct ath6kl_vif *wlan_vif =
-		ath6kl_get_vif_by_index(ar, 0);
 
 	WARN_ON(!p2p_flowctrl);
 
@@ -672,14 +642,14 @@ void ath6kl_mcc_pause_ahead_timeout_handler(unsigned long ptr)
 	p2p_flowctrl->p2p_flowctrl_event_cnt++;
 	for (i = 0; i < NUM_CONN; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
-		if (wlan_vif && (fw_conn->vif == wlan_vif))
-			fw_conn->ocs = 1;
+		fw_conn->ocs = 1;
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
-	
+
 	ath6kl_p2p_flowctrl_state_change(ar);
 	ath6kl_p2p_flowctrl_tx_schedule(ar);
 }
+#endif
 
 struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 						struct ath6kl *ar)
@@ -694,14 +664,11 @@ struct ath6kl_p2p_flowctrl *ath6kl_p2p_flowctrl_conn_list_init(
 		return NULL;
 	}
 
-	for (i=0; i<10; i++) {
-		ar->mcc_cc_state[i]=0;
-		ar->mcc_p2p_dwell[i]=0;
-	}
-
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
 	setup_timer(&ar->mcc_pause_ahead_timer,
 			ath6kl_mcc_pause_ahead_timeout_handler,
 			(unsigned long) ar);
+#endif
 
 	p2p_flowctrl->ar = ar;
 	spin_lock_init(&p2p_flowctrl->p2p_flowctrl_lock);
@@ -756,7 +723,9 @@ void ath6kl_p2p_flowctrl_conn_list_deinit(struct ath6kl *ar)
 		}
 
 		kfree(p2p_flowctrl);
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
 		del_timer(&ar->mcc_pause_ahead_timer);
+#endif
 	}
 
 	ar->p2p_flowctrl_ctx = NULL;
@@ -920,45 +889,20 @@ void ath6kl_p2p_flowctrl_netif_transition(
 			struct ath6kl *ar, u8 new_state)
 {
 	struct ath6kl_vif *vif;
-	struct ath6kl_cookie_pool *cookie_pool;
-	int cookie_allocated = 0;
-	
-	BUG_ON(!ar);
 
-	cookie_pool = &ar->cookie_data;
-	cookie_allocated = cookie_pool->cookie_num - cookie_pool->cookie_count;
-	
 	spin_lock_bh(&ar->list_lock);
 	list_for_each_entry(vif, &ar->vif_list, list) {
-		if (new_state == ATH6KL_NETIF_STOP &&
-				test_bit(CONNECTED, &vif->flags)) {
-			set_bit(NETQ_STOPPED, &vif->flags);
-			spin_unlock_bh(&ar->list_lock);
+		spin_unlock_bh(&ar->list_lock);
+
+		if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_STOP &&
+				test_bit(CONNECTED, &vif->flags))
 			netif_stop_queue(vif->ndev);
-			spin_lock_bh(&ar->list_lock);
-		}
-		else if (new_state == ATH6KL_NETIF_WAKE &&
+		else if (new_state == ATH6KL_P2P_FLOWCTRL_NETIF_WAKE &&
 				(test_bit(CONNECTED, &vif->flags) ||
-				test_bit(TESTMODE_EPPING, &ar->flag))) {
-			if (test_bit(MCC_ENABLED, &ar->flag)) {
-				if (vif->data_cookie_count <
-					ATH6KL_NETIF_THRESH_LOW) {
-					clear_bit(NETQ_STOPPED, &vif->flags);
-					spin_unlock_bh(&ar->list_lock);
-					netif_wake_queue(vif->ndev);
-					spin_lock_bh(&ar->list_lock);
-				}
-			}
-			else {
-				if (cookie_allocated <
-					ATH6KL_NETIF_THRESH_LOW) {
-					clear_bit(NETQ_STOPPED, &vif->flags);
-					spin_unlock_bh(&ar->list_lock);
-					netif_wake_queue(vif->ndev);
-					spin_lock_bh(&ar->list_lock);
-				}
-			}
-		}
+				test_bit(TESTMODE_EPPING, &ar->flag)))
+			netif_wake_queue(vif->ndev);
+
+		spin_lock_bh(&ar->list_lock);
 	}
 	spin_unlock_bh(&ar->list_lock);
 
@@ -1166,7 +1110,7 @@ void ath6kl_p2p_flowctrl_state_change(struct ath6kl *ar)
 	}
 
 	ath6kl_p2p_flowctrl_netif_transition(
-				ar, ATH6KL_NETIF_WAKE);
+				ar, ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
 
 	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
 		"p2p_flowctrl state_change %p re_tx %d re_tx_aging %d\n",
@@ -1187,12 +1131,9 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl = ar->p2p_flowctrl_ctx;
 	struct ath6kl_fw_conn_list *fw_conn;
 	int i;
-	bool update_pause_ahead = false, wlan0_ocs = false;
-	struct ath6kl_vif *wlan_vif =
-		ath6kl_get_vif_by_index(ar, 0);
-	static unsigned long last_update_ms = 0, last_p2p_open_ms = 0;
-	unsigned long now = jiffies, update_diff_ms;
-	bool p2p_gate_opening = false, p2p_gate_closing = false;
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
+	bool update_pause_ahead = false;
+#endif
 
 	WARN_ON(!p2p_flowctrl);
 	WARN_ON(numConn > NUM_CONN);
@@ -1201,121 +1142,23 @@ void ath6kl_p2p_flowctrl_state_update(struct ath6kl *ar,
 	p2p_flowctrl->p2p_flowctrl_event_cnt++;
 	for (i = 0; i < numConn; i++) {
 		fw_conn = &p2p_flowctrl->fw_conn_list[i];
-		if (wlan_vif && (fw_conn->vif == wlan_vif)) {
-			if (fw_conn->ocs && !((ac_map[i] >> 5) & 0x1))
-				update_pause_ahead = true;
-			else if (!fw_conn->ocs && ((ac_map[i] >> 5) & 0x1)) {
-				del_timer(&ar->mcc_pause_ahead_timer);
-				wlan0_ocs = true;
-			}
-		}
-		if (wlan_vif && (fw_conn->vif != wlan_vif)) {
-			if (fw_conn->ocs && !((ac_map[i] >> 5) & 0x1))
-				p2p_gate_opening = true;
-			else if (!fw_conn->ocs && ((ac_map[i] >> 5) & 0x1))
-				p2p_gate_closing = true;
-		}
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
+		if (fw_conn->ocs != ((ac_map[i] >> 5) & 0x1))
+			update_pause_ahead = true;
+#endif
 		fw_conn->connect_status = ac_map[i];
-	}
-	if (wlan0_ocs) {
-		for (i = 0; i < numConn; i++) {
-			fw_conn = &p2p_flowctrl->fw_conn_list[i];
-			if (wlan_vif && (fw_conn->vif != wlan_vif))
-				fw_conn->ocs = 0;
-		}
 	}
 	spin_unlock_bh(&p2p_flowctrl->p2p_flowctrl_lock);
 
-	if (p2p_gate_opening && last_update_ms) {
-		ar->mcc_cc_state[0]++;
-		update_diff_ms = jiffies_to_msecs(now) - last_update_ms;
-		last_p2p_open_ms = jiffies_to_msecs(now);
-		if (update_diff_ms > 200)
-			ar->mcc_cc_state[9]++;
-		else if (update_diff_ms > 40)
-			ar->mcc_cc_state[5]++;
-		else if (update_diff_ms > 30)
-			ar->mcc_cc_state[4]++;
-		else if (update_diff_ms > 20)
-			ar->mcc_cc_state[3]++;
-		else if (update_diff_ms > 15)
-			ar->mcc_cc_state[2]++;
-		else if (update_diff_ms > 10)
-			ar->mcc_cc_state[1]++;
-	}
-
-	if (p2p_gate_closing && last_update_ms) {
-		ar->mcc_p2p_dwell[0]++;
-		update_diff_ms = jiffies_to_msecs(now) - last_p2p_open_ms;
-		if (update_diff_ms > 60)
-			ar->mcc_p2p_dwell[9]++;
-		else if (update_diff_ms > 50)
-			ar->mcc_p2p_dwell[5]++;
-		else if (update_diff_ms > 40)
-			ar->mcc_p2p_dwell[4]++;
-		else if (update_diff_ms > 30)
-			ar->mcc_p2p_dwell[3]++;
-		else if (update_diff_ms > 20)
-			ar->mcc_p2p_dwell[2]++;
-		else
-			ar->mcc_p2p_dwell[1]++;
-		
-	}
-
-	if (ar->mcc_cc_state[0] && ((last_update_ms % 10000) < 30)) {
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"\nTotal flow control events: %u\n", ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"CC 10ms ~ 15ms: %u, %u/10000\n", ar->mcc_cc_state[1],
-			ar->mcc_cc_state[1]*10000/ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"CC 15ms ~ 20ms: %u, %u/10000\n", ar->mcc_cc_state[2],
-			ar->mcc_cc_state[2]*10000/ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"CC 20ms ~ 30ms: %u, %u/10000\n", ar->mcc_cc_state[3],
-			ar->mcc_cc_state[3]*10000/ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"CC 30ms ~ 40ms: %u, %u/10000\n", ar->mcc_cc_state[4],
-			ar->mcc_cc_state[4]*10000/ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"CC 40ms ~ 200ms: %u, %u/10000\n", ar->mcc_cc_state[5],
-			ar->mcc_cc_state[5]*10000/ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"CC exceed 200ms: %u, %u/10000\n", ar->mcc_cc_state[9],
-			ar->mcc_cc_state[9]*10000/ar->mcc_cc_state[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time total: %u\n", ar->mcc_p2p_dwell[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time exceeded 60ms: %u, %u/10000\n", ar->mcc_p2p_dwell[9],
-			ar->mcc_p2p_dwell[9]*10000/ar->mcc_p2p_dwell[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time 50ms ~ 60ms: %u, %u/10000\n", ar->mcc_p2p_dwell[5],
-			ar->mcc_p2p_dwell[5]*10000/ar->mcc_p2p_dwell[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time 40ms ~ 50ms: %u, %u/10000\n", ar->mcc_p2p_dwell[4],
-			ar->mcc_p2p_dwell[4]*10000/ar->mcc_p2p_dwell[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time 30ms ~ 40ms: %u, %u/10000\n", ar->mcc_p2p_dwell[3],
-			ar->mcc_p2p_dwell[3]*10000/ar->mcc_p2p_dwell[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time 20ms ~ 30ms: %u, %u/10000\n", ar->mcc_p2p_dwell[2],
-			ar->mcc_p2p_dwell[2]*10000/ar->mcc_p2p_dwell[0]);
-		ath6kl_dbg(ATH6KL_DBG_EXT_MCC_CC,
-			"p2p dwell time less than 20ms: %u, %u/10000\n", ar->mcc_p2p_dwell[1],
-			ar->mcc_p2p_dwell[1]*10000/ar->mcc_p2p_dwell[0]);
-	}
-	
-	last_update_ms = jiffies_to_msecs(now);
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_FLCTL_MAP,
-		   "ac_map %02x %02x %02x %02x q_depth %02x %02x %02x %02x %02x %02x\n",
-		   ac_map[0], ac_map[1], ac_map[2], ac_map[3],
-		   ac_queue_depth[0], ac_queue_depth[1], ac_queue_depth[2],
-		   ac_queue_depth[3], ac_queue_depth[4], ac_queue_depth[5]);
+	ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+		   "p2p_flowctrl state_update %p ac_map %02x %02x %02x %02x\n",
+		   ar,
+		   ac_map[0], ac_map[1], ac_map[2], ac_map[3]);
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
 	if (update_pause_ahead)
 		mod_timer(&ar->mcc_pause_ahead_timer,
-			jiffies + msecs_to_jiffies(ATH6KL_MCC_WLAN0_PAUSE_PERIOD));
-
+			jiffies + ATH6KL_MCC_PAUSE_AHEAD_PERIOD);
+#endif
 
 	return;
 }
@@ -1669,11 +1512,9 @@ void ath6kl_p2p_rc_scan_start(struct ath6kl_vif *vif, bool local_scan)
 	}
 
 	ath6kl_dbg(ATH6KL_DBG_RC,
-			"p2p_rc scan_start %s, chan %d %s type %d cnt %d\n",
+			"p2p_rc scan_start %s, %s type %d cnt %d\n",
 				(p2p_rc->flags & ATH6KL_RC_FLAGS_NEED_UPDATED ?
 					"need-update" : ""),
-				(vif->scan_req ?
-					vif->scan_req->n_channels : -1),
 				(local_scan ? "local-scan" : ""),
 				vif->scanband_type,
 				p2p_rc->chan_record_cnt);
@@ -2371,7 +2212,8 @@ bool ath6kl_p2p_frame_retry(struct ath6kl *ar, u8 *frm, int len)
 					WLAN_PUB_ACTION_VENDER_SPECIFIC) &&
 		(action_frame->oui == cpu_to_be32((WLAN_OUI_WFA << 8) |
 						  (WLAN_OUI_TYPE_WFA_P2P))) &&
-		(action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF));
+		((action_frame->action_subtype == WLAN_P2P_GO_NEG_CONF) ||
+		 (action_frame->action_subtype == WLAN_P2P_INVITATION_RESP)));
 }
 
 bool ath6kl_p2p_is_p2p_frame(struct ath6kl *ar, const u8 *frm, size_t len)
@@ -2486,7 +2328,11 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 
 	list_for_each_entry(vif, &ar->vif_list, list) {
 		if (test_bit(CONNECTED, &vif->flags)) {
-			if (mcc) {
+			if (test_bit(PS_DISABLED_ALWAYS, &ar->flag)) {
+				/* No support PS always */
+				set_bit(PS_STICK, &vif->flags);
+				pwr_mode = MAX_PERF_POWER;
+			} else if (mcc) {
 				/* MCC/AnyVIF - Set all VIFs to PS OFF. */
 				set_bit(PS_STICK, &vif->flags);
 				pwr_mode = MAX_PERF_POWER;
@@ -2510,13 +2356,21 @@ void ath6kl_p2p_reconfig_ps(struct ath6kl *ar,
 						pwr_mode = MAX_PERF_POWER;
 				}
 			} else {
-				/* notP2P-VIF - Back to original PS mode. */
+				/* SCC/notP2P-VIF - Back to original PS mode. */
 				clear_bit(PS_STICK, &vif->flags);
 				if (vif->nw_type == AP_NETWORK)
 					pwr_mode = MAX_PERF_POWER;
-				else {	/* Ad-Hoc & STA, Max_perf_power in SCC. */
-					if (vif->wdev.ps == NL80211_PS_ENABLED &&
-						connected_count == 1)
+				else if (connected_count > 1) { /* SCC */
+					if (vif->wdev.iftype ==
+						NL80211_IFTYPE_STATION) {
+						set_bit(PS_STICK, &vif->flags);
+						pwr_mode = MAX_PERF_POWER;
+					} else
+						ath6kl_err("Unsupport! %d %d\n",
+							vif->fw_vif_idx,
+							vif->wdev.iftype);
+				} else {	/* Ad-Hoc & STA */
+					if (vif->wdev.ps == NL80211_PS_ENABLED)
 						pwr_mode = REC_POWER;
 					else
 						pwr_mode = MAX_PERF_POWER;

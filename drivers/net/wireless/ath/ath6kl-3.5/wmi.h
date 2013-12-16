@@ -733,7 +733,15 @@ enum wmi_cmd_id {
 	WMI_SET_REGDOMAIN_CMDID,
 /* merge from olca mainline for align command id - start */
 	WMI_ARGOS_CMDID,
+	/*
+	 * WAR_ath6kl_3.5.4 : swap WMI_SET_MCC_PROFILE_CMDID &
+	 *                    WMI_SEND_MGMT_CMDID to fix compatibility issue.
+	 */
+#ifdef ATH6KL_3_5_4
+	WMI_SET_MCC_PROFILE_CMDID,	/* WMI_SEND_MGMT_CMDID */
+#else
 	WMI_SEND_MGMT_CMDID,
+#endif
 	WMI_BEGIN_SCAN_CMDID,
 	WMI_SET_IE_CMDID,
 	WMI_SET_RSSI_FILTER_CMDID,
@@ -741,7 +749,11 @@ enum wmi_cmd_id {
 	WMI_SET_RCV_DATA_CLASSIFIER_CMDID,
 	WMI_AP_SET_IDLE_CLOSE_TIME_CMDID,
 	WMI_SET_LTE_COEX_STATE_CMDID,
+#ifdef ATH6KL_3_5_4
+	__WMI_SET_MCC_PROFILE_CMDID,	/* WMI_SET_MCC_PROFILE_CMDID */
+#else
 	WMI_SET_MCC_PROFILE_CMDID,
+#endif
 	WMI_SET_MEDIA_STREAM_CMDID = 0xF0BB,
 
 	/* More SB private commands */
@@ -3304,8 +3316,8 @@ u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri);
 int ath6kl_wmi_dot11_hdr_remove(struct wmi *wmi, struct sk_buff *skb);
 int ath6kl_wmi_dot3_2_dix(struct sk_buff *skb);
 int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
-			struct ath6kl_vif *vif, struct sk_buff *skb,
-			u32 layer2_priority, bool wmm_enabled, u8 *ac,
+			struct sk_buff *skb, u32 layer2_priority,
+			bool wmm_enabled, u8 *ac,
 			u16 *phtc_tag);
 
 int ath6kl_wmi_control_rx(struct wmi *wmi, struct sk_buff *skb);

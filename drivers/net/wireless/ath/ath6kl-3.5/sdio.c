@@ -722,7 +722,7 @@ static int ath6kl_sdio_enable_scatter(struct ath6kl *ar)
 {
 	struct ath6kl_sdio *ar_sdio = ath6kl_sdio_priv(ar);
 	struct htc_target *target = ar->htc_target;
-	int ret;
+	int ret = 0;
 	bool virt_scat = false;
 
 	if (ar_sdio->scatter_enabled)
@@ -1215,7 +1215,7 @@ static int ath6kl_sdio_stat(struct ath6kl *ar, u8 *buf, int buf_len)
 	return 0;
 }
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 static void ath6kl_sdio_early_suspend(struct ath6kl *ar)
 {
 	/* TBD */
@@ -1238,9 +1238,9 @@ static int ath6kl_sdio_diag_warm_reset(struct ath6kl *ar)
 }
 
 #ifdef USB_AUTO_SUSPEND
-static void sdio_auto_pm_disable(struct ath6kl *ar)
+static int sdio_auto_pm_disable(struct ath6kl *ar)
 {
-
+	return 0;
 }
 
 static void sdio_auto_pm_enable(struct ath6kl *ar)
@@ -1275,6 +1275,21 @@ static void ath6kl_sdio_set_max_queue_number(struct ath6kl *ar, bool limitEnable
 	/* TBD */
 }
 
+static void ath6kl_sdio_pm_migrate(struct ath6kl *ar, int level)
+{
+	/* TBD */
+}
+
+static void ath6kl_sdio_pm_migrate_get_cnt(struct ath6kl *ar, u32 migrate_cnt[])
+{
+	/* TBD */
+}
+
+static void ath6kl_sdio_pm_clock_update(struct ath6kl *ar, int level)
+{
+	/* TBD */
+}
+
 static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.read_write_sync = ath6kl_sdio_read_write_sync,
 	.write_async = ath6kl_sdio_write_async,
@@ -1296,7 +1311,7 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.stop = ath6kl_sdio_stop,
 	.get_stat = ath6kl_sdio_stat,
 	.diag_warm_reset = ath6kl_sdio_diag_warm_reset,
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 	.early_suspend = ath6kl_sdio_early_suspend,
 	.late_resume = ath6kl_sdio_late_resume,
 #endif
@@ -1310,6 +1325,9 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.auto_pm_set_delay = sdio_auto_pm_set_delay,
 #endif
 	.pipe_set_max_queue_number = ath6kl_sdio_set_max_queue_number,
+	.bus_pm_migrate = ath6kl_sdio_pm_migrate,
+	.bus_pm_migrate_get_cnt = ath6kl_sdio_pm_migrate_get_cnt,
+	.bus_pm_clock = ath6kl_sdio_pm_clock_update,
 };
 
 #ifdef CONFIG_PM_SLEEP
