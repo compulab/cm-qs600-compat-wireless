@@ -60,8 +60,8 @@ int ath6kl_hif_rw_comp_handler(void *context, int status)
 	return 0;
 }
 #define REG_DUMP_COUNT_AR6003   60
-#define REGISTER_DUMP_LEN_MAX   60
-#define REG_DUMP_COUNT_AR6004   60
+#define REGISTER_DUMP_LEN_MAX   200
+#define REG_DUMP_COUNT_AR6004   76
 
 static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 {
@@ -69,6 +69,7 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 	u32 i, address, regdump_addr = 0;
 	int ret;
 	int dumpcount = REG_DUMP_COUNT_AR6004;
+	int readcount = dumpcount;
 
 	if (ar->target_type != TARGET_TYPE_AR6003 &&
 		ar->target_type != TARGET_TYPE_AR6004)
@@ -81,6 +82,7 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 	case TARGET_TYPE_AR6004:
 	default:
 		dumpcount = REG_DUMP_COUNT_AR6004;
+		readcount = REGISTER_DUMP_LEN_MAX;
 		break;
 	}
 
@@ -103,7 +105,7 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 
 	/* fetch register dump data */
 	ret = ath6kl_diag_read(ar, regdump_addr, (u8 *)&regdump_val[0],
-				dumpcount * (sizeof(u32)));
+				readcount * (sizeof(u32)));
 	if (ret) {
 		ath6kl_warn("failed to get register dump: %d\n", ret);
 		return;
@@ -115,15 +117,27 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 
 	BUILD_BUG_ON(REG_DUMP_COUNT_AR6004 % 4);
 
-	for (i = 0; i < dumpcount / 4; i++) {
+	for (i = 0; i < dumpcount; i+=4) {
 		ath6kl_info("%d: 0x%8.8x 0x%8.8x 0x%8.8x 0x%8.8x\n",
-				4 * i,
+				i,
 				le32_to_cpu(regdump_val[i]),
 				le32_to_cpu(regdump_val[i + 1]),
 				le32_to_cpu(regdump_val[i + 2]),
 				le32_to_cpu(regdump_val[i + 3]));
 	}
 
+	for (; i < REGISTER_DUMP_LEN_MAX; i+=4) {
+		if (le32_to_cpu(regdump_val[i]) == DELIMITER ||
+		    le32_to_cpu(regdump_val[i]) == 0)
+			break;
+
+		ath6kl_info("%d: 0x%8.8x 0x%8.8x 0x%8.8x 0x%8.8x\n",
+				i,
+				le32_to_cpu(regdump_val[i]),
+				le32_to_cpu(regdump_val[i + 1]),
+				le32_to_cpu(regdump_val[i + 2]),
+				le32_to_cpu(regdump_val[i + 3]));
+	}
 }
 
 static int ath6kl_hif_proc_dbg_intr(struct ath6kl_device *dev)

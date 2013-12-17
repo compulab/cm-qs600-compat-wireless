@@ -68,11 +68,6 @@ struct htcoex {
 	u16 *scan_channels;
 };
 
-enum {
-	HTCOEX_PORC_SCAN_DONE = 0,
-	HTCOEX_PASS_SCAN_DONE,
-};
-
 /* COEX action codes */
 enum ieee80211_coex_actioncode {
 	WLAN_COEX_ACTION_2040COEX_MGMT = 0,
@@ -114,11 +109,11 @@ void ath6kl_htcoex_bss_info(struct ath6kl_vif *vif,
 			    struct ieee80211_mgmt *mgmt,
 			    int len,
 			    struct ieee80211_channel *channel);
-int ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted);
+bool ath6kl_htcoex_is_htcoex_scan(struct ath6kl_vif *vif,
+				struct cfg80211_scan_request *scan_request);
+void ath6kl_htcoex_scan_complete_event(struct ath6kl_vif *vif, bool aborted);
 void ath6kl_htcoex_connect_event(struct ath6kl_vif *vif);
 void ath6kl_htcoex_disconnect_event(struct ath6kl_vif *vif);
 int ath6kl_htcoex_config(struct ath6kl_vif *vif,
 	u32 interval, u8 rate_rollback);
-void htcoex_ht40_rateset(struct ath6kl_vif *vif, struct htcoex *coex,
-	bool enabled);
 #endif

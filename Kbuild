@@ -30,6 +30,10 @@ ifeq ($(HAVE_BUS_VOTE), 1)
 ccflags-y += -DATH6KL_BUS_VOTE
 endif
 
+ifeq ($(HAVE_ATH6KL_3_5_4), 1)
+ccflags-y += -DATH6KL_3_5_4
+endif
+
 endif
 
 ifeq ($(BUILD_ATH6KL_VER_32), 1)

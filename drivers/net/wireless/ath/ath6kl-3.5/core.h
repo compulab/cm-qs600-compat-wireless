@@ -36,7 +36,7 @@
 #include <asm/mach-types.h>
 #endif
 #endif
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 #include <linux/earlysuspend.h>
 #endif
 #include "htc.h"
@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.553)
+#define __BUILD_VERSION_ (3.5.0.476)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -68,16 +68,44 @@
 #include "diagnose.h"
 #endif
 
+/* for WMM issues, we might need to enlarge the number of cookies */
+#ifdef ATH6KL_3_5_4
+#define ATH6KL_USE_LARGE_COOKIE      1
+#endif
+
 #ifndef CONFIG_ATH6KL_MCC
 #define CONFIG_ATH6KL_MCC
 #endif
 
+/*
+ * NOTE_ath6kl_3.5.4 : CONFIG_ATH6KL_UDP_TPUT_WAR got no any help in this
+ *                     branch. And, ATH6KL_HSIC_RECOVER no need in this
+ *                     branch.
+ */
+#ifdef ATH6KL_3_5_4
+#ifdef CONFIG_ATH6KL_UDP_TPUT_WAR
+#undef CONFIG_ATH6KL_UDP_TPUT_WAR
+#endif
+#ifdef ATH6KL_HSIC_RECOVER
+#undef ATH6KL_HSIC_RECOVER
+#endif
+#ifdef ATH6KL_BUS_VOTE
+#undef ATH6KL_BUS_VOTE
+#endif
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
+#define DISABLE_ATH6KL_MCC_PAUSE_AHEAD
+#endif
+#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
+#define DISABLE_ATH6KL_COOKIE_ENHANCE
+#endif
+#else
 #ifdef CONFIG_ATH6KL_UB134
 #ifndef CONFIG_ATH6KL_UDP_TPUT_WAR
 #define CONFIG_ATH6KL_UDP_TPUT_WAR
 #endif
 #ifndef ATH6KL_HSIC_RECOVER
 #define ATH6KL_HSIC_RECOVER
+#endif
 #endif
 #endif
 
@@ -94,6 +122,16 @@
 	 ATH6KL_MODULEP2P_P2P_WISE_SCAN)
 #endif
 
+/* NOTE_ath6kl_3.5.4 : specific to this branch.  */
+#ifdef ATH6KL_3_5_4
+#define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT		(BIT(31))
+#define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
+	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
+	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
+	ATH6KL_MODULES_ANI_ENABLE	|		\
+	ATH6KL_MODULE_DISABLE_SKB_DUP	|		\
+	 0)
+#else
 /* ce and not ce are seperate */
 #ifndef CE_SUPPORT
 #define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT		(BIT(31))
@@ -117,6 +155,7 @@
 	ATH6KL_MODULE_DISABLE_SKB_DUP |			\
 	0)
 #endif
+#endif
 
 #ifndef ATH6KL_MODULEP2P_DEF_MODE
 #define ATH6KL_MODULEP2P_DEF_MODE	(0)
@@ -132,6 +171,10 @@
 
 #ifndef ATH6KL_MODULE_DEF_DEBUG_MASK_EXT
 #define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT	(0)
+#endif
+
+#ifndef ATH6KL_MODULE_DEF_PS_DISABLED
+#define ATH6KL_MODULE_DEF_PS_DISABLED	(0)
 #endif
 
 #ifndef ATH6KL_DEVNAME_DEF_P2P
@@ -157,6 +200,12 @@
  * PLEASE CHANGE THESE FLAGS TO MEET YOUR BSP IF THE BSP USE
  * SPECIFIC CFG80211 CODE.
  */
+#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_10	/* Kernel 3.10 series */
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_9
+#define ATH6KL_SUPPORT_NL80211_KERNEL3_9
+#endif
+#endif
+
 #ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_9		/* Kernel 3.9 series */
 #ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_8
 #define ATH6KL_SUPPORT_NL80211_KERNEL3_8
@@ -200,7 +249,6 @@ enum ath6kl_hsic_recover_state {
 	ATH6KL_RECOVER_STATE_INITIALIZED = 0,
 	ATH6KL_RECOVER_STATE_IN_PROGRESS,
 	ATH6KL_RECOVER_STATE_DONE,
-	ATH6KL_RECOVER_STATE_BY_SERVICE,
 };
 
 extern wait_queue_head_t ath6kl_hsic_recover_wq;
@@ -328,9 +376,15 @@ extern atomic_t ath6kl_recover_state;
 #define NL80211_CMD_SET_AP_MAC_ACL
 #endif
 
+/*
+ * NOTE_ath6kl_3.5.4 : These three function mainly for specific branch and
+ *                     no need for 3.5.4.
+ */
+#ifndef ATH6KL_3_5_4
 #define ATH6KL_SUPPORT_WIFI_DISC 1
 #define ATH6KL_SUPPORT_WIFI_KTK  1
 #define ATH6KL_SUPPORT_WLAN_HB   1
+#endif
 
 #define MAX_ATH6KL                        1
 #define ATH6KL_MAX_RX_BUFFERS             16
@@ -355,14 +409,24 @@ extern atomic_t ath6kl_recover_state;
  * MAX_HI_COOKIE_NUM are reserved for high priority traffic.
  * Need more cookies for WMM purpose.
  */
+#ifdef ATH6KL_3_5_4
+#ifdef ATH6KL_USE_LARGE_COOKIE
+#define MAX_DEF_COOKIE_NUM                270
+#define MAX_HI_COOKIE_NUM                 27	/* 10% of MAX_COOKIE_NUM */
+#else
+#define MAX_DEF_COOKIE_NUM                180
+#define MAX_HI_COOKIE_NUM                 18	/* 10% of MAX_COOKIE_NUM */
+#endif
+#else
 #define MAX_DEF_COOKIE_NUM                1600
 #define MAX_HI_COOKIE_NUM                 40	/* 10% of MAX_COOKIE_NUM */
 #define MAX_VIF_COOKIE_NUM                800   /* 50% of MAX_COOKIE_NUM */
 #define MAX_RESV_COOKIE_NUM               (MAX_HI_COOKIE_NUM / 2)
+#endif
 
 #define MAX_COOKIE_DATA_NUM	(MAX_DEF_COOKIE_NUM + MAX_HI_COOKIE_NUM)
 #define MAX_COOKIE_CTRL_NUM	(64 + 2)
-#define MAX_COOKIE_FAIL_IN_ROW		  10
+#define MAX_COOKIE_FAIL_IN_ROW		  1
 
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH      (MAX_DEF_COOKIE_NUM / WMM_NUM_AC)
 #define MAX_DEFAULT_SEND_QUEUE_DEPTH_CTRL MAX_COOKIE_CTRL_NUM
@@ -371,7 +435,11 @@ extern atomic_t ath6kl_recover_state;
 #define A_DEFAULT_LISTEN_INTERVAL         100
 #define A_MAX_WOW_LISTEN_INTERVAL         1000
 
-#define ATH6KL_DISCONNECT_TIMEOUT	  3
+/*
+ * NOTE_ath6kl_3.5.4 : No reason to use the longer disconnection timeout
+ *                     if FW roaming is disabled, reduce it.
+ */
+#define ATH6KL_DISCONNECT_TIMEOUT	  1
 #define ATH6KL_SEAMLESS_ROAMING_DISCONNECT_TIMEOUT	10
 #define ATH6KL_DISCONNECT_MULTI_TIMEOUT 1
 
@@ -392,7 +460,8 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_SCAN_TIMEOUT_LONG (9 * HZ)  /* in sec. */
 #define ATH6KL_SCAN_TIMEOUT_ONE_CON (7 * HZ)
 #define ATH6KL_SCAN_TIMEOUT_SHORT (5 * HZ) /* in sec. */
-#define ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM (20 * HZ)  /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_HTCOEX (4 * HZ) /* in sec. */
+#define ATH6KL_SCAN_TIMEOUT_WITHOUT_ROAM (10 * HZ)  /* in sec. */
 
 /* 4 way-handshake protect */
 #define ATH6KL_HANDSHAKE_PROC_TIMEOUT (3 * HZ) /* in sec. */
@@ -408,6 +477,8 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_5GHZ_HT40_DEF_WIDTH		(1)	/* HT40 enabled */
 #define ATH6KL_5GHZ_HT40_DEF_SGI		(1)	/* SGI enabled */
 #define ATH6KL_5GHZ_HT40_DEF_INTOLR40		(0)	/* disabled */
+#define ATH6KL_24GHZ_HT40_WIDTH_DISABLE		(0)	/* HT40 disabled */
+#define ATH6KL_24GHZ_HT40_SGI_DISABLE		(0)	/* SGI disabled*/
 
 /* default parameters for GeenTX */
 #define ATH6KL_GTX_NEXT_PROBE_COUNT 20
@@ -415,8 +486,9 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_GTX_MIN_RSSI 35
 #define ATH6KL_GTX_FORCE_BACKOFF 0
 
-#define  ATH6KL_MCC_WLAN0_PAUSE_PERIOD		40
-#define  ATH6KL_MCC_P2P_PAUSE_PERIOD		50
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
+#define  ATH6KL_MCC_PAUSE_AHEAD_PERIOD		(msecs_to_jiffies(40))
+#endif
 
 /* delay around 29ms on 1/4 msg in wpa/wpa2 to avoid racing with roam
 * event in certain platform
@@ -424,8 +496,10 @@ extern atomic_t ath6kl_recover_state;
 #define ATH6KL_EAPOL_DELAY_REPORT_IN_HANDSHAKE	(msecs_to_jiffies(30))
 
 #define ATH6KL_FW_PING_MAX (MAX_COOKIE_CTRL_NUM + MAX_COOKIE_FAIL_IN_ROW + 1)
+#define ATH6KL_FW_PING_PERIOD		(msecs_to_jiffies(50))
 
-#define ATH6KL_FW_PING_PERIOD		(msecs_to_jiffies(100))
+#define ATH6KL_FW_PING_HINT_SCAN_STUCK	(0)
+#define ATH6KL_FW_PING_HINT_WOW_FAIL	(1)
 
 /*
  * 1250 ms. = RX EAPOL +
@@ -452,6 +526,15 @@ extern atomic_t ath6kl_recover_state;
 #define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 57
 
 /* default roam mode for different situation */
+/*
+ * NOTE_ath6kl_3.5.4 : Not yet know if we need FW roaming to speed-up
+ *                     connection in this branch. Keep OFF currently.
+ *
+ */
+#ifdef ATH6KL_3_5_4
+#define ATH6KL_USB_DEFAULT_ROAM_MODE	ATH6KL_MODULEROAM_DISABLE
+#define ATH6KL_SDIO_DEFAULT_ROAM_MODE	ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN
+#else
 #if (defined(CONFIG_ANDROID) && !defined(ATH6KL_USB_ANDROID_CE))
 #define ATH6KL_SDIO_DEFAULT_ROAM_MODE \
 	ATH6KL_MODULEROAM_NO_LRSSI_SCAN_AT_MULTI
@@ -462,6 +545,7 @@ extern atomic_t ath6kl_recover_state;
 	ATH6KL_MODULEROAM_DISABLE_LRSSI_SCAN
 #define ATH6KL_USB_DEFAULT_ROAM_MODE \
 		ATH6KL_MODULEROAM_DISABLE
+#endif
 #endif
 
 enum ath6kl_fw_ie_type {
@@ -803,7 +887,6 @@ enum ath6kl_recovery_mode {
 
 #define ATH6KL_PS_QUEUE_MAX_DEPTH	(65535)
 #define ATH6KL_PS_QUEUE_NO_DEPTH	(0)			/* unlimit */
-#define ATH6KL_RTS_THRESHOLD		(50)
 
 enum ps_queue_type {
 	PS_QUEUE_TYPE_NONE,
@@ -914,7 +997,6 @@ struct txtid {
 	u8 tid;
 	u16 aid;
 	u16 max_aggr_sz;		/* 0 means disable */
-	u16 max_aggr_sz_orig;
 	struct timer_list timer;
 	struct sk_buff *amsdu_skb;
 	u8 amsdu_cnt;			/* current aggr count */
@@ -1393,9 +1475,58 @@ struct bss_post_proc {
 	spinlock_t bss_info_lock;
 	struct list_head bss_info_list;
 
-#define ATH6KL_BSS_POST_PROC_AGING_TIME		(15 * HZ)	/* second */
+/* NOTE_ath6kl_3.5.4 : The longer cache time for fixed devices. */
+#define ATH6KL_BSS_POST_PROC_AGING_TIME		(20 * HZ)	/* second */
 #define ATH6KL_BSS_POST_PROC_AGING_TIME_MIN	ATH6KL_SCAN_TIMEOUT_SHORT
 	int aging_time;
+};
+
+enum ath6kl_tramor_level {
+	ATH6KL_TRAMOR_LVL_LOW,
+	ATH6KL_TRAMOR_LVL_MEDIUM,
+	ATH6KL_TRAMOR_LVL_HIGH,
+
+	ATH6KL_TRAMOR_LVL_MAX,
+};
+
+#define ATH6KL_TRAMOR_MIN_CAL_TIME	(1000) /* in ms */
+
+struct ath6kl_tramor {
+#define ATH6KL_TRAMOR_FLAGS_RX_ENABLE		(1 << 0)
+#define ATH6KL_TRAMOR_FLAGS_TX_ENABLE		(1 << 1)
+#define ATH6KL_TRAMOR_FLAGS_RXACT_ENABLE	(1 << 2)
+#define ATH6KL_TRAMOR_FLAGS_TXACT_ENABLE	(1 << 3)
+	u32 flags;
+
+	/* TX*/
+	unsigned long tx_min_cal_time;	/* in jiffies */
+	unsigned long tx_latest_Bps;
+	unsigned long tx_last_time;
+	unsigned long tx_last_bytes;
+
+	/* RX */
+	unsigned long rx_min_cal_time;	/* in jiffies */
+	unsigned long rx_latest_Bps;
+	unsigned long rx_last_time;
+	unsigned long rx_last_bytes;
+
+	/* RX action - BUS-Migrate */
+	enum ath6kl_tramor_level rx_curr_level;
+	int rx_level_cal_cycle;		/* cycle to cal. the rx_curr_level */
+
+#define ATH6KL_TRAMOR_RX_DEF_TH_LOW	(1 *  700 * 1024)	/* 700KB */
+#define ATH6KL_TRAMOR_RX_DEF_TH_HIGH	(5 * 1024 * 1024)	/* 5MB */
+	unsigned int rx_threshold_low;		/* in bytes */
+	unsigned int rx_threshold_high;		/* in bytes */
+
+#define ATH6KL_TRAMOR_BUS_MIG_LVL_NULL			(0xff)
+#define ATH6KL_TRAMOR_DEF_BUS_MIG_LVL_LOW		(0)
+#define ATH6KL_TRAMOR_DEF_BUS_MIG_LVL_MEDIUM		(4)
+#define ATH6KL_TRAMOR_DEF_BUS_MIG_LVL_HIGH		(0)
+	int bus_pm_migrate[ATH6KL_TRAMOR_LVL_MAX];
+
+	/* TX action */
+	/* TBD*/
 };
 
 struct ath6kl_vif {
@@ -1461,6 +1592,10 @@ struct ath6kl_vif {
 #endif
 	u16 next_chan;				/* Setting Channel */
 	enum ath6kl_chan_type next_chan_type;	/* Setting Channel-Type */
+
+#define ATH6KL_STA_BMISS_TIME			(20)
+#define ATH6KL_P2P_BMISS_TIME			(100)	/* MAX_BMISS_BEACONS */
+	u16 assoc_bss_bmiss_cnt;
 	u16 assoc_bss_beacon_int;
 	u8 assoc_bss_dtim_period;
 	struct net_device_stats net_stats;
@@ -1518,7 +1653,9 @@ struct ath6kl_vif {
 	struct p2p_pending_connect_info *pending_connect_info;
 
 	struct bss_post_proc *bss_post_proc_ctx;
+#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	int data_cookie_count;
+#endif
 
 	struct ap_rc_info ap_rc_info_ctx;
 
@@ -1526,10 +1663,12 @@ struct ath6kl_vif {
 	u16 next_conn_status;		/* CR508988 */
 
 	struct timeval last_connect_time;
+
+	struct ath6kl_tramor tramor_ctx;
 };
 
 #define WOW_LIST_ID		0
-#define WOW_HOST_REQ_DELAY	5000 /* ms */
+#define WOW_HOST_REQ_DELAY	2000 /* ms */
 
 /* Flag info */
 enum ath6kl_dev_state {
@@ -1553,8 +1692,10 @@ enum ath6kl_dev_state {
 	REG_COUNTRY_UPDATE,
 	CFG80211_REGDB,
 	RECOVER_IN_PROCESS,
+	PS_DISABLED_ALWAYS,
 	RESET_RESUME_IN_PROGRESS,
 	SCC_ENABLED,
+	USER_SUSPEND,
 };
 
 enum ath6kl_state {
@@ -1585,11 +1726,22 @@ enum ath6kl_vap_mode {
 };
 
 
+/*
+ * NOTE_ath6kl_3.5.4 : Enlarge busy delay time to not to suspend/resume
+ *                     too frequenctly for fixed devices.
+ */
 #ifdef USB_AUTO_SUSPEND
+#ifdef ATH6KL_3_5_4
+#define USB_SUSPEND_DELAY_MAX                         3000
+#define USB_SUSPEND_DELAY_REENABLE                    2000
+#define USB_SUSPEND_DELAY_CONNECTED                   3000
+#define USB_SUSPEND_DELAY_MIN                         3000
+#else
 #define USB_SUSPEND_DELAY_MAX                         2000
 #define USB_SUSPEND_DELAY_REENABLE                    1000
 #define USB_SUSPEND_DELAY_CONNECTED                   2000
 #define USB_SUSPEND_DELAY_MIN                         1000
+#endif
 
 #define USB_SUSPEND_DEFER_DELAY_CHANGE_CNT			1
 #define USB_SUSPEND_DEFER_DELAY_FOR_P2P				2
@@ -1875,9 +2027,9 @@ struct ath6kl {
 #endif
 	struct ath6kl_p2p_flowctrl *p2p_flowctrl_ctx;
 	struct ath6kl_p2p_rc_info *p2p_rc_info_ctx;
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 	struct early_suspend early_suspend;
-#endif /* CONFIG_HAS_EARLYSUSPEND */
+#endif /* ATH6KL_HAS_EARLYSUSPEND */
 
 #define INIT_DEFER_WAIT_TIMEOUT		(5 * HZ)
 	struct work_struct init_defer_wk;
@@ -1886,6 +2038,7 @@ struct ath6kl {
 	u32 tx_on_vif;
 
 	struct reg_info *reg_ctx;
+	bool reg_not_ibss_chan_ignore;
 
 	void (*fw_crash_notify)(struct ath6kl *ar);
 
@@ -1903,7 +2056,9 @@ struct ath6kl {
 	struct wmi_green_tx_params green_tx_params;
 
 	struct timer_list eapol_shprotect_timer;
+#ifndef DISABLE_ATH6KL_MCC_PAUSE_AHEAD
 	struct timer_list mcc_pause_ahead_timer;
+#endif
 	u32 eapol_shprotect_vif;			/* vif mask */
 
 	/* Force wakeup interval = DTIM * dtim_ext */
@@ -1916,8 +2071,9 @@ struct ath6kl {
 
 	u16 last_host_req_delay;
 	u32 last_wow_fliter;
-	u32 mcc_cc_state[10];
-	u32 mcc_p2p_dwell[10];
+
+	struct timer_list fw_ping_timer;
+	int fw_ping_fails_in_row;
 };
 
 static inline void *ath6kl_priv(struct net_device *dev)
@@ -2024,8 +2180,10 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie);
 bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif, u32 id, u32 freq,
 	u32 wait, const u8 *buf, size_t len, bool no_cck,
 	bool dont_wait_for_ack, u32 *flags);
+#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 bool ath6kl_cookie_is_almost_full(struct ath6kl *ar,
 	enum cookie_type cookie_type);
+#endif
 int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	bool bypass_tx_aggr);
 int ath6kl_start_tx(struct sk_buff *skb, struct net_device *dev);
@@ -2093,8 +2251,6 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 			     u8 win_sz);
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 	u16 amsdu_sz, u8 status);
-void aggr_force_enable_amsdu(struct ath6kl_vif *vif);
-void aggr_restore_enable_amsdu(struct ath6kl_vif *vif);
 void ath6kl_wakeup_event(void *dev);
 
 void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
@@ -2148,6 +2304,9 @@ void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
 				int aging_time);
 int ath6kl_bss_post_proc_dump(struct ath6kl_vif *vif, u8 *buf, int buf_len);
 
+void ath6kl_bmiss_reset(struct ath6kl_vif *vif);
+void ath6kl_bmiss_update(struct ath6kl_vif *vif);
+
 #ifdef CONFIG_ANDROID
 void ath6kl_sdio_init_msm(void);
 void ath6kl_sdio_exit_msm(void);
@@ -2164,7 +2323,6 @@ void ath6kl_hsic_enum_war_schedule(void);
 
 #ifdef ATH6KL_HSIC_RECOVER
 void ath6kl_hsic_rediscovery(void);
-void ath6kl_trigger_bt_restart(void);
 #endif
 
 void ath6kl_fw_crash_notify(struct ath6kl *ar);
@@ -2183,6 +2341,22 @@ int ath6kl_enable_wow_hb(struct ath6kl *ar);
 
 int ath6kl_fw_watchdog_enable(struct ath6kl *ar);
 int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar);
+
+void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif);
+
+void ath6kl_tramor_rx(struct ath6kl_vif *vif);
+void ath6kl_tramor_tx(struct ath6kl_vif *vif);
+void ath6kl_tramor_config(struct ath6kl_vif *vif,
+			bool rx_enable,
+			int rx_cal_time,
+			bool tx_enable,
+			int tx_cal_time,
+			bool rxact_enable,
+			unsigned int rx_th_low,
+			unsigned int rx_th_high,
+			int rxact_mig_low,
+			int rxact_mig_med,
+			int rxact_mig_high);
 
 extern unsigned int htc_bundle_recv;
 extern unsigned int htc_bundle_send;
@@ -2209,7 +2383,8 @@ int print_to_file(const char *fmt, ...);
 int check_dump_file_size(void);
 #endif
 
-extern struct timer_list fw_ping_timer;
-extern int fw_ping_count;
-
+void ath6kl_fw_ping_init(struct ath6kl *ar);
+void ath6kl_fw_ping_deinit(struct ath6kl *ar);
+void ath6kl_fw_ping_hint(struct ath6kl *ar, int hint);
+void ath6kl_fw_ping_pong(struct ath6kl *ar);
 #endif /* CORE_H */

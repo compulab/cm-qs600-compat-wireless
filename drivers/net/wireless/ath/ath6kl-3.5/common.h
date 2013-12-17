@@ -22,7 +22,6 @@
 #define ATH6KL_MAX_IE			256
 
 extern int ath6kl_printk(const char *level, const char *fmt, ...);
-extern int ath6kl_printfwd(const char *fmt, ...);
 
 /*
  * Reflects the version of binary interface exposed by ATH6KL target

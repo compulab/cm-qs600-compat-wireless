@@ -17,7 +17,7 @@
 #include "core.h"
 #include "hif-ops.h"
 
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 static void ath6kl_early_suspend(struct early_suspend *handler)
 {
 	struct ath6kl *ar = container_of(handler, struct ath6kl, early_suspend);
@@ -38,7 +38,7 @@ static void ath6kl_late_resume(struct early_suspend *handler)
 #ifdef CONFIG_ANDROID
 void ath6kl_setup_android_resource(struct ath6kl *ar)
 {
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 	ar->early_suspend.suspend = ath6kl_early_suspend;
 	ar->early_suspend.resume = ath6kl_late_resume;
 	ar->early_suspend.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN;
@@ -48,7 +48,7 @@ void ath6kl_setup_android_resource(struct ath6kl *ar)
 
 void ath6kl_cleanup_android_resource(struct ath6kl *ar)
 {
-#ifdef CONFIG_HAS_EARLYSUSPEND
+#ifdef ATH6KL_HAS_EARLYSUSPEND
 	unregister_early_suspend(&ar->early_suspend);
 #endif
 }
