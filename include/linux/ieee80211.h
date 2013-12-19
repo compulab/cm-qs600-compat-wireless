@@ -1001,6 +1001,7 @@ struct ieee80211_ht_cap {
 #define IEEE80211_HT_CAP_RESERVED		0x2000
 #define IEEE80211_HT_CAP_40MHZ_INTOLERANT	0x4000
 #define IEEE80211_HT_CAP_LSIG_TXOP_PROT		0x8000
+#define IEEE80211_HT_CAP_EXT_CH_MASK		0x0002
 
 /* 802.11n HT extended capabilities masks (for extended_ht_cap_info) */
 #define IEEE80211_HT_EXT_CAP_PCO		0x0001

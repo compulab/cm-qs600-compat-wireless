@@ -2807,6 +2807,7 @@ int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 		htcap->cap_info = 0;
 		htcap->ht_enable = wiphy->bands[band]->ht_cap.ht_supported;
 		htcap->require_ht = 0;
+		htcap->ext_ch_mask = 0;
 		ret = ath6kl_set_htcap(vif, band,
 				wiphy->bands[band]->ht_cap.ht_supported);
 		if (ret)
@@ -3004,13 +3005,40 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 	if (info->ap_isolate >= 0)
 		vif->intra_bss = !(info->ap_isolate);
 
-	if (info->ht_2040_mode) {
-		rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK;
-		ath6kl_wmi_set_fixrates(vif->ar->wmi, vif->fw_vif_idx,
-				rate); /* Masking the HT 40 rates */
+	if (info->ht_2040_mode > 0) {
+		u64 ht40_rate = ATH6KL_RATE_MASK;
+		if (info->ht_2040_mode == ATH6KL_HT_OPMODE_SWITCH_TO_20)
+			rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK; /* Setting HT20 rates */
+		else
+			memcpy(&rate, &ht40_rate, sizeof(rate)); /*Setting HT40 rates */
+		ath6kl_wmi_set_fixrates(vif->ar->wmi, vif->fw_vif_idx, rate);
 	}
 
 	return 0;
+}
+
+u8 ath6kl_get_ht40_ext_ch_mask(struct cfg80211_ap_settings *info,
+		unsigned short cap_info)
+{
+	u8 is_sec_ch = 0;
+	u8 mask_sec_ch = 0;
+	struct ieee80211_ht_operation *ht_op_ie =
+				(struct ieee80211_ht_operation *)(cfg80211_find_ie(WLAN_EID_HT_OPERATION,
+					info->beacon.tail,
+					info->beacon.tail_len) + 2);
+	if (!ht_op_ie)
+		return mask_sec_ch;
+
+	if (ht_op_ie->ht_param & IEEE80211_HT_PARAM_CHA_SEC_ABOVE ||
+			ht_op_ie->ht_param & IEEE80211_HT_PARAM_CHA_SEC_BELOW)
+		is_sec_ch = 1;
+
+	if (!is_sec_ch && (cap_info & IEEE80211_HT_CAP_SUP_WIDTH_20_40))
+		mask_sec_ch = 1;
+	else
+		mask_sec_ch = 0;
+
+	return mask_sec_ch;
 }
 
 static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
@@ -3330,6 +3358,8 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	if(info->ht_cap_info) {
 		htcap->cap_info = info->ht_cap_info;
+		htcap->ext_ch_mask = ath6kl_get_ht40_ext_ch_mask(info,
+				htcap->cap_info);
 	} else {
                 if (band != IEEE80211_BAND_2GHZ) {
 			htcap->cap_info = ath6kl_ap_a_htcap;

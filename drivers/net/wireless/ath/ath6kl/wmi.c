@@ -855,6 +855,10 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 
 	if (vif->nw_type == AP_NETWORK) {
 		/* AP mode start/STA connected event */
+		u8 band = (vif->phy_mode == WMI_11A_MODE) ?
+			IEEE80211_BAND_5GHZ : IEEE80211_BAND_2GHZ;
+		struct ath6kl_htcap *htcap = &vif->htcap[band];
+		struct wmi_fix_rates_cmd rate;
 		struct net_device *dev = vif->ndev;
 		if (memcmp(dev->dev_addr, ev->u.ap_bss.bssid, ETH_ALEN) == 0) {
 			ath6kl_info("%s: freq %d bssid %pM (AP started)\n",
@@ -869,6 +873,12 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			ath6kl_connect_ap_mode_bss(
 				vif, le16_to_cpu(ev->u.ap_bss.ch),
 			       		sec_ch, phymode);
+			if (htcap->ext_ch_mask) {
+				memset(&rate, 0, sizeof(rate));
+				rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK;
+				ath6kl_wmi_set_fixrates(vif->ar->wmi,
+						vif->fw_vif_idx, rate);
+			}
                         if (ath6kl_is_mcc_enabled(vif->ar)) {
 				vif->ar->is_mcc_enabled = true;
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -3249,6 +3259,9 @@ int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,
 	cmd->ht20_sgi = !!(htcap->cap_info & IEEE80211_HT_CAP_SGI_20);
 	cmd->ht40_supported =
 		!!(htcap->cap_info & IEEE80211_HT_CAP_SUP_WIDTH_20_40);
+	if (htcap->ext_ch_mask)
+		cmd->ht40_supported |= IEEE80211_HT_CAP_EXT_CH_MASK;
+
 	cmd->ht40_sgi = !!(htcap->cap_info & IEEE80211_HT_CAP_SGI_40);
 	cmd->intolerant_40mhz =
 		!!(htcap->cap_info & IEEE80211_HT_CAP_40MHZ_INTOLERANT);
