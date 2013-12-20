@@ -56,7 +56,6 @@ unsigned int ath6kl_ce_flags = 1;
 unsigned int ath6kl_regdb = ATH6KL_REG_INTERNAL_REGDB;
 unsigned short reg_domain = NULL_REG_CODE;	/* user prefer */
 unsigned short reg_domain_used = NULL_REG_CODE;	/* final used */
-unsigned int ath6kl_ps_disabled = ATH6KL_MODULE_DEF_PS_DISABLED;
 
 #ifdef ATH6KL_DIAGNOSTIC
 unsigned int diag_local_test;
@@ -102,7 +101,6 @@ module_param(fwdatapath, charp, 0644);
 module_param(starving_prevention, uint, 0644);
 module_param(ath6kl_regdb, uint, 0644);
 module_param(reg_domain, ushort, 0644);
-module_param(ath6kl_ps_disabled, uint, 0644);
 
 #ifdef CONFIG_ANDROID
 module_param(ath6kl_bt_on, uint, 0644);
@@ -735,9 +733,7 @@ void ath6kl_init_control_info(struct ath6kl_vif *vif)
 	 */
 	vif->scan_plan.type = ATH6KL_SCAN_PLAN_IN_ORDER;
 	vif->scan_plan.numChan = 0;
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	vif->data_cookie_count = 0;
-#endif
 
 }
 
@@ -986,11 +982,7 @@ int ath6kl_configure_target(struct ath6kl *ar)
 		param = 0;
 	else{
 		if (ar->hif_type == ATH6KL_HIF_TYPE_USB)
-#ifdef ATH6KL_3_5_4
-			param = 0; /* NOTE_ath6kl_3.5.4 : 2 in this branch. */
-#else
 			param = 2;
-#endif
 		else /* sdio */
 			param = 3;
 	}
@@ -1037,8 +1029,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 	param |= HI_OPTION_ENABLE_WLAN_HB;
 #endif
 
-	/* NOTE_ath6kl_3.5.4 : not support yet. */
-#ifndef ATH6KL_3_5_4
 	/* Enable single chain in wow */
 	if (ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_ENABLE_WOW_SINGLE_CHAIN))
 		param |= HI_OPTION_WOW_SINGLE_CHAIN;
@@ -1049,7 +1039,6 @@ int ath6kl_configure_target(struct ath6kl *ar)
 
 	/* set one shot noa enable to firmware */
 	param |= HI_OPTION_ONE_SHOT_NOA_ENABLE ;
-#endif
 
 	ath6kl_dbg(ATH6KL_DBG_BOOT, "Set hi_option_flag2 to 0x%08x\n",
 			param);
@@ -1145,9 +1134,9 @@ void ath6kl_core_cleanup(struct ath6kl *ar)
 {
 	ath6kl_hif_power_off(ar);
 
-	del_timer_sync(&ar->eapol_shprotect_timer);
+	del_timer(&ar->eapol_shprotect_timer);
 
-	ath6kl_fw_ping_deinit(ar);
+	del_timer(&fw_ping_timer);
 
 	destroy_workqueue(ar->ath6kl_wq);
 
@@ -3084,9 +3073,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 
 	}
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "%s: roam_mode 0x%x\n",
-		__func__, ar->roam_mode);
-
 	/*
 	 * Always use internal-regdb by default.
 	 * The INTERNAL_REGDB & CFG80211_REGDB is exclusive.
@@ -3191,8 +3177,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_P2P |
 		NL80211_PROBE_RESP_OFFLOAD_SUPPORT_80211U;
 
-	/* Always not to support by default. */
-	ar->reg_not_ibss_chan_ignore = false;
 	if (test_bit(INTERNAL_REGDB, &ar->flag) ||
 	    test_bit(CFG80211_REGDB, &ar->flag)) {
 		/* Disable P2P-in-passive-chan channels by default. */
@@ -3200,19 +3184,17 @@ int ath6kl_core_init(struct ath6kl *ar)
 			ar->reg_ctx = ath6kl_reg_init(ar,
 							true,
 							false,
-						ar->p2p_in_pasv_chan,
-						ar->reg_not_ibss_chan_ignore);
+							ar->p2p_in_pasv_chan);
 		else	/* TODO: support P2P-in-passive-chan */
 			ar->reg_ctx = ath6kl_reg_init(ar,
-						false,
-						true,
-						false,
-						false);
+							false,
+							true,
+							false);
 
 		/* P2P recommend channel works only ath6kl regdb turns on. */
 		ar->p2p_rc_info_ctx = ath6kl_p2p_rc_init(ar);
 	} else
-		ar->reg_ctx = ath6kl_reg_init(ar, false, false, false, false);
+		ar->reg_ctx = ath6kl_reg_init(ar, false, false, false);
 
 	set_bit(FIRST_BOOT, &ar->flag);
 
@@ -3261,12 +3243,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 			ath6kl_dbg(ATH6KL_DBG_TRC, "failed to set mcc profile");
 #endif
 
-	if (ath6kl_ps_disabled ||
-	    machine_is_apq8064_bueller()) {
-		set_bit(PS_DISABLED_ALWAYS, &ar->flag);
-		ath6kl_info("Disabled PS always.\n");
-	}
-
 	/* Defer some tasks to worker after driver init. */
 	if (!ret) {
 		init_waitqueue_head(&ar->init_defer_wait_wq);
@@ -3306,9 +3282,6 @@ int ath6kl_core_init(struct ath6kl *ar)
 		ath6kl_info("Enable Firmware crash notify.\n");
 		ar->fw_crash_notify = ath6kl_fw_crash_notify;
 	}
-
-	/* Always enable it by default. */
-	ath6kl_fw_ping_init(ar);
 
 	if (!ath6kl_mod_debug_quirks(ar, ATH6KL_MODULE_DISABLE_SKB_DUP))
 		ar->conf_flags |= ATH6KL_CONF_SKB_DUP;
@@ -3366,7 +3339,6 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 {
 	static u8 bcast_mac[] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	bool discon_issued;
-	struct cfg80211_scan_request *scan_request;
 
 	if (vif->pend_skb)
 		ath6kl_flush_pend_skb(vif);
@@ -3389,17 +3361,10 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 						0, NULL, 0);
 	}
 
-	spin_lock_bh(&vif->if_lock);
-	scan_request = vif->scan_req;
-	vif->scan_req = NULL;
-	spin_unlock_bh(&vif->if_lock);
-
-	if (scan_request) {
-		ath6kl_cfg80211_report_scan_done(vif,
-				scan_request,
-				true,
-				true,
-				true);
+	if (vif->scan_req) {
+		del_timer(&vif->vifscan_timer);
+		ath6kl_wmi_abort_scan_cmd(vif->ar->wmi, vif->fw_vif_idx);
+		cfg80211_scan_done(vif->scan_req, true);
 
 #ifdef USB_AUTO_SUSPEND
 		if (ath6kl_hif_auto_pm_get_usage_cnt(vif->ar) == 0) {
@@ -3412,10 +3377,11 @@ void ath6kl_cleanup_vif(struct ath6kl_vif *vif, bool wmi_ready)
 		} else
 			ath6kl_hif_auto_pm_enable(vif->ar);
 #endif
+
+		vif->scan_req = NULL;
+		clear_bit(SCANNING, &vif->flags);
 	}
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	vif->data_cookie_count = 0;
-#endif
 }
 
 void ath6kl_stop_txrx(struct ath6kl *ar)

@@ -235,7 +235,7 @@ static inline int ath6kl_hif_diag_warm_reset(struct ath6kl *ar)
 	return ar->hif_ops->diag_warm_reset(ar);
 }
 
-#ifdef ATH6KL_HAS_EARLYSUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 static inline void ath6kl_hif_early_suspend(struct ath6kl *ar)
 {
 	ath6kl_dbg(ATH6KL_DBG_HIF, "hif early_suspend\n");
@@ -316,26 +316,4 @@ static inline int ath6kl_hif_sw_recover(struct ath6kl *ar)
 }
 #endif
 
-static inline void ath6kl_hif_bus_pm_migrate(struct ath6kl *ar, int level)
-{
-	ath6kl_dbg(ATH6KL_DBG_HIF, "hif setup bus migrate level\n");
-
-	return ar->hif_ops->bus_pm_migrate(ar, level);
-}
-
-static inline void ath6kl_hif_bus_pm_migrate_get_cnt(struct ath6kl *ar,
-							u32 migrate_cnt[])
-{
-	ath6kl_dbg(ATH6KL_DBG_HIF, "hif get bus migrate level count\n");
-
-	ar->hif_ops->bus_pm_migrate_get_cnt(ar, migrate_cnt);
-}
-
-static inline void ath6kl_hif_bus_pm_clock(struct ath6kl *ar,
-							int level)
-{
-	ath6kl_dbg(ATH6KL_DBG_HIF, "hif setup bus clock level\n");
-
-	ar->hif_ops->bus_pm_clock(ar, level);
-}
 #endif

@@ -409,7 +409,7 @@ u8 ath6kl_wmi_determine_user_priority(u8 *pkt, u32 layer2_pri)
 }
 
 int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
-				       struct sk_buff *skb,
+				       struct ath6kl_vif *vif, struct sk_buff *skb,
 				       u32 layer2_priority, bool wmm_enabled,
 				       u8 *ac, u16 *phtc_tag)
 {
@@ -421,6 +421,8 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 	u8 stream_exist, usr_pri;
 	u8 traffic_class = WMM_AC_BE;
 	u8 *datap;
+	int pdu_len;
+	struct ath6kl *ar = NULL;
 
 	if (WARN_ON(skb == NULL))
 		return -EINVAL;
@@ -451,6 +453,21 @@ int ath6kl_wmi_implicit_create_pstream(struct wmi *wmi, u8 if_idx,
 			   ath6kl_wmi_determine_user_priority(((u8 *) llc_hdr) +
 					sizeof(struct ath6kl_llc_snap_hdr),
 					layer2_priority);
+
+			if (if_idx == 0) {
+				if (vif) {
+					ar = vif->ar;
+					if(test_bit(SCC_ENABLED, &ar->flag) ||
+						test_bit(MCC_ENABLED, &ar->flag)) {
+						pdu_len = skb->len -
+							sizeof(struct wmi_data_hdr);
+						if (pdu_len <= 
+							vif->aggr_cntxt->tx_amsdu_max_pdu_len)
+							usr_pri = WMI_VOICE_USER_PRIORITY;
+					}
+				}
+			}
+			
 		} else
 			usr_pri = layer2_priority & 0x7;
 
@@ -1614,9 +1631,6 @@ static int ath6kl_wmi_bssinfo_event_rx(struct wmi *wmi, u8 *datap, int len,
 		if (tim && tim[1] >= 2) {
 			vif->assoc_bss_dtim_period = tim[3];
 			set_bit(DTIM_PERIOD_AVAIL, &vif->flags);
-
-			/* Update BMISS by DTIM */
-			ath6kl_bmiss_update(vif);
 		}
 	}
 
@@ -1898,7 +1912,8 @@ static int ath6kl_wmi_error_event_rx(struct wmi *wmi, u8 *datap, int len)
 static int ath6kl_wmi_stats_event_rx(struct wmi *wmi, u8 *datap, int len,
 				     struct ath6kl_vif *vif)
 {
-	ath6kl_fw_ping_pong(vif->ar);
+	fw_ping_count = ATH6KL_FW_PING_MAX;
+	del_timer(&fw_ping_timer);
 
 	ath6kl_tgt_stats_event(vif, datap, len);
 
@@ -2110,6 +2125,11 @@ static int ath6kl_wmi_rssi_threshold_event_rx(struct wmi *wmi, u8 *datap,
 	upper_rssi_threshold = ath6kl_wmi_get_upper_threshold(rssi, sq_thresh,
 				       sq_thresh->upper_threshold_valid_count);
 
+	ath6kl_dbg(ATH6KL_DBG_WMI | ATH6KL_DBG_EXT_DEF,
+		   "rssi: %d, threshold: %d, lower: %d, upper: %d\n",
+		   rssi, new_threshold,
+		   lower_rssi_threshold, upper_rssi_threshold);
+
 	/* Issue a wmi command to install the thresholds */
 	cmd.thresh_above1_val = a_cpu_to_sle16(upper_rssi_threshold);
 	cmd.thresh_below1_val = a_cpu_to_sle16(lower_rssi_threshold);
@@ -2291,7 +2311,7 @@ static int ath6kl_wmi_snr_threshold_event_rx(struct wmi *wmi, u8 *datap,
 	cmd.weight = sq_thresh->weight;
 	cmd.poll_time = cpu_to_le32(sq_thresh->polling_interval);
 
-	ath6kl_dbg(ATH6KL_DBG_WMI,
+	ath6kl_dbg(ATH6KL_DBG_WMI | ATH6KL_DBG_EXT_DEF,
 		   "snr: %d, threshold: %d, lower: %d, upper: %d\n",
 		   snr, new_threshold,
 		   lower_snr_threshold, upper_snr_threshold);
@@ -3360,11 +3380,6 @@ int ath6kl_wmi_set_host_sleep_mode_cmd(struct wmi *wmi, u8 if_idx,
 		cmd->asleep = cpu_to_le32(1);
 	} else
 		cmd->awake = cpu_to_le32(1);
-
-	ath6kl_dbg(ATH6KL_DBG_WMI |
-		ATH6KL_DBG_EXT_AUTOPM,
-		"Set host sleep to %s\n",
-		(host_mode == ATH6KL_HOST_MODE_AWAKE ? "AWAKE" : "SLEEP"));
 
 	ret = ath6kl_wmi_cmd_send(wmi, if_idx, skb,
 				  WMI_SET_HOST_SLEEP_MODE_CMDID,

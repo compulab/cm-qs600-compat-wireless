@@ -13,13 +13,7 @@
  * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
-
-/*
- * NOTE_ath6kl_3.5.4 : The code mainly for HSIC interface and no need in this
- *                     branch.
- */
-
-#if defined(CONFIG_ANDROID_8960_SDIO) || defined(ATH6KL_3_5_4)
+#ifdef CONFIG_ANDROID_8960_SDIO
 #include "core.h"
 
 /* BeginMMC polling stuff */
@@ -29,7 +23,7 @@
 #define MMC_MSM_DEV "msm_sdcc.4"
 #endif
 /* End MMC polling stuff */
-#endif /* #if defined(CONFIG_ANDROID_8960_SDIO) || defined(ATH6KL_3_5_4) */
+#endif /* #ifdef CONFIG_ANDROID_8960_SDIO */
 
 #include "core.h"
 #include "debug.h"
@@ -520,7 +514,7 @@ chip_pwd_fail:
 }
 
 #ifdef ATH6KL_HSIC_RECOVER
-static void ath6kl_trigger_bt_restart(void)
+void ath6kl_trigger_bt_restart(void)
 {
 	int status = 0;
 	char buf[32];
@@ -567,18 +561,6 @@ void ath6kl_hsic_rediscovery(void)
 
 	ath6kl_info("%s, BT_RESET:%d\n", __func__, is_bt_gpio_on);
 
-	/* mpq did not use verg reset */
-	if (machine_is_apq8064_dma() ||
-		machine_is_apq8064_bueller()) {
-		mdelay(100);
-		ath6kl_hsic_bind(0, true);
-
-		/* delay a while */
-		mdelay(1000);
-		ath6kl_hsic_bind(1, true);
-		return;
-	}
-
 	if (is_bt_gpio_on == 1) {
 		ath6kl_trigger_bt_restart();
 	} else {
@@ -604,8 +586,6 @@ void ath6kl_hsic_rediscovery(void)
 #ifdef ATH6KL_BUS_VOTE
 
 static bool previous;
-static int last_bus_scale;
-
 static int ath6kl_toggle_radio(void *data, int on)
 {
 	int ret = 0;
@@ -622,7 +602,6 @@ static int ath6kl_toggle_radio(void *data, int on)
 	return ret;
 }
 
-#ifdef CONFIG_USE_OF
 bool ath6kl_is_bind_hsic(void)
 {
 	int ret;
@@ -637,6 +616,8 @@ bool ath6kl_is_bind_hsic(void)
 	else
 		return true;
 }
+
+#ifdef CONFIG_USE_OF
 
 int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 {
@@ -655,6 +636,7 @@ int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 		return -ENODEV;
 	}
 
+#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_10
 	if (bind) {
 		/* make sure to hold a reference to the kobj */
 		of_dev_get(ehci_hsic_pdev);
@@ -672,6 +654,7 @@ int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 		/* release the reference after finishing */
 		of_dev_put(ehci_hsic_pdev);
 	}
+#endif
 
 	return 0;
 }
@@ -777,9 +760,7 @@ static int ath6kl_hsic_probe(struct platform_device *pdev)
 		bus_perf_client =
 			msm_bus_scale_register_client(
 				ath6kl_bus_scale_pdata);
-		last_bus_scale = 4;
-		msm_bus_scale_client_update_request(bus_perf_client,
-						last_bus_scale);
+		msm_bus_scale_client_update_request(bus_perf_client, 4);
 
 		pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
 
@@ -852,9 +833,7 @@ static int ath6kl_hsic_remove(struct platform_device *pdev)
 	if (machine_is_apq8064_dma()) {
 		ath6kl_toggle_radio(pdev->dev.platform_data, 0);
 	} else {
-		last_bus_scale = 1;
-		msm_bus_scale_client_update_request(bus_perf_client,
-						last_bus_scale);
+		msm_bus_scale_client_update_request(bus_perf_client, 1);
 		if (bus_perf_client)
 			msm_bus_scale_unregister_client(bus_perf_client);
 
@@ -878,27 +857,6 @@ static int ath6kl_hsic_remove(struct platform_device *pdev)
 	}
 
 	return 0;
-}
-
-void ath6kl_hsic_bus_scale_update(int level)
-{
-	if (!machine_is_apq8064_dma() && !machine_is_apq8064_bueller()) {
-		if (ath6kl_bus_scale_pdata && bus_perf_client) {
-			if (((level >= 0) && (level < 5)) &&
-			    (level != last_bus_scale)) {
-				ath6kl_info("Update bus scale from %d to %d\n",
-						last_bus_scale,
-						level);
-
-				last_bus_scale = level;
-				msm_bus_scale_client_update_request(
-								bus_perf_client,
-								level);
-			}
-		}
-	}
-
-	return;
 }
 
 static const struct of_device_id ath6kl_hsic_dt_match[] = {

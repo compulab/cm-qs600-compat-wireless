@@ -16,7 +16,6 @@
 #include <linux/reboot.h>
 #include <linux/module.h>
 #include <linux/usb.h>
-#include <linux/pm_qos.h>
 
 #include "debug.h"
 #include "core.h"
@@ -124,18 +123,12 @@ struct ath6kl_usb {
 	u32 max_sche_rx;
 	u32 rxq_threshold;
 
-	/* HSIC migrate */
-	bool pm_qos_req_set;
-	struct dev_pm_qos_request pm_qos_req;
-	int migrate_level;
-
 	/* statis */
 	u32 suspend_cnt;
 	u32 resume_cnt;
 	u32 pm_suspend_cnt;
 	u32 pm_resume_cnt;
 	u32 pm_reset_resume_cnt;
-	u32 pm_qos_req_update_cnt[8];
 };
 
 /* usb urb object */
@@ -201,10 +194,6 @@ struct semaphore usb_probe_sem;
 
 #define USB_PROBE_WAIT_TIMEOUT                   4000
 #define USB_PROBE_WAIT_TIMEOUT_ENUM_WAR          8000
-
-#ifdef CONFIG_ANDROID
-extern void ath6kl_hsic_bus_scale_update(int level);
-#endif
 #endif
 
 #ifdef ATH6KL_HSIC_RECOVER
@@ -1137,8 +1126,6 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 	while ((buf = skb_dequeue(&pipe->io_comp_queue))) {
 
 #ifdef USB_AUTO_SUSPEND
-		/* NOTE_ath6kl_3.5.4 : Not to optimize. */
-#ifndef ATH6KL_3_5_4
 		/* to check if need to postpone auto pm timeout */
 		if (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX) {
 			if (ar->htc_ops->skip_usb_mark_busy != NULL) {
@@ -1146,12 +1133,9 @@ static void ath6kl_usb_io_comp_work(struct work_struct *work)
 					goto skip_mark_busy;
 			}
 		}
-#endif		
 		usb_mark_last_busy(device->udev);
 
-#ifndef ATH6KL_3_5_4
 skip_mark_busy:
-#endif
 #endif
 		if (pipe->flags & ATH6KL_USB_PIPE_FLAG_TX) {
 			ath6kl_dbg(ATH6KL_DBG_USB_BULK,
@@ -1193,21 +1177,11 @@ skip_mark_busy:
 		}
 	}
 
-	/* NOTE_ath6kl_3.5.4 : Need to fine-tune if need, disabled currently. */
-#ifdef ATH6KL_3_5_4
-	if ((device->rxq_threshold != 0xffffffff) &&
-	    (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX &&
-		pipe->urb_cnt >= pipe->urb_cnt_thresh)) {
-		/* our free urbs are piling up, post more transfers */
-		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
-	}
-#else
 	if (pipe->flags & ATH6KL_USB_PIPE_FLAG_RX &&
 		pipe->urb_cnt >= pipe->urb_cnt_thresh) {
 		/* our free urbs are piling up, post more transfers */
 		ath6kl_usb_post_recv_transfers(pipe, ATH6KL_USB_RX_BUFFER_SIZE);
 	}
-#endif
 
 	clear_bit(WORKER_LOCK_BIT, &pipe->worker_lock);
 
@@ -1321,12 +1295,7 @@ static struct ath6kl_usb *ath6kl_usb_create(struct usb_interface *interface)
 
 	ar_usb->max_sche_tx =
 	ar_usb->max_sche_rx = HIF_USB_MAX_SCHE_PKT;
-	/* NOTE_ath6kl_3.5.4 : Need to fine-tune if need, disabled currently. */
-#ifdef ATH6KL_3_5_4
-	ar_usb->rxq_threshold = 0xffffffff; /* HIF_USB_RX_QUEUE_THRESHOLD */
-#else
 	ar_usb->rxq_threshold = HIF_USB_RX_QUEUE_THRESHOLD;
-#endif
 
 	status = ath6kl_usb_setup_pipe_resources(ar_usb);
 
@@ -1884,10 +1853,8 @@ static int ath6kl_usb_send(struct ath6kl *ar, u8 PipeID,
 
 		p_pmskb = kmalloc(sizeof(struct usb_pm_skb_queue_t),
 			GFP_ATOMIC);
-		if (p_pmskb == NULL) {
+		if (p_pmskb == NULL)
 			ath6kl_err("p_pmskb = kmalloc fail!\n");
-			BUG_ON(1); /* TODO */
-		}
 
 		p_pmskb->pipeID = PipeID;
 		p_pmskb->ar = ar;
@@ -2511,7 +2478,8 @@ static int ath6kl_usb_set_rxq_threshold(struct ath6kl *ar, u32 rxq_threshold)
 	return 0;
 }
 
-#ifdef ATH6KL_HAS_EARLYSUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
+
 static void ath6kl_usb_early_suspend(struct ath6kl *ar)
 {
 #ifndef USB_AUTO_SUSPEND
@@ -2519,6 +2487,11 @@ static void ath6kl_usb_early_suspend(struct ath6kl *ar)
 
 	if (!ath6kl_mod_debug_quirks(ar,
 			ATH6KL_MODULE_DISABLE_USB_AUTO_SUSPEND)) {
+		if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
+			struct usb_device *udev = device->udev;
+			pm_runtime_set_autosuspend_delay(&udev->dev,
+				USB_SUSPEND_DELAY_MAX);
+		}
 		usb_enable_autosuspend(device->udev);
 	}
 #endif
@@ -2587,6 +2560,14 @@ int ath6kl_usb_diag_warm_reset(struct ath6kl *ar)
 	struct ath6kl_usb_ctrl_diag_cmd_write *cmd;
 	u32 data, address;
 
+#ifdef ATH6KL_HSIC_RECOVER
+	/* If unload process is done by recovery by service,
+	   we don't need to issue warm reset. */
+	if (atomic_read(&ath6kl_recover_state) ==
+		ATH6KL_RECOVER_STATE_BY_SERVICE)
+		return 0;
+#endif
+
 	address = ath6kl_get_hi_item_addr(ar, HI_ITEM(hi_reset_flag_valid));
 	ath6kl_usb_diag_read32(ar, address, &data);
 
@@ -2634,6 +2615,19 @@ static void ath6kl_recover_war_work(struct work_struct *work)
 		sema_init(&usb_probe_sem, 1);
 		down(&usb_probe_sem);
 
+		/* When WiFi is not in AP mode, 
+		 * use WiFi svc restart to recover WiFi when fw crash/hang happens.
+		 */
+		if (!gApMode) {
+			/* Since SVC wifi disable/enable will be used
+			   to recover, we need to clear
+			   ATH6KL_RECOVER_STATE_IN_PROGRESS. */
+			atomic_set(&ath6kl_recover_state,
+					ATH6KL_RECOVER_STATE_BY_SERVICE);
+			ath6kl_trigger_bt_restart();
+			return;
+		}
+
 		ath6kl_hsic_rediscovery();
 
 		/* change the state and wakeup event queue */
@@ -2676,6 +2670,7 @@ int ath6kl_hsic_sw_recover(struct ath6kl *ar)
 #endif
 
 	ath6kl_info("%s schedule recover worker thread\n", __func__);
+	ath6kl_check_apmode(ar);
 	schedule_work(&recover_war_work);
 	return 0;
 }
@@ -2690,6 +2685,19 @@ static void ath6kl_reset_war_work(struct work_struct *work)
 	if (atomic_read(&ath6kl_usb_unload_state) ==
 			ATH6KL_USB_UNLOAD_STATE_DRV_DEREG) {
 		ath6kl_info("%s driver is unloaded, just return\n", __func__);
+		return;
+	}
+
+	/* When WiFi is not in AP mode, 
+	 * use WiFi svc restart to recover WiFi when fw crash/hang happens.
+	 */
+	if (!gApMode) {
+		/* Since SVC wifi disable/enable will be used
+		   to recover, we need to clear
+		   ATH6KL_RECOVER_STATE_IN_PROGRESS. */
+		atomic_set(&ath6kl_recover_state,
+				ATH6KL_RECOVER_STATE_BY_SERVICE);
+		ath6kl_trigger_bt_restart();
 		return;
 	}
 
@@ -2708,148 +2716,6 @@ static void ath6kl_reset_war_work(struct work_struct *work)
 
 	ath6kl_hsic_sw_recover(ar);
 	atomic_set(&ath6kl_recover_state, ATH6KL_RECOVER_STATE_DONE);
-}
-#endif
-
-#ifndef ATH6KL_3_5_4
-
-/* Mainly for HSIC currently and support max. 8 levels. */
-static int hsic_pm_migrate_level_map[8] = {
-	0,
-	125,
-	250,
-	500,
-	1000,
-	2000,
-	4000,
-	8000};
-
-static void ath6kl_usb_pm_migrate_add(struct ath6kl *ar)
-{
-#define PM_MIGRATE_DEF_LEVEL	(0)
-	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
-	int level = PM_MIGRATE_DEF_LEVEL;
-
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-		device->migrate_level = level;
-		device->pm_qos_req_set = true;
-		dev_pm_qos_add_request(device->udev->bus->controller,
-					&device->pm_qos_req,
-#ifdef ATH6KL_SUPPORT_NL80211_KERNEL3_8
-					DEV_PM_QOS_LATENCY,
-#endif
-					hsic_pm_migrate_level_map[level]);
-
-		ath6kl_info("Add HSIC migrate, level to %d (%d us)\n",
-			level,
-			hsic_pm_migrate_level_map[level]);
-	}
-
-	return;
-#undef PM_MIGRATE_DEF_LEVEL
-}
-
-static void ath6kl_usb_pm_migrate_remove(struct ath6kl *ar)
-{
-	struct ath6kl_usb *device = NULL;
-
-	if (ar == NULL)
-		return;
-
-	device = (struct ath6kl_usb *)ar->hif_priv;
-
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-		if (device->pm_qos_req_set) {
-			device->pm_qos_req_set = false;
-			dev_pm_qos_remove_request(&device->pm_qos_req);
-		}
-
-		ath6kl_info("Remove HSIC migrate\n");
-	}
-
-	return;
-}
-
-static void ath6kl_usb_pm_migrate_update(struct ath6kl *ar, int level)
-{
-	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
-
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-		if ((level < 0) || (level > 7)) {
-			ath6kl_err("Wrong migrate level value %d\n", level);
-			return;
-		}
-
-		if (device->migrate_level == level)
-			return;
-
-		device->migrate_level = level;
-		if (device->pm_qos_req_set) {
-			device->pm_qos_req_update_cnt[level]++;
-			dev_pm_qos_update_request(&device->pm_qos_req,
-					hsic_pm_migrate_level_map[level]);
-		} else
-			ath6kl_err("Update HSIC migrate but not add first?\n");
-
-		ath6kl_info("Update HSIC migrate, level to %d (%d us) [%d]\n",
-				level,
-				hsic_pm_migrate_level_map[level],
-				device->pm_qos_req_update_cnt[level]);
-	}
-
-	return;
-}
-
-static void ath6kl_usb_pm_migrate_get_cnt(struct ath6kl *ar, u32 migrate_cnt[])
-{
-	struct ath6kl_usb *device = (struct ath6kl_usb *)ar->hif_priv;
-	int i;
-
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-		for (i = 0; i < 8; i++)
-			migrate_cnt[i] = device->pm_qos_req_update_cnt[i];
-	}
-
-	return;
-}
-
-static void ath6kl_usb_pm_clock_update(struct ath6kl *ar, int level)
-{
-	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode)) {
-#if defined(CONFIG_ANDROID) && defined(ATH6KL_BUS_VOTE)
-		ath6kl_hsic_bus_scale_update(level);
-#else
-		;
-#endif
-	}
-
-	return;	
-}
-#else
-/* NOTE_ath6kl_3.5.4 : no need for USB */
-static void ath6kl_usb_pm_migrate_add(struct ath6kl *ar)
-{
-	return;
-}
-
-static void ath6kl_usb_pm_migrate_remove(struct ath6kl *ar)
-{
-	return;
-}
-
-static void ath6kl_usb_pm_migrate_update(struct ath6kl *ar, int level)
-{
-	return;
-}
-
-static void ath6kl_usb_pm_migrate_get_cnt(struct ath6kl *ar, u32 migrate_cnt[])
-{
-	return;
-}
-
-static void ath6kl_usb_pm_clock_update(struct ath6kl *ar, int level)
-{
-	return;	
 }
 #endif
 
@@ -2875,7 +2741,7 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 	.resume = ath6kl_usb_resume,
 	.cleanup_scatter = ath6kl_usb_cleanup_scatter,
 	.diag_warm_reset = ath6kl_usb_diag_warm_reset,
-#ifdef ATH6KL_HAS_EARLYSUSPEND
+#ifdef CONFIG_HAS_EARLYSUSPEND
 	.early_suspend = ath6kl_usb_early_suspend,
 	.late_resume = ath6kl_usb_late_resume,
 #endif
@@ -2892,9 +2758,6 @@ static const struct ath6kl_hif_ops ath6kl_usb_ops = {
 #ifdef ATH6KL_HSIC_RECOVER
 	.sw_recover = ath6kl_hsic_sw_recover,
 #endif
-	.bus_pm_migrate = ath6kl_usb_pm_migrate_update,
-	.bus_pm_migrate_get_cnt = ath6kl_usb_pm_migrate_get_cnt,
-	.bus_pm_clock = ath6kl_usb_pm_clock_update,
 };
 
 #ifdef ATHTST_SUPPORT
@@ -3022,8 +2885,6 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		goto err_core_free;
 	}
 
-	ath6kl_usb_pm_migrate_add(ar);
-
 #ifdef ATH6KL_BUS_VOTE
 	up(&usb_probe_sem);
 #endif
@@ -3046,22 +2907,28 @@ err_usb_put:
 
 static void ath6kl_usb_remove(struct usb_interface *interface)
 {
+	int war_in_progress;
 	struct ath6kl_usb *ar_usb;
+	struct ath6kl *ar;
 
 	ar_usb = usb_get_intfdata(interface);
 	if (ar_usb == NULL)
 		return;
 
-	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb card removed\n");
+	ar = ar_usb->ar;
 
-	ath6kl_usb_pm_migrate_remove(ar_usb->ar);
+	war_in_progress = test_bit(RECOVER_IN_PROCESS, &ar->flag);
+
+	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1, "usb card removed\n");
 
 	usb_put_dev(interface_to_usbdev(interface));
 	ath6kl_usb_device_detached(interface);
 
 #ifdef ATH6KL_HSIC_RECOVER
-	if (ath6kl_driver_unloaded == 0)
+	if (ath6kl_driver_unloaded == 0 && war_in_progress == 0) {
+		ath6kl_check_apmode(ar);
 		schedule_work(&recover_war_work);
+	}
 #endif
 
 }

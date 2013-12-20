@@ -608,22 +608,8 @@ static void ath6kl_reg_apply_regulatory(struct reg_info *reg,
 			_reg_handle_channel(chan, regd);
 
 			/*
-			 * If this channel is ACTIVE and the user want to
-			 * use it whatever ADHOC is allow or not then
-			 * remove IEEE80211_CHAN_NO_IBSS to let wpa_supplicant
-			 * or hostapd use it.
-			 *
-			 * NOTE: fw also need to upgrade to support it.
-			 */
-			if ((reg->flags &
-				ATH6KL_REG_FALGS_NOT_IBSS_CHAN_IGNORE) &&
-			    !(chan->flags & IEEE80211_CHAN_PASSIVE_SCAN) &&
-			    (chan->flags & IEEE80211_CHAN_NO_IBSS))
-				chan->flags &= ~IEEE80211_CHAN_NO_IBSS;
-
-			/*
 			 * If this channel is P2P allowed and not marked
-			 * as PASSIVE/NOT-IBSS to let wpa_supplicant use it.
+			 * as PASSIVE/IBSS to let wpa_supplicant use it.
 			 */
 			if ((reg->flags & ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN) &&
 			    (!(chan->flags & IEEE80211_CHAN_RADAR)) &&
@@ -970,8 +956,7 @@ bool ath6kl_reg_is_lte_channel(struct ath6kl *ar, u32 freq)
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
 				bool cfgRegdb,
-				bool p2pInPasvCh,
-				bool notIbssIgnore)
+				bool p2pInPasvCh)
 {
 	struct reg_info *reg;
 
@@ -990,12 +975,8 @@ struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 		if (p2pInPasvCh)
 			reg->flags |= ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN;
 
-		if (notIbssIgnore)
-			reg->flags |= ATH6KL_REG_FALGS_NOT_IBSS_CHAN_IGNORE;
-
-		ath6kl_info("Using driver's regdb%s%s.\n",
-				(p2pInPasvCh ? " & p2p-in-passive-chan" : ""),
-				(notIbssIgnore ? " & not-ibss-ignore" : ""));
+		ath6kl_info("Using driver's regdb%s.\n",
+				(p2pInPasvCh ? " & p2p-in-passive-chan" : ""));
 	} else if (cfgRegdb) {
 		reg->flags |= ATH6KL_REG_FALGS_CFG80211_REGDB;
 
@@ -1081,44 +1062,22 @@ static void _reg_set_country(struct ath6kl *ar)
 			   2432, 2437, 2442, 2447,
 			   2452, 2457, 2462};
 	bool scan_on_going = false;
-	int i, ret;
+	int i;
 
 	/* Any scan on-going? */
 	for (i = 0; i < ar->vif_max; i++) {
 		vif = ath6kl_get_vif_by_index(ar, i);
-		if (vif &&
-		    test_bit(SCANNING, &vif->flags))
+		if (vif && vif->scan_req)
 			scan_on_going = true;
 	}
 
 	/* Start a quick scan to kick it works */
-	if (scan_on_going == false) {
-		vif = ath6kl_vif_first(ar);
-
-		BUG_ON(!vif);
-
-		/* Double confirm no on-going scan. */
-		if (test_and_set_bit(SCANNING, &vif->flags)) {
-			ath6kl_err("%s: vif%d has on-going scan?\n",
-					__func__,
-					vif->fw_vif_idx);
-
-			return;
-		}
-
-		ret = ath6kl_wmi_startscan_cmd(ar->wmi,
-						0, WMI_LONG_SCAN,
-						true, false, 0, 0,
-						11,
-						ch_list);
-
-		if (ret) {
-			ath6kl_err("%s: vif%d wmi_startscan_cmd failed\n",
-						__func__,
-						vif->fw_vif_idx);
-			clear_bit(SCANNING, &vif->flags);
-		}
-	}
+	if (scan_on_going == false)
+		ath6kl_wmi_startscan_cmd(ar->wmi,
+					0, WMI_LONG_SCAN,
+					true, false, 0, 0,
+					11,
+					ch_list);
 
 	ath6kl_dbg(ATH6KL_DBG_REGDB,
 		   "reg set country done, scan_on_going %d\n",

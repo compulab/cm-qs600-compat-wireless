@@ -351,7 +351,6 @@ struct reg_info {
 #define ATH6KL_REG_FALGS_INTERNAL_REGDB		(1 << 0)
 #define ATH6KL_REG_FALGS_CFG80211_REGDB		(1 << 1)
 #define ATH6KL_REG_FALGS_P2P_IN_PASV_CHAN	(1 << 2)
-#define ATH6KL_REG_FALGS_NOT_IBSS_CHAN_IGNORE	(1 << 3)
 	u32 flags;
 	struct ath6kl *ar;
 	struct wiphy *wiphy;
@@ -374,8 +373,7 @@ bool ath6kl_reg_is_lte_channel(struct ath6kl *ar, u32 freq);
 struct reg_info *ath6kl_reg_init(struct ath6kl *ar,
 				bool intRegdb,
 				bool cfgRegdb,
-				bool p2pInPasvCh,
-				bool notIbssIgnore);
+				bool p2pInPasvCh);
 void ath6kl_reg_deinit(struct ath6kl *ar);
 void ath6kl_reg_bss_info(struct ath6kl *ar,
 			struct ieee80211_mgmt *mgmt,

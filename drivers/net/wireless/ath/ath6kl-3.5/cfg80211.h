@@ -73,11 +73,6 @@ int ath6kl_register_ieee80211_hw(struct ath6kl *ar);
 struct ath6kl *ath6kl_core_alloc(struct device *dev);
 void ath6kl_deinit_ieee80211_hw(struct ath6kl *ar);
 
-void ath6kl_cfg80211_report_scan_done(struct ath6kl_vif *vif,
-				struct cfg80211_scan_request *scan_request,
-				bool aborted,
-				bool del_timer,
-				bool abort_scan);
 void ath6kl_cfg80211_scan_complete_event(struct ath6kl_vif *vif, bool aborted);
 
 void ath6kl_cfg80211_connect_result(struct ath6kl_vif *vif,
@@ -139,4 +134,6 @@ void ath6kl_switch_parameter_based_on_connection(
 #if defined(USB_AUTO_SUSPEND)
 void ath6kl_auto_pm_wakeup_resume(struct ath6kl *wk);
 #endif
+void ath6kl_check_apmode(struct ath6kl *ar);
+extern bool gApMode;
 #endif /* ATH6KL_CFG80211_H */

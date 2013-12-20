@@ -92,6 +92,30 @@ struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid)
 	return conn;
 }
 
+struct ath6kl_sta *ath6kl_find_sta_any(struct ath6kl_vif *vif, u8 *node_addr)
+{
+	struct ath6kl_sta *conn = NULL;
+	u8 i, max_conn;
+
+	if (vif->nw_type != AP_NETWORK)
+		return &vif->sta_list[0];
+
+	if (is_zero_ether_addr(node_addr))
+		return NULL;
+
+	max_conn = (vif->nw_type == AP_NETWORK) ? AP_MAX_NUM_STA : 0;
+
+	for (i = 0; i < max_conn; i++) {
+		if (!is_zero_ether_addr(vif->sta_list[i].mac)) {
+			conn = &vif->sta_list[i];
+			break;
+		}
+	}
+
+	return conn;
+}
+
+
 static void ath6kl_add_new_sta(struct ath6kl_vif *vif, u8 *mac, u8 aid,
 				u8 *wpaie, u8 ielen, u8 keymgmt, u8 ucipher,
 				u8 auth, u8 apsd_info, bool ht_support,
@@ -609,8 +633,7 @@ static void bss_proc_post_flush(struct bss_post_proc *post_proc, bool force)
 	spin_unlock_bh(&post_proc->bss_info_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
-		   "bss_proc vif%d flush %s, %d/%d\n",
-		   post_proc->vif->fw_vif_idx,
+		   "bss_proc flush %s, %d/%d\n",
 		   (force ? "force" : "aging"),
 		   aging_cnt,
 		   bss_cnt);
@@ -618,8 +641,7 @@ static void bss_proc_post_flush(struct bss_post_proc *post_proc, bool force)
 	if (bss_cnt == 0 ||
 		bss_cnt == aging_cnt) {
 		ath6kl_dbg(ATH6KL_DBG_EXT_DEF,
-		   "bss_proc vif%d flush %s, %d/%d\n",
-		   post_proc->vif->fw_vif_idx,
+		   "bss_proc flush %s, %d/%d\n",
 		   (force ? "force" : "aging"),
 		   aging_cnt,
 		   bss_cnt);
@@ -663,8 +685,7 @@ void ath6kl_bss_post_proc_bss_scan_start(struct ath6kl_vif *vif)
 	set_bit(BSS_POST_PROC_SCAN_ONGOING, &post_proc->stat);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
-			"bss_proc vif%d scan_start\n",
-			vif->fw_vif_idx);
+			"bss_proc scan_start\n");
 
 	return;
 }
@@ -710,9 +731,7 @@ int ath6kl_bss_post_proc_bss_complete_event(struct ath6kl_vif *vif)
 		bss_proc_post_flush(post_proc, true);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
-			"bss_proc vif%d scan_comp, cnt %d\n",
-			vif->fw_vif_idx,
-			cnt);
+			"bss_proc scan_comp, cnt %d\n", cnt);
 
 	return 0;
 }
@@ -774,8 +793,7 @@ static struct bss_info_entry *bss_post_proc_bss_info(struct ath6kl_vif *vif,
 	spin_unlock_bh(&post_proc->bss_info_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
-		   "bss_proc vif%d bssinfo %s, hits %d\n",
-		   vif->fw_vif_idx,
+		   "bss_proc bssinfo %s, hits %d\n",
 		   (updated ? "updated" : "add"),
 		   hits);
 
@@ -921,8 +939,7 @@ int ath6kl_bss_post_proc_candidate_bss(struct ath6kl_vif *vif,
 	spin_unlock_bh(&post_proc->bss_info_lock);
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
-		   "bss_proc vif%d candidate_bss ssid %s chan_num %d\n",
-		   vif->fw_vif_idx,
+		   "bss_proc candidate_bss ssid %s chan_num %d\n",
 		   ssid,
 		   chan_num);
 
@@ -955,8 +972,7 @@ void ath6kl_bss_post_proc_bss_config(struct ath6kl_vif *vif,
 
 
 	ath6kl_dbg(ATH6KL_DBG_EXT_BSS_PROC,
-			"bss_proc vif%d config, cache BSS %s aging time %d ms.",
-			vif->fw_vif_idx,
+			"bss_proc config, cache BSS %s aging time %d ms.",
 			(cache_bss ? "ON" : "OFF"),
 			jiffies_to_msecs(post_proc->aging_time));
 
@@ -1007,94 +1023,6 @@ int ath6kl_bss_post_proc_dump(struct ath6kl_vif *vif, u8 *buf, int buf_len)
 
 	return len;
 }
-
-/* NOTE_ath6kl_3.5.4 : No DTIM-Ext support. */
-#ifndef ATH6KL_3_5_4
-void ath6kl_bmiss_reset(struct ath6kl_vif *vif)
-{
-	u16 bmiss_num = 0;
-
-	if (vif->nw_type != INFRA_NETWORK)
-		return;
-
-	/*
-	 * P2P-GO will dissolve P2P-Group immediately
-	 * when P2P-Client disconnect in Android.
-	 * A larger bmiss time to avoid this in noisy
-	 * environment.
-	 */
-	if (vif->fw_vif_idx == 0)
-		bmiss_num = ATH6KL_STA_BMISS_TIME;
-	else
-		bmiss_num = ATH6KL_P2P_BMISS_TIME;
-
-	vif->assoc_bss_bmiss_cnt = bmiss_num;
-	ath6kl_wmi_set_bmiss_time(vif->ar->wmi,
-				vif->fw_vif_idx,
-				bmiss_num);
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
-			"Reset BMISS to %d beacons, vif %d\n",
-			vif->assoc_bss_bmiss_cnt,
-			vif->fw_vif_idx);
-
-	return;
-}
-
-void ath6kl_bmiss_update(struct ath6kl_vif *vif)
-{
-	if (vif->nw_type != INFRA_NETWORK)
-		return;
-
-#ifdef CONFIG_ANDROID
-	/* Only apply the larger BMISS time for mobile device */
-	if ((vif->fw_vif_idx == 0) &&
-	    test_bit(CONNECTED, &vif->flags)) {
-		u16 bmiss_num = 0;
-
-		if (test_bit(DTIM_PERIOD_AVAIL, &vif->flags))
-			bmiss_num = ATH6KL_STA_BMISS_TIME *
-					((vif->assoc_bss_dtim_period + 1) / 2);
-
-		if (vif->ar->dtim_ext > 1)
-			bmiss_num += vif->ar->dtim_ext *
-					vif->assoc_bss_dtim_period;
-
-		if (bmiss_num > MAX_BMISS_BEACONS)
-			bmiss_num = MAX_BMISS_BEACONS;
-
-		/* Only update if new BMISS larger than old one. */
-		if (bmiss_num && vif->assoc_bss_bmiss_cnt &&
-		    (bmiss_num > vif->assoc_bss_bmiss_cnt)) {
-			vif->assoc_bss_bmiss_cnt = bmiss_num;
-			ath6kl_wmi_set_bmiss_time(vif->ar->wmi,
-					vif->fw_vif_idx,
-					bmiss_num);
-
-		}
-
-		ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
-			"Update BMISS to %d beacons, vif %d, DTIM %d/%d\n",
-			vif->assoc_bss_bmiss_cnt,
-			vif->fw_vif_idx,
-			vif->assoc_bss_dtim_period,
-			vif->ar->dtim_ext);
-	}
-#endif
-
-	return;
-}
-#else
-void ath6kl_bmiss_reset(struct ath6kl_vif *vif)
-{
-	return;
-}
-
-void ath6kl_bmiss_update(struct ath6kl_vif *vif)
-{
-	return;
-}
-#endif
 
 enum htc_endpoint_id ath6kl_ac2_endpoint_id(void *devt, u8 ac)
 {
@@ -1343,7 +1271,6 @@ void ath6kl_free_cookie(struct ath6kl *ar, struct ath6kl_cookie *cookie)
 	return;
 }
 
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 bool ath6kl_cookie_is_almost_full(struct ath6kl *ar,
 	enum cookie_type cookie_type)
 {
@@ -1364,7 +1291,6 @@ bool ath6kl_cookie_is_almost_full(struct ath6kl *ar,
 
 	return almost_full;
 }
-#endif
 
 int ath6kl_diag_warm_reset(struct ath6kl *ar)
 {
@@ -1593,148 +1519,20 @@ void ath6kl_reset_device(struct ath6kl *ar, u32 target_type,
 		ath6kl_err("failed to reset target\n");
 }
 
-static void ath6kl_fw_ping_timer(unsigned long ptr)
-{
-	struct ath6kl *ar = (struct ath6kl *)ptr;
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-		   "fwrecov timer, ar %p flag 0x%lx cnt %d\n",
-		   ar,
-		   ar->flag,
-		   ar->fw_ping_fails_in_row);
-
-	if (test_bit(RECOVER_IN_PROCESS, &ar->flag))
-		return;
-
-	/* Here just provide a common WMI command to do simple fw-ping. */
-	if (ar->fw_ping_fails_in_row <= ATH6KL_FW_PING_MAX) {
-		ar->fw_ping_fails_in_row++;
-		ath6kl_wmi_get_stats_cmd(ar->wmi, 0);
-
-		/* Schedule next fw-ping */
-		mod_timer(&ar->fw_ping_timer,
-			  jiffies + ATH6KL_FW_PING_PERIOD);
-	} else {
-		ar->fw_ping_fails_in_row = 0;
-
-		ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-			   "fwrecov max. fw-ping hit\n");
-
-#ifdef ATH6KL_HSIC_RECOVER
-		/*
-		 * For HSIC interface, recovery already start when
-		 * ath6kl_control_tx() fails. Do nothing here.
-		 */
-		;
-#else
-		/*
-		 * Inform fw_crash_notify call-ball to do something.
-		 * Ex, to inform the user to unload the driver.
-		 */
-		set_bit(RECOVER_IN_PROCESS, &ar->flag);
-		ath6kl_fw_crash_trap(ar);
-#endif
-	}
-
-	return;
-}
-
-void ath6kl_fw_ping_init(struct ath6kl *ar)
-{
-	ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-		   "fwrecov init, ar %p\n",
-		   ar);
-
-	setup_timer(&ar->fw_ping_timer,
-		    ath6kl_fw_ping_timer,
-		    (unsigned long)ar);
-
-	return;
-}
-
-void ath6kl_fw_ping_deinit(struct ath6kl *ar)
-{
-	ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-		   "fwrecov deinit, ar %p\n",
-		   ar);
-
-	del_timer_sync(&ar->fw_ping_timer);
-
-	return;
-}
-
-void ath6kl_fw_ping_hint(struct ath6kl *ar, int hint)
-{
-	ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-		   "fwrecov hint, ar %p flag 0x%lx hint %d\n",
-		   ar,
-		   ar->flag,
-		   hint);
-
-	if (!test_bit(RECOVER_IN_PROCESS, &ar->flag)) {
-		ar->fw_ping_fails_in_row = 0;
-		mod_timer(&ar->fw_ping_timer,
-			  jiffies + ATH6KL_FW_PING_PERIOD);
-	}
-
-	return;
-}
-
-void ath6kl_fw_ping_pong(struct ath6kl *ar)
-{
-	ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-		   "fwrecov pong, ar %p\n",
-		   ar);
-
-	ar->fw_ping_fails_in_row = 0;
-	del_timer_sync(&ar->fw_ping_timer);
-
-	return;
-}
-
 void ath6kl_fw_crash_notify(struct ath6kl *ar)
 {
 	struct ath6kl_vif *vif = ath6kl_vif_first(ar);
 
-	ath6kl_dbg(ATH6KL_DBG_EXT_FW_RECOV,
-		   "fwcorv notify firmware crash to user, ar %p vif %p\n",
-		   ar,
-		   vif);
-
 	if (vif == NULL)
 		return;
 
-#ifdef CONFIG_ANDROID	/* For generic Android 4.x */
+
+	ath6kl_info("notify firmware crash to user %p\n", ar);
+
+	/* TODO */
 #ifdef ATH6KL_HSIC_RECOVER
 	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
 		ath6kl_hif_sw_recover(ar);
-#else
-	/* NOTE_ath6kl_3.5.4 : Reset devices first. */
-#ifdef ATH6KL_3_5_4
-	ath6kl_reset_device(ar, ar->target_type, true, true);
-	msleep(1000);
-#endif
-
-	if (1) {
-		u8 *buf;
-		int len;
-
-		len = 26;
-		buf = kzalloc(len, GFP_ATOMIC);
-		if (buf == NULL)
-			return;
-
-		/* hint */
-		buf[24] = 34;
-		cfg80211_send_unprot_disassoc(vif->ndev,
-						buf,
-						len);
-
-		kfree(buf);
-	}
-#endif
-#else
-	/* TODO */
 #endif
 
 	return;
@@ -1780,237 +1578,6 @@ int ath6kl_fw_crash_cold_reset_enable(struct ath6kl *ar)
 		param);
 
 	return ret;
-}
-
-static void _tramor_rx_action(struct ath6kl_vif *vif,
-				enum ath6kl_tramor_level level,
-				bool force)
-{
-	struct ath6kl_tramor *tramor = &vif->tramor_ctx;
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-		"tramor action-rx, vif %d level %d force %d\n",
-		vif->fw_vif_idx,
-		level,
-		force);
-
-	/* Only for Pure STA case now. */
-	if ((vif->fw_vif_idx == 0) &&
-	    (vif->ar->num_vif <= 2) &&	/* Bad coding */
-	    (vif->nw_type == INFRA_NETWORK) &&
-	    (test_bit(CONNECTED, &vif->flags) || force)) {
-		ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-			"tramor action-rx, bus_pm_migrate to %d migrate %d\n",
-			level,
-			tramor->bus_pm_migrate[level]);
-		ath6kl_hif_bus_pm_migrate(vif->ar,
-					tramor->bus_pm_migrate[level]);
-
-#ifdef _NOT_YET
-		/*
-		 * TODO
-		 *
-		 * Not make sense to reconfigurate the bus clock
-		 * to many different levels. Just define two levels
-		 * which are default & low level.
-		 */
-		if (level == ATH6KL_TRAMOR_LVL_HIGH)
-			ath6kl_hif_bus_pm_clock(vif->ar, 4); /* highest clock */
-		else
-			ath6kl_hif_bus_pm_clock(vif->ar, 0); /* lowest clock */
-#endif
-	}
-
-	return;
-}
-
-static bool _tramor_rx_level_change(struct ath6kl_tramor *tramor)
-{
-	enum ath6kl_tramor_level level = ATH6KL_TRAMOR_LVL_LOW;
-
-	if (tramor->rx_latest_Bps >= tramor->rx_threshold_high)
-		level = ATH6KL_TRAMOR_LVL_HIGH;
-	else if (tramor->rx_latest_Bps >= tramor->rx_threshold_low)
-		level = ATH6KL_TRAMOR_LVL_MEDIUM;
-
-	if (tramor->rx_curr_level == level)
-		return false;
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-		"tramor level-rx, from %d to %d\n",
-		tramor->rx_curr_level,
-		level);
-
-	/* update level */
-	tramor->rx_curr_level = level;
-
-	return true;
-}
-
-void ath6kl_tramor_rx(struct ath6kl_vif *vif)
-{
-	struct ath6kl_tramor *tramor = &vif->tramor_ctx;
-	unsigned long diff_sec, now = jiffies;
-
-	if (!(tramor->flags & ATH6KL_TRAMOR_FLAGS_RX_ENABLE))
-		return;
-
-	if (tramor->rx_last_time) { /* not 1st update */
-		if (!time_after(now,
-			(tramor->rx_last_time + tramor->rx_min_cal_time)))
-			return;
-
-		diff_sec = (now - tramor->rx_last_time) / HZ;
-
-		if (diff_sec == 0)
-			diff_sec = 1;
-
-		tramor->rx_latest_Bps = (vif->net_stats.rx_bytes -
-					 tramor->rx_last_bytes) / diff_sec;
-
-		ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-			"tramor Bps-rx, %ld\n",
-			tramor->rx_latest_Bps);
-
-		/* Run rx-action or not */
-		if (tramor->flags & ATH6KL_TRAMOR_FLAGS_RXACT_ENABLE) {
-			if (_tramor_rx_level_change(tramor))
-				_tramor_rx_action(vif,
-						tramor->rx_curr_level,
-						false);
-		}
-	}
-
-	/* update to current */
-	tramor->rx_last_time = now;
-	tramor->rx_last_bytes = vif->net_stats.rx_bytes;
-
-	return;
-}
-
-void ath6kl_tramor_tx(struct ath6kl_vif *vif)
-{
-	struct ath6kl_tramor *tramor = &vif->tramor_ctx;
-	unsigned long diff_sec, now = jiffies;
-
-	if (!(tramor->flags & ATH6KL_TRAMOR_FLAGS_TX_ENABLE))
-		return;
-
-	if (tramor->tx_last_time) { /* not 1st update */
-		if (!time_after(now,
-			(tramor->tx_last_time + tramor->tx_min_cal_time)))
-			return;
-
-		diff_sec = (now - tramor->tx_last_time) / HZ;
-
-		if (diff_sec == 0)
-			diff_sec = 1;
-
-		tramor->tx_latest_Bps = (vif->net_stats.tx_bytes -
-					 tramor->tx_last_bytes) / diff_sec;
-
-		ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-			"tramor Bps-tx, %ld\n",
-			tramor->tx_latest_Bps);
-	}
-
-	/* update to current */
-	tramor->tx_last_time = now;
-	tramor->tx_last_bytes = vif->net_stats.tx_bytes;
-
-	return;
-}
-
-void ath6kl_tramor_config(struct ath6kl_vif *vif,
-			bool rx_enable,
-			int rx_cal_time,
-			bool tx_enable,
-			int tx_cal_time,
-			bool rxact_enable,
-			unsigned int rx_th_low,
-			unsigned int rx_th_high,
-			int rxact_mig_low,
-			int rxact_mig_med,
-			int rxact_mig_high)
-{
-	struct ath6kl_tramor *tramor = &vif->tramor_ctx;
-
-	/* Keep the original setting if zero */
-	if (rx_cal_time == 0)
-		rx_cal_time = tramor->rx_min_cal_time;
-	if (rx_cal_time < ATH6KL_TRAMOR_MIN_CAL_TIME)
-		rx_cal_time = ATH6KL_TRAMOR_MIN_CAL_TIME;
-	tramor->rx_min_cal_time = msecs_to_jiffies(rx_cal_time);
-
-	if (tx_cal_time == 0)
-		tx_cal_time = tramor->tx_min_cal_time;
-	if (tx_cal_time < ATH6KL_TRAMOR_MIN_CAL_TIME)
-		tx_cal_time = ATH6KL_TRAMOR_MIN_CAL_TIME;
-	tramor->tx_min_cal_time = msecs_to_jiffies(tx_cal_time);
-
-	/* TX */
-	if (tx_enable)
-		tramor->flags |= ATH6KL_TRAMOR_FLAGS_TX_ENABLE;
-	else
-		tramor->flags &= ~ATH6KL_TRAMOR_FLAGS_TX_ENABLE;
-
-	tramor->tx_latest_Bps = 0;
-	tramor->tx_last_time = 0;
-	tramor->tx_last_bytes = 0;
-
-	/* RX */
-	if (rx_enable)
-		tramor->flags |= ATH6KL_TRAMOR_FLAGS_RX_ENABLE;
-	else
-		tramor->flags &= ~ATH6KL_TRAMOR_FLAGS_RX_ENABLE;
-
-	tramor->rx_latest_Bps = 0;
-	tramor->rx_last_time = 0;
-	tramor->rx_last_bytes = 0;
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-		"tramor config, vif %d cal-time-TxRx %ld/%ld rx %s tx %s\n",
-		vif->fw_vif_idx,
-		tramor->tx_min_cal_time,
-		tramor->rx_min_cal_time,
-		(rx_enable ? "enable" : "disable"),
-		(tx_enable ? "enable" : "disable"));
-
-	/* RX-action */
-	if (rxact_enable)
-		tramor->flags |= ATH6KL_TRAMOR_FLAGS_RXACT_ENABLE;
-	else
-		tramor->flags &= ~ATH6KL_TRAMOR_FLAGS_RXACT_ENABLE;
-
-	tramor->rx_curr_level = ATH6KL_TRAMOR_LVL_LOW;
-	if (rx_th_low)
-		tramor->rx_threshold_low = rx_th_low;
-	if (rx_th_high)
-		tramor->rx_threshold_high = rx_th_high;
-
-	if (rxact_mig_low != ATH6KL_TRAMOR_BUS_MIG_LVL_NULL)
-		tramor->bus_pm_migrate[ATH6KL_TRAMOR_LVL_LOW] =
-							rxact_mig_low;
-	if (rxact_mig_med != ATH6KL_TRAMOR_BUS_MIG_LVL_NULL)
-		tramor->bus_pm_migrate[ATH6KL_TRAMOR_LVL_MEDIUM] =
-							rxact_mig_med;
-	if (rxact_mig_high != ATH6KL_TRAMOR_BUS_MIG_LVL_NULL)
-		tramor->bus_pm_migrate[ATH6KL_TRAMOR_LVL_HIGH] =
-							rxact_mig_high;
-
-	/* reset to default level */
-	_tramor_rx_action(vif, tramor->rx_curr_level, true);
-
-	ath6kl_dbg(ATH6KL_DBG_EXT_TRAMOR,
-		"tramor config, rxact %s th-l/h %d/%d bus migrate %d/%d/%d\n",
-		(rxact_enable ? "enable" : "disable"),
-		rx_th_low,
-		rx_th_high,
-		rxact_mig_low,
-		rxact_mig_med,
-		rxact_mig_high);
-
-	return;
 }
 
 static void ath6kl_install_static_wep_keys(struct ath6kl_vif *vif)
@@ -2233,14 +1800,6 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	struct ath6kl *ar = vif->ar;
 	bool aborted = false;
 
-	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
-		   ATH6KL_DBG_EXT_INFO1 |
-		   ATH6KL_DBG_EXT_SCAN |
-		   ATH6KL_DBG_EXT_DEF,
-		"vif %d, scan complete: %d\n",
-		vif->fw_vif_idx,
-		status);
-
 	if (status != WMI_SCAN_STATUS_SUCCESS)
 		aborted = true;
 #ifdef ACS_SUPPORT
@@ -2248,13 +1807,12 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 	ath6kl_acs_scan_complete_event(vif, aborted);
 #endif
 
-	/* Hook scan-complete event here if the module needs. */
 	ath6kl_bss_post_proc_bss_complete_event(vif);
 	ath6kl_p2p_rc_scan_complete_event(vif, aborted);
-	ath6kl_htcoex_scan_complete_event(vif, aborted);
 
-	/* Report to cfg80211. */
-	ath6kl_cfg80211_scan_complete_event(vif, aborted);
+	if (ath6kl_htcoex_scan_complete_event(vif, aborted) ==
+		HTCOEX_PASS_SCAN_DONE)
+		ath6kl_cfg80211_scan_complete_event(vif, aborted);
 
 	if (!vif->usr_bss_filter) {
 		clear_bit(CLEAR_BSSFILTER_ON_BEACON, &vif->flags);
@@ -2262,7 +1820,13 @@ void ath6kl_scan_complete_evt(struct ath6kl_vif *vif, int status)
 					 NONE_BSS_FILTER, 0);
 	}
 
-	return;
+	ath6kl_dbg(ATH6KL_DBG_WLAN_CFG |
+		   ATH6KL_DBG_EXT_INFO1 |
+		   ATH6KL_DBG_EXT_SCAN |
+		   ATH6KL_DBG_EXT_DEF,
+		"vif %d, scan complete: %d\n",
+		vif->fw_vif_idx,
+		status);
 }
 
 void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
@@ -2289,9 +1853,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 	}
 
 	netif_wake_queue(vif->ndev);
-
-	/* Early start EAPOL handshake protect. */
-	ath6kl_eapol_handshake_protect(vif);
 
 	/* Update connect & link status atomically */
 	spin_lock_bh(&vif->if_lock);
@@ -2327,17 +1888,6 @@ void ath6kl_connect_event(struct ath6kl_vif *vif, u16 channel, u8 *bssid,
 				assoc_req_len,
 				assoc_resp_len,
 				assoc_info);
-	ath6kl_tramor_config(vif,
-				false,	/* disable by default */
-				0,
-				false,	/* disable by default */
-				0,
-				false,	/* disable by default */
-				ATH6KL_TRAMOR_RX_DEF_TH_LOW,
-				ATH6KL_TRAMOR_RX_DEF_TH_HIGH,
-				ATH6KL_TRAMOR_DEF_BUS_MIG_LVL_LOW,
-				ATH6KL_TRAMOR_DEF_BUS_MIG_LVL_MEDIUM,
-				ATH6KL_TRAMOR_DEF_BUS_MIG_LVL_HIGH);
 
 	ath6kl_switch_parameter_based_on_connection(vif, false);
 }
@@ -2366,6 +1916,38 @@ void ath6kl_tkip_micerr_event(struct ath6kl_vif *vif, u8 keyid, bool ismcast)
 	} else
 		ath6kl_cfg80211_tkip_micerr_event(vif, keyid, ismcast);
 
+}
+
+/* this is currently default to non-kmsg */
+static void ath6kl_dump_status(struct ath6kl_vif *vif, struct wmi_target_stats *tgt_stats)
+{
+	struct target_stats *stats = &vif->target_stats;
+	
+	if (tgt_stats->cserv_stats.cs_bmiss_cnt != 0 ||
+		tgt_stats->cserv_stats.cs_discon_cnt != 0 ||
+		tgt_stats->cserv_stats.cs_low_rssi_cnt != 0 ||
+		tgt_stats->cserv_stats.cs_roam_count != 0 ||
+		tgt_stats->cserv_stats.cs_connect_cnt != 0) {
+
+		ath6kl_printfwd("vif %d time %d\n"
+				   "bmiss %llu con %llu discon %llu\n"
+				   "averssi %d lrssi %llu roam %d\n",
+				   vif->fw_vif_idx, (unsigned int)stats->update_time.tv_sec,
+				   stats->cs_bmiss_cnt, stats->cs_connect_cnt,
+				   stats->cs_discon_cnt,stats->cs_ave_beacon_rssi,
+				   stats->cs_low_rssi_cnt, stats->cs_roam_cnt);
+
+		/* if we need kernel dump */
+		ath6kl_dbg(ATH6KL_DBG_EXT_INFO1,
+				   "vif %d time %d\n"
+				   "bmiss %llu con %llu discon %llu\n"
+				   "averssi %d lrssi %llu roam %d\n",
+				   vif->fw_vif_idx, (unsigned int)stats->update_time.tv_sec,
+				   stats->cs_bmiss_cnt, stats->cs_connect_cnt,
+				   stats->cs_discon_cnt,stats->cs_ave_beacon_rssi,
+				   stats->cs_low_rssi_cnt, stats->cs_roam_cnt);
+
+	}
 }
 
 static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
@@ -2480,6 +2062,7 @@ static void ath6kl_update_target_stats(struct ath6kl_vif *vif, u8 *ptr, u32 len)
 		le16_to_cpu(tgt_stats->wow_stats.wow_evt_discarded);
 
 	do_gettimeofday(&stats->update_time);
+	ath6kl_dump_status(vif, tgt_stats);
 }
 
 static void ath6kl_add_le32(__le32 *var, __le32 val)
@@ -2777,7 +2360,7 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 	clear_bit(CONNECTED, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 	clear_bit(PS_STICK, &vif->flags);
-	del_timer_sync(&vif->shprotect_timer);
+	del_timer(&vif->shprotect_timer);
 	netif_carrier_off(vif->ndev);
 	spin_unlock_bh(&vif->if_lock);
 
@@ -2797,17 +2380,6 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 
 	/* Hook disconnection event */
 	ath6kl_htcoex_disconnect_event(vif);
-	ath6kl_tramor_config(vif,
-			false,	/* disable by default */
-			0,
-			false,	/* disable by default */
-			0,
-			false,	/* disable by default */
-			0,
-			0,
-			ATH6KL_TRAMOR_BUS_MIG_LVL_NULL,
-			ATH6KL_TRAMOR_BUS_MIG_LVL_NULL,
-			ATH6KL_TRAMOR_BUS_MIG_LVL_NULL);
 	ath6kl_judge_roam_parameter(vif, true);
 	ath6kl_switch_parameter_based_on_connection(vif, true);
 }
@@ -2884,7 +2456,7 @@ static int ath6kl_close(struct net_device *dev)
 	clear_bit(CONNECT_PEND, &vif->flags);
 	clear_bit(CONNECT_HANDSHAKE_PROTECT, &vif->flags);
 	clear_bit(PS_STICK, &vif->flags);
-	del_timer_sync(&vif->shprotect_timer);
+	del_timer(&vif->shprotect_timer);
 
 	if (test_bit(WMI_READY, &ar->flag)) {
 		if (ath6kl_wmi_scanparams_cmd(ar->wmi, vif->fw_vif_idx, 0xFFFF,
@@ -2893,8 +2465,7 @@ static int ath6kl_close(struct net_device *dev)
 
 	}
 
-	if (test_bit(SCANNING, &vif->flags))
-		ath6kl_cfg80211_scan_complete_event(vif, true);
+	ath6kl_cfg80211_scan_complete_event(vif, true);
 
 	clear_bit(WLAN_ENABLED, &vif->flags);
 
@@ -3153,15 +2724,8 @@ static int ath6kl_ioctl_set_suspend(struct ath6kl_vif *vif,
 				char *user_cmd,
 				int len)
 {
-#define _LONG_HOST_DELAY	(WOW_HOST_REQ_DELAY)
-#define _SHORT_HOST_DELAY	(WOW_HOST_REQ_DELAY / 2)
 	int ret = 0;
 	int host_req_delay;
-
-	/*
-	 * Mainly for Android system to expect be set when the user try to
-	 * turn on/off the screen.
-	 */
 
 	/* SET::SUSSUSPENDMODE {on/off} */
 	if (len > 1) {
@@ -3174,15 +2738,7 @@ static int ath6kl_ioctl_set_suspend(struct ath6kl_vif *vif,
 			return -EIO;
 		}
 
-		host_req_delay = ((user_cmd[0] - '0') ? _LONG_HOST_DELAY :
-							_SHORT_HOST_DELAY);
-
-		/* USER_SUSPEND could be used to do some fine tune purpose. */
-		if (host_req_delay == _LONG_HOST_DELAY)
-			set_bit(USER_SUSPEND, &vif->ar->flag);
-		else
-			clear_bit(USER_SUSPEND, &vif->ar->flag);
-
+		host_req_delay = ((user_cmd[0] - '0') ? 2000 : 300);
 		ath6kl_dbg(ATH6KL_DBG_EXT_AUTOPM,
 			"%s: Set filter: 0x%x host_req_delay %d -> %d",
 				__func__,
@@ -3200,8 +2756,6 @@ static int ath6kl_ioctl_set_suspend(struct ath6kl_vif *vif,
 		ret = -EFAULT;
 
 	return ret;
-#undef _LONG_HOST_DELAY
-#undef _SHORT_HOST_DELAY
 }
 
 bool ath6kl_ioctl_ready(struct ath6kl_vif *vif)
@@ -3254,11 +2808,6 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 				sizeof(struct ath6kl_android_wifi_priv_cmd)))
 			ret = -EIO;
 		else {
-			if (android_cmd.used_len > android_cmd.total_len) {
-				ret = -EINVAL;
-				break;
-			}
-
 			user_cmd = kzalloc(android_cmd.total_len, GFP_KERNEL);
 			if (!user_cmd) {
 				ret = -ENOMEM;
@@ -3302,15 +2851,12 @@ static int ath6kl_ioctl_standard(struct net_device *dev,
 					ret = ath6kl_ioctl_set_suspend(vif,
 						(user_cmd + 15),
 						(android_cmd.used_len - 15));
-				/* NOTE_ath6kl_3.5.4 : No BT support. */
-#ifndef ATH6KL_3_5_4
 #ifdef CONFIG_ANDROID
 				else if (strstr(user_cmd, "SET_BT_ON ")) {
 					ath6kl_bt_on =
 						(user_cmd[10] == '1') ? 1 : 0;
 					ret = 0;
 				}
-#endif
 #endif
 				else {
 					ath6kl_dbg(ATH6KL_DBG_TRC,
@@ -3464,6 +3010,16 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 		int idx;
 
 		conn = ath6kl_find_sta(vif, macaddr);
+
+#ifdef CONFIG_ANDROID
+		/* WFD will query link speed with peer p2p0's macaddr.
+		 * However, what we actually need is peer P2P-GO/P2P-Client interface.
+		 * Such as p2p-p2p0-x. Here find out p2p-p2p-x if there is any.
+		 */
+		if (!conn)
+			conn = ath6kl_find_sta_any(vif, macaddr);
+#endif
+
 		if (conn) {
 			for (idx = 0; idx < AP_MAX_NUM_STA; idx++) {
 				if (conn->aid == ap->sta[idx].aid) {
@@ -3478,6 +3034,8 @@ static int ath6kl_ioctl_linkspeed(struct net_device *dev,
 	} else
 		rate = vif->target_stats.tx_ucast_rate;
 
+	if (test_bit(MCC_ENABLED, &ar->flag))
+		rate = (rate >> 1);
 	snprintf(user_cmd, 32, "%u", rate / 1000);
 	req->u.data.length = strlen(user_cmd);
 	user_cmd[req->u.data.length] = '\0';
@@ -3521,10 +3079,7 @@ int ath6kl_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 	case ATH6KL_IOCTL_STANDARD01:	/* Android privacy command */
 	case ATH6KL_IOCTL_STANDARD02:	/* supplicant escape purpose to
 					   support WiFi-Direct Cert. */
-	/* NOTE_ath6kl_3.5.4 : No BTC support */
-#ifndef ATH6KL_3_5_4
 	case ATH6KL_IOCTL_STANDARD03:	/* BTC command */
-#endif
 	case ATH6KL_IOCTL_STANDARD12:	/* hole, please reserved */
 #ifdef ATHTST_SUPPORT
 	case ATHCFG_WCMD_IOCTL:	/* athtst */

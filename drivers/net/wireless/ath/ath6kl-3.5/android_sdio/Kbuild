@@ -58,7 +58,7 @@ ccflags-y += -include ../../include/linux/compat-2.6.h
 ccflags-y += -include ../../$(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include/linux/version.h
 else
 ifeq ($(HAVE_CFG80211_KERNEL3_4), 1)
-ccflags-y += -DATH6KL_SUPPORT_NL80211_KERNEL3_4
+ccflags-y += -DATH6KL_SUPPORT_NL80211_KERNEL3_10
 endif
 ifeq ($(HAVE_CFG80211_KERNEL3_7), 1)
 ccflags-y += -DATH6KL_SUPPORT_NL80211_KERNEL3_6

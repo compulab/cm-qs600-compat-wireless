@@ -1390,17 +1390,7 @@ void ath6kl_ap_rc_update(struct ath6kl_vif *vif)
 
 		channels = kzalloc(WMI_MAX_CHANNELS * sizeof(u16), GFP_KERNEL);
 		if (channels) {
-			/* Double confirm no on-going scan. */
-			if (test_and_set_bit(SCANNING, &vif->flags)) {
-				ath6kl_err("%s: vif%d has on-going scan?\n",
-						__func__,
-						vif->fw_vif_idx);
-
-				kfree(channels);
-				up(&ar->sem);
-
-				return;
-			}
+			set_bit(SCANNING, &vif->flags);
 
 			if (!vif->usr_bss_filter) {
 				clear_bit(CLEAR_BSSFILTER_ON_BEACON,
@@ -1418,12 +1408,9 @@ void ath6kl_ap_rc_update(struct ath6kl_vif *vif)
 							true, false, 0, 0,
 							num_chan,
 							channels);
-			if (ret) {
-				clear_bit(SCANNING, &vif->flags);
-				ath6kl_err("%s: vif%d wmi_startscan_cmd fail\n",
-						__func__,
-						vif->fw_vif_idx);
-			} else {
+			if (ret)
+				ath6kl_err("wmi_startscan_cmd failed\n");
+			else {
 				set_bit(SCANNING_WAIT, &vif->flags);
 
 				ath6kl_p2p_rc_scan_start(vif, true);
@@ -1449,6 +1436,9 @@ void ath6kl_ap_rc_update(struct ath6kl_vif *vif)
 					ath6kl_err("ap_rc tgt not respond\n");
 				}
 			}
+
+			/* Local scan need to clear SCANNING by caller. */
+			clear_bit(SCANNING, &vif->flags);
 
 			kfree(channels);
 		} else

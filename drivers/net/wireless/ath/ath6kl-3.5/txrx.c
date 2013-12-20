@@ -38,6 +38,8 @@ static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta,
 		   struct sk_buff **skb);
 static int aggr_tx_flush(struct ath6kl_vif *vif, struct ath6kl_sta *conn);
 
+static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx);
+
 static u8 ath6kl_ibss_map_epid(struct sk_buff *skb, struct net_device *dev,
 			       u32 *map_no)
 {
@@ -353,10 +355,6 @@ bool ath6kl_mgmt_powersave_ap(struct ath6kl_vif *vif,
 		if (!conn)
 			return false;
 
-		/* NOTE_ath6kl_3.5.4 : CL1604324 - NEC IOT */
-		if (ieee80211_is_probe_resp(mgmt->frame_control))
-			return false;
-
 		if (conn->sta_flags & STA_PS_SLEEP) {
 			if (!(conn->sta_flags & STA_PS_POLLED)) {
 				/* Queue the frames if the STA is sleeping */
@@ -450,15 +448,17 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 	if (cookie == NULL) {
 #ifdef ATH6KL_HSIC_RECOVER
 		if (ar->cookie_ctrl.cookie_fail_in_row >
-				MAX_COOKIE_FAIL_IN_ROW &&
-				ar->fw_crash_notify) {
+				MAX_COOKIE_FAIL_IN_ROW) {
 			ath6kl_err("control cookie fail %d time reset!\n",
 				ar->cookie_ctrl.cookie_fail_in_row);
 			ar->cookie_ctrl.cookie_fail_in_row = 0;
 			if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 				ath6kl_info("%s schedule recover\n", __func__);
+				ath6kl_check_apmode(ar);
 				schedule_work(&ar->reset_cover_war_work);
 			}
+			del_timer(&fw_ping_timer);
+			fw_ping_count = 0;
 		}
 #endif
 		spin_unlock_bh(&ar->lock);
@@ -511,27 +511,11 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	u32 map_no = 0;
 	u16 htc_tag = ATH6KL_DATA_PKT_TAG;
 	u8 ac = 99 ; /* initialize to unmapped ac */
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	bool cookie_run_out, chk_adhoc_ps_mapping = false;
-#else
-	bool chk_adhoc_ps_mapping = false;
-#endif
 	u32 wmi_data_flags = 0;
 	int ret, aggr_tx_status = AGGR_TX_UNKNOW;
 	struct ath6kl_sta *conn = NULL;
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	bool cookie_cnt_updated = false;
-#endif
-
-	/* Trace RTSP content */
-	if (ar->p2p &&
-	    !ar->p2p_compat &&
-	    ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) ||
-	     (vif->wdev.iftype == NL80211_IFTYPE_P2P_GO)))
-		ath6kl_dbg_rtsp_dump(ATH6KL_DBG_EXT_RTSP,
-					true,
-					skb->data,
-					skb->len);
 
 	/* If target is not associated */
 	if (!test_bit(CONNECTED, &vif->flags) &&
@@ -598,7 +582,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		else {
 			/* get the stream mapping */
 			ret = ath6kl_wmi_implicit_create_pstream(ar->wmi,
-					vif->fw_vif_idx, skb,
+					vif->fw_vif_idx, vif, skb,
 					0, test_bit(WMM_ENABLED, &vif->flags),
 					&ac, &htc_tag);
 			if (ret)
@@ -641,7 +625,7 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 
 	if (test_bit(CONNECTED, &vif->flags) &&
 	    (skb->protocol == cpu_to_be16(ETH_P_PAE)))
-		ath6kl_eapol_handshake_protect(vif);
+		ath6kl_eapol_handshake_protect(vif, true);
 
 	/* TX A-MSDU */
 	if ((test_bit(AMSDU_ENABLED, &vif->flags)) &&
@@ -685,7 +669,6 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	}
 
 	/* allocate resource for this packet */
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	cookie_run_out = false;
 	if (htc_tag == ATH6KL_DATA_PKT_TAG) {
 		if (test_bit(MCC_ENABLED, &ar->flag)) {
@@ -693,6 +676,9 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 				cookie = ath6kl_alloc_cookie(ar,
 					COOKIE_TYPE_DATA);
 			}
+			if (vif->data_cookie_count >=
+				ATH6KL_NETIF_THRESH_HIGH)
+				cookie_run_out = true;
 		} else {
 			cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
 			cookie_run_out = ath6kl_cookie_is_almost_full(ar,
@@ -704,20 +690,8 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 		}
 	} else
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
-#else
-	if (htc_tag == ATH6KL_DATA_PKT_TAG)
-		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_DATA);
-	else
-		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
-
-	if (!cookie) {
-		spin_unlock_bh(&ar->lock);
-		goto fail_tx;
-	}
-#endif
 
 	/* update counts while the lock is held */
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	if (cookie) {
 		ar->tx_pending[eid]++;
 		ar->total_tx_data_pend++;
@@ -725,23 +699,18 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 	} else {
 		ar->cookie_data.cookie_fail_in_row++;
 	}
-#else
-	ar->tx_pending[eid]++;
-	ar->total_tx_data_pend++;
-#endif
 
 	spin_unlock_bh(&ar->lock);
 
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	/* CR495283 */
 	if ((cookie_run_out) &&
-	    (ar->ac_stream_active_num <= 1) &&
+	    (ar->ac_stream_active_num <= 1 ||
+	    test_bit(MCC_ENABLED, &ar->flag)) &&
 	    (!test_and_set_bit(NETQ_STOPPED, &vif->flags)))
 		netif_stop_queue(vif->ndev);
 
 	if (!cookie)
 		goto fail_tx;
-#endif
 
 	if (!IS_ALIGNED((unsigned long) skb->data - HTC_HDR_LENGTH, 4) &&
 	    skb_cloned(skb)) {
@@ -797,7 +766,6 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev,
 fail_tx:
 	dev_kfree_skb(skb);
 
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	if (cookie) {
 		spin_lock_bh(&ar->lock);
 		if (cookie_cnt_updated)
@@ -805,7 +773,6 @@ fail_tx:
 		ath6kl_free_cookie(ar, cookie);
 		spin_unlock_bh(&ar->lock);
 	}
-#endif
 
 	vif->net_stats.tx_dropped++;
 	vif->net_stats.tx_aborted_errors++;
@@ -970,9 +937,9 @@ enum htc_send_full_action ath6kl_tx_queue_full(struct htc_target *target,
 		set_bit(WMI_CTRL_EP_FULL, &ar->flag);
 		ath6kl_err("wmi ctrl ep is full\n");
 #ifdef ATH6KL_HSIC_RECOVER
-		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag) &&
-			ar->fw_crash_notify) {
+		if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 			ath6kl_info("%s schedule recover work\n", __func__);
+			ath6kl_check_apmode(ar);
 			schedule_work(&ar->reset_cover_war_work);
 		}
 #endif
@@ -1084,8 +1051,6 @@ void ath6kl_tx_complete(struct htc_target *target,
 	bool flushing[ATH6KL_VIF_MAX] = {false};
 	u8 if_idx;
 	struct ath6kl_vif *vif = NULL;
-	struct htc_endpoint *endpoint = NULL;
-	int txq_depth;
 
 	skb_queue_head_init(&skb_queue);
 
@@ -1184,12 +1149,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 			flushing[if_idx] = false;
 			vif->net_stats.tx_packets++;
 			vif->net_stats.tx_bytes += skb->len;
-
-			ath6kl_tramor_tx(vif);
 		}
 
 		ath6kl_tx_clear_node_map(vif, eid, map_no);
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 		if (ath6kl_cookie->htc_pkt->info.tx.tag ==
 			ATH6KL_DATA_PKT_TAG) {
 			vif->data_cookie_count--;
@@ -1198,7 +1160,6 @@ void ath6kl_tx_complete(struct htc_target *target,
 				ath6kl_err("Error, data_cookie_count unsync\n");
 			}
 		}
-#endif
 
 		ath6kl_free_cookie(ar, ath6kl_cookie);
 
@@ -1211,23 +1172,9 @@ void ath6kl_tx_complete(struct htc_target *target,
 	__skb_queue_purge(&skb_queue);
 
 	if (test_bit(MCC_ENABLED, &ar->flag)) {
-		endpoint = &ar->htc_target->endpoint[eid];
-		/*if (ar && endpoint && packet && ar->htc_target) {*/
-		if (endpoint && packet && ar->htc_target) {
-			struct list_head *tx_queue;
-
-			tx_queue = &endpoint->txq;
-			if (tx_queue && vif && !flushing[vif->fw_vif_idx]) {
-				spin_lock_bh(&ar->htc_target->tx_lock);
-				txq_depth = get_queue_depth(tx_queue);
-				spin_unlock_bh(&ar->htc_target->tx_lock);
-
-				if (txq_depth < ATH6KL_P2P_FLOWCTRL_REQ_STEP)
-					ath6kl_p2p_flowctrl_netif_transition(
+		ath6kl_p2p_flowctrl_netif_transition(
 						ar,
-						ATH6KL_P2P_FLOWCTRL_NETIF_WAKE);
-			}
-		}
+						ATH6KL_NETIF_WAKE);
 	} else {
 		/* FIXME: Locking */
 		spin_lock_bh(&ar->list_lock);
@@ -1412,7 +1359,7 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		} else
 #endif
 		if (test_bit(CONNECTED, &vif->flags))
-			ath6kl_eapol_handshake_protect(vif);
+			ath6kl_eapol_handshake_protect(vif, false);
 	}
 
 /*
@@ -1450,16 +1397,6 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		}
 	}
 #endif
-
-	/* Trace RTSP content */
-	if (vif->ar->p2p &&
-	    !vif->ar->p2p_compat &&
-	    ((vif->wdev.iftype == NL80211_IFTYPE_P2P_CLIENT) ||
-	     (vif->wdev.iftype == NL80211_IFTYPE_P2P_GO)))
-		ath6kl_dbg_rtsp_dump(ATH6KL_DBG_EXT_RTSP,
-					false,
-					skb->data - 14,
-					skb->len);
 
 	netif_rx_ni(skb);
 }
@@ -1823,7 +1760,7 @@ static bool aggr_process_recv_frm(struct ath6kl *ar,
 		stats->num_oow++;
 	}
 
-	if (drop_it == true) {
+        if (drop_it == true) {
 		is_queued = false;
 		if (!(ar->conf_flags & ATH6KL_CONF_DISABLE_RX_AGGR_DROP)) {
 			dev_kfree_skb(frame);
@@ -2276,7 +2213,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 	if (vif->nw_type != AP_NETWORK &&
 	    ((packet->act_len < min_hdr_len) ||
 	     (packet->act_len > WMI_MAX_AMSDU_RX_DATA_FRAME_LENGTH))) {
-		ath6kl_info("frame len is too short or too long\n");
+		ath6kl_info("frame len %d\n", packet->act_len);
 		vif->net_stats.rx_errors++;
 		vif->net_stats.rx_length_errors++;
 		dev_kfree_skb(skb);
@@ -2337,8 +2274,6 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		dev_kfree_skb(skb);
 		return;
 	}
-
-	ath6kl_tramor_rx(vif);
 
 	if (vif->nw_type == AP_NETWORK) {
 		datap = (struct ethhdr *) skb->data;
@@ -2586,8 +2521,11 @@ static int aggr_tx(struct ath6kl_vif *vif, struct ath6kl_sta *sta,
 		struct iphdr *ip_hdr = (struct iphdr *)((u8 *)eth_hdr +
 			sizeof(struct ethhdr) +
 			sizeof(struct ath6kl_llc_snap_hdr));
+		u8 usr_pri = ath6kl_wmi_determine_user_priority(((u8 *) llc_hdr) +
+					sizeof(struct ath6kl_llc_snap_hdr), 0);
 
-		if (ip_hdr->protocol == IP_PROTO_TCP) {
+		if ((ip_hdr->protocol == IP_PROTO_TCP) &&
+			(usr_pri < WMI_VOICE_USER_PRIORITY)) {
 			struct ath6kl_sta *conn;
 
 			if (!sta)
@@ -2861,9 +2799,7 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 		spin_unlock_bh(&ar->lock);
 		goto fail_tx;
 	}
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
 	vif->data_cookie_count++;
-#endif
 
 	/* update counts while the lock is held */
 	ar->tx_pending[eid]++;
@@ -2908,14 +2844,13 @@ static int aggr_tx_tid(struct txtid *txtid, bool timer_stop)
 
 fail_tx:
 	dev_kfree_skb(skb);
-#ifndef DISABLE_ATH6KL_COOKIE_ENHANCE
+
 	if (cookie) {
 		spin_lock_bh(&ar->lock);
 		vif->data_cookie_count--;
 		ath6kl_free_cookie(ar, cookie);
 		spin_unlock_bh(&ar->lock);
 	}
-#endif
 
 	vif->net_stats.tx_dropped++;
 	vif->net_stats.tx_aborted_errors++;
@@ -3190,6 +3125,49 @@ void aggr_recv_addba_req_evt(struct ath6kl_vif *vif, u8 tid, u16 seq_no,
 	}
 }
 
+void aggr_force_enable_amsdu(struct ath6kl_vif *vif)
+{
+	struct ath6kl_sta *conn;
+	struct txtid *txtid;
+	int k;
+	if (vif->nw_type == AP_NETWORK)
+		return;
+
+	conn = &vif->sta_list[0];
+
+	if (conn != NULL &&
+		vif->aggr_cntxt->tx_amsdu_enable == false) {
+
+		for (k = 0; k < NUM_OF_TIDS; k++) {
+			txtid = AGGR_GET_TXTID(
+				conn->aggr_conn_cntxt, k);
+			txtid->max_aggr_sz = 3839;
+		}
+		vif->aggr_cntxt->tx_amsdu_enable = true;
+	}
+}
+
+void aggr_restore_enable_amsdu(struct ath6kl_vif *vif)
+{
+	struct ath6kl_sta *conn;
+	struct txtid *txtid;
+	int k;
+	if (vif->nw_type == AP_NETWORK)
+		return;
+
+	conn = &vif->sta_list[0];
+	if (conn != NULL) {
+		vif->aggr_cntxt->tx_amsdu_enable = false;
+		for (k = 0; k < NUM_OF_TIDS; k++) {
+			txtid = AGGR_GET_TXTID(
+				conn->aggr_conn_cntxt, k);
+			txtid->max_aggr_sz = txtid->max_aggr_sz_orig;
+			if (txtid->max_aggr_sz_orig) 
+				vif->aggr_cntxt->tx_amsdu_enable = true;
+		}
+	}
+}
+
 void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 	u16 amsdu_sz, u8 status)
 {
@@ -3223,6 +3201,8 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 		else
 			txtid->max_aggr_sz = 0;
 
+		txtid->max_aggr_sz_orig = txtid->max_aggr_sz;
+
 		/* 0 means disable */
 		if (!txtid->max_aggr_sz)
 			aggr_tx_reset_aggr(txtid, true, true);
@@ -3248,7 +3228,7 @@ void aggr_recv_addba_resp_evt(struct ath6kl_vif *vif, u8 tid,
 			} else if ((txtid->max_aggr_sz == 0) &&
 				   (vif->aggr_cntxt->tx_amsdu_stick_onoff ==
 							AGGR_TX_STICK_ON)) {
-				txtid->max_aggr_sz = 4096;
+				txtid->max_aggr_sz = 3839;
 				ath6kl_dbg(ATH6KL_DBG_WLAN_TX_AMSDU,
 					"Stick tx amsdu from OFF to ON\n");
 			}
@@ -3344,12 +3324,7 @@ struct aggr_info *aggr_init(struct ath6kl_vif *vif)
 
 	aggr->tx_amsdu_enable = true;
 	aggr->tx_amsdu_seq_pkt = true;
-	/* NOTE_ath6kl_3.5.4 : TBD, need to fine tune in new platform. */
-#ifdef ATH6KL_3_5_4
-	aggr->tx_amsdu_progressive = false;
-#else
 	aggr->tx_amsdu_progressive = true;
-#endif
 	aggr->tx_amsdu_max_aggr_num = AGGR_TX_MAX_NUM;
 	aggr->tx_amsdu_max_aggr_len = AGGR_TX_MAX_AGGR_SIZE - 100;
 	aggr->tx_amsdu_max_pdu_len = AGGR_TX_MAX_PDU_SIZE;
@@ -3579,11 +3554,10 @@ void ath6kl_flush_pend_skb(struct ath6kl_vif *vif)
 	spin_unlock_bh(&vif->pend_skb_lock);
 }
 
-void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif)
+static void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif, bool tx)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_vif *tmp;
-	struct cfg80211_scan_request *scan_request;
 	int i;
 
 	/*
@@ -3593,11 +3567,6 @@ void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif)
 	 * To avoid scan let EAPOL frame lost or timeout and
 	 * here preempt scan for a while when transmit/receive
 	 * EAPOL frame.
-	 *
-	 * Furthurmore, in Android, successful connection needs
-	 * DHCP also get the IP successfully. Hence, not only TX/RX
-	 * EXPOL frame but also connection done will early
-	 * start protection.
 	 */
 	set_bit(EAPOL_HANDSHAKE_PROTECT, &ar->flag);
 	ar->eapol_shprotect_vif |= (1 << vif->fw_vif_idx);
@@ -3607,24 +3576,15 @@ void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif)
 
 	for (i = 0; i < ar->vif_max; i++) {
 		tmp = ath6kl_get_vif_by_index(ar, i);
-		if (!tmp)
-			continue;
-
-		spin_lock_bh(&tmp->if_lock);
-		scan_request = tmp->scan_req;
-		tmp->scan_req = NULL;
-		spin_unlock_bh(&tmp->if_lock);
-
-		if (scan_request) {
-			ath6kl_dbg(ATH6KL_DBG_EXT_SCAN,
-				"Cancel scan for EAPOL protection, vif %d\n",
+		if (tmp && tmp->scan_req) {
+			ath6kl_info("%s EAPOL on-going, vif %d\n",
+				(tx ? "TX" : "RX"),
 				tmp->fw_vif_idx);
 
-			ath6kl_cfg80211_report_scan_done(tmp,
-							scan_request,
-							true,
-							true,
-							true);
+			del_timer(&tmp->vifscan_timer);
+			ath6kl_wmi_abort_scan_cmd(ar->wmi,
+					tmp->fw_vif_idx);
+			cfg80211_scan_done(tmp->scan_req, true);
 
 #ifdef USB_AUTO_SUSPEND
 			if (ath6kl_hif_auto_pm_get_usage_cnt(ar) == 0) {
@@ -3637,6 +3597,9 @@ void ath6kl_eapol_handshake_protect(struct ath6kl_vif *vif)
 			} else
 				ath6kl_hif_auto_pm_enable(ar);
 #endif
+
+			tmp->scan_req = NULL;
+			clear_bit(SCANNING, &tmp->flags);
 		}
 	}
 

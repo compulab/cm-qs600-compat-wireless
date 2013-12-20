@@ -2,7 +2,7 @@ LOCAL_PATH := $(call my-dir)
 ifeq ($(call is-android-codename,JELLY_BEAN),true)
 	DLKM_DIR := $(TOP)/device/qcom/common/dlkm
 else
-	DLKM_DIR := build/dlkm
+	DLKM_DIR := $(TOP)/device/qcom/common/dlkm
 endif
 
 ifeq ($(BOARD_HAS_ATH_WLAN), true)
