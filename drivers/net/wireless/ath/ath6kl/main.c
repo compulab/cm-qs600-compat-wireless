@@ -1247,8 +1247,9 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			     u16 prot_reason_status)
 {
 	struct ath6kl *ar = vif->ar;
+	struct ath6kl_vif *vif_tmp = NULL;
 	u8 removed = 0;
-
+	u8 res = 0;
 	if (vif->nw_type == AP_NETWORK) {
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
@@ -1268,11 +1269,10 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			ar->want_ch_switch |= 1 << vif->fw_vif_idx;
 			vif->ap_hold_conn = 1;
 		}
-
-		if (!(removed = ath6kl_remove_sta(vif, bssid,
-						prot_reason_status))) {
+		if (!((removed = ath6kl_remove_sta(vif, bssid,
+						prot_reason_status)) ||
+					is_broadcast_ether_addr(bssid)))
 			return;
-		}
 
 		/* if no more associated STAs, empty the mcast PS q */
 		if (ar->sta_list_index == 0) {
@@ -1296,18 +1296,42 @@ void ath6kl_disconnect_event(struct ath6kl_vif *vif, u8 reason, u8 *bssid,
 			cfg80211_del_sta(vif->ndev, bssid, GFP_KERNEL);
 		}
 
-		if (memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0) {
+		if (is_broadcast_ether_addr(bssid) ||
+			(memcmp(vif->ndev->dev_addr, bssid, ETH_ALEN) == 0)) {
 #ifdef CONFIG_ATH6KL_BAM2BAM
-			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT, bssid);
+			ath6kl_send_msg_ipa(vif, WLAN_AP_DISCONNECT,
+					vif->ndev->dev_addr);
 #endif
 			if (ar->is_mcc_enabled) {
 				ar->is_mcc_enabled = false;
-				ath6kl_ipa_enable_host_route_config (vif, false);
-				ath6kl_dbg(ATH6KL_DBG_FLOWCTRL, "(ap) disc_evt: (mcc_disabled)\n");
+				ath6kl_ipa_enable_host_route_config (vif,
+						false);
+				ath6kl_dbg(ATH6KL_DBG_FLOWCTRL,
+					"(ap) disc_evt:	(mcc_disabled)\n");
 			}
 
 			memset(vif->wep_key_list, 0, sizeof(vif->wep_key_list));
 			clear_bit(CONNECTED, &vif->flags);
+
+			if (prot_reason_status == WMI_AP_REASON_UNSUPPORTED_CC) {
+				list_for_each_entry(vif_tmp, &ar->vif_list,
+						list) {
+				if (vif_tmp->nw_type == AP_NETWORK) {
+					if (vif_tmp->ap_hold_conn) {
+						vif_tmp->ap_hold_conn = 0;
+						ar->acs_in_prog = 1;
+						ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Apply ACS for next AP\n");
+				res = ath6kl_wmi_ap_profile_commit(ar->wmi,
+				vif_tmp->fw_vif_idx, &vif_tmp->profile);
+					if (res)
+						ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
+						"Ap profile commit failure");
+						} else
+							ar->acs_in_prog = 0;
+					}
+				}
+			}
 
 		}
 		return;
