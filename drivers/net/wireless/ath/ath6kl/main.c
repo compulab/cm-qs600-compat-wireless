@@ -595,10 +595,23 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 					adj_ch_dif = ar->mcc_adj_ch_spacing - 1;
 
 				if (adj_ch_dif ) {
+					if((vif_tmp->profile.ch >
+						AP_ACS_NORMAL) &&
+						(vif_tmp->profile.ch <
+						AP_ACS_USER_DEFINED)) {
+						/* change ACS to USER_DEFINED
+						with appropriate masks */
+						vif_tmp->acs_chan_mask =
+				ath6kl_get_chmask_for_acstype(vif,
+						vif_tmp->profile.ch);
+
+						vif_tmp->profile.ch =
+							AP_ACS_USER_DEFINED;
+					}
+
 					if(vif_tmp->profile.ch ==
 						AP_ACS_USER_DEFINED) {
 						u32 ch;
-
 						ch =
 					ath6kl_process_user_defined_acs(ar,
 						vif_tmp,
@@ -606,10 +619,9 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 						vif_tmp->profile.ch,
 						&vif_tmp->acs_chan_mask);
 
-						if(ch != vif_tmp->profile.ch) {
+						if(ch != vif_tmp->profile.ch)
 							vif_tmp->profile.ch =
 								ch;
-						}
 					} else if(adj_ch_dif <
 						ar->mcc_adj_ch_spacing) {
 						ath6kl_warn("Override to %d due"
