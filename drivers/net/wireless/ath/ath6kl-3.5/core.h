@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.4.25)
+#define __BUILD_VERSION_ (3.5.4.28)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -523,7 +523,7 @@ extern atomic_t ath6kl_recover_state;
  * Use value of zero to disable keepalive support
  * Default: 60 seconds
  */
-#define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 57
+#define WLAN_CONFIG_KEEP_ALIVE_INTERVAL 15
 
 /* default roam mode for different situation */
 /*

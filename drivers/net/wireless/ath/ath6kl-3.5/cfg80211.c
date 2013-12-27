@@ -958,34 +958,6 @@ void ath6kl_switch_parameter_based_on_connection(
 		clear_bit(SKIP_FLOWCTRL_EVENT, &ar->flag);
 	}
 
-	if (mcc) {
-		list_for_each_entry(vif_temp, &ar->vif_list, list) {
-			if (test_bit(CONNECTED, &vif_temp->flags)) {
-				if (call_on_disconnect &&
-					vif->fw_vif_idx == vif_temp->fw_vif_idx)
-					continue;
-				if (vif_temp->nw_type == AP_NETWORK) {
-					ath6kl_ap_keepalive_config(vif_temp,
-						ATH6KL_AP_KA_INTERVAL_DEFAULT,
-						ATH6KL_AP_KA_RECLAIM_CYCLE_MCC);
-				}
-			}
-		}
-	} else {
-		list_for_each_entry(vif_temp, &ar->vif_list, list) {
-			if (test_bit(CONNECTED, &vif_temp->flags)) {
-				if (call_on_disconnect &&
-					vif->fw_vif_idx == vif_temp->fw_vif_idx)
-					continue;
-				if (vif_temp->nw_type == AP_NETWORK) {
-					ath6kl_ap_keepalive_config(vif_temp,
-						ATH6KL_AP_KA_INTERVAL_DEFAULT,
-						ATH6KL_AP_KA_RECLAIM_CYCLE_SCC);
-				}
-			}
-		}
-	}
-
 	/* NOTE_ath6kl_3.5.4 : Credit-based solution not really need this. */
 #ifndef ATH6KL_3_5_4
 	/* Update HIF queue policy */

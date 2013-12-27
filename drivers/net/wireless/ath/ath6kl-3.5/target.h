@@ -376,9 +376,6 @@ struct host_interest {
 /* Enable Multichannel Concurrency (MCC) - last bit to sync with mainline */
 #define HI_OPTION_MCC_ENABLE                  0x80000000
 
-/*Enable/Disable Wifi Heart Beat Feature*/
-#define HI_OPTION_ENABLE_WLAN_HB              0x10000000
-
 /* Fw Mode/SubMode Mask
 |------------------------------------------------------------------------------|
 |   SUB   |   SUB   |   SUB   |  SUB    |         |         |         |
