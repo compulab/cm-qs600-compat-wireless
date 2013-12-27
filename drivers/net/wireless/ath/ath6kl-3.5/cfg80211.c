@@ -4835,6 +4835,9 @@ static int ath6kl_set_ap_probe_resp_ies(struct ath6kl_vif *vif,
 	/*
 	 * Filter out P2P/WFD IE(s) since they will be included depending on
 	 * the Probe Request frame in ath6kl_wmi_send_go_probe_response_cmd().
+	 *
+	 * Target will handle ext-capabilities IE and remove user's.
+	 * This also fixed P2P-GO IOT issue.
 	 */
 
 	if (ies && ies_len) {
@@ -4846,7 +4849,8 @@ static int ath6kl_set_ap_probe_resp_ies(struct ath6kl_vif *vif,
 			if (pos + 2 + pos[1] > ies + ies_len)
 				break;
 			if ((!ath6kl_is_p2p_ie(pos)) &&
-			    (!ath6kl_is_wfd_ie(pos))) {
+			    (!ath6kl_is_wfd_ie(pos)) &&
+			    (!ath6kl_is_exteneded_cap_ie(pos))) {
 				memcpy(buf + len, pos, 2 + pos[1]);
 				len += 2 + pos[1];
 			}
@@ -4857,6 +4861,97 @@ static int ath6kl_set_ap_probe_resp_ies(struct ath6kl_vif *vif,
 	ret = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
 				       WMI_FRAME_PROBE_RESP, buf, len);
 	kfree(buf);
+	return ret;
+}
+
+static int ath6kl_set_ap_beacon_ies(struct ath6kl_vif *vif,
+					const u8 *ies,
+					size_t ies_len)
+{
+	const u8 *pos;
+	u8 *buf = NULL;
+	size_t len = 0;
+	int ret;
+
+	if (ies && ies_len) {
+		buf = kmalloc(ies_len, GFP_KERNEL);
+		if (buf == NULL)
+			return -ENOMEM;
+
+		pos = ies;
+		while (pos + 1 < ies + ies_len) {
+			if (pos + 2 + pos[1] > ies + ies_len)
+				break;
+
+			/*
+			 * Target will handle ext-capabilities IE
+			 * and remove user's. This also fixed P2P-GO
+			 * IOT issue.
+			 */
+			if (!ath6kl_is_exteneded_cap_ie(pos)) {
+				memcpy(buf + len, pos, 2 + pos[1]);
+				len += 2 + pos[1];
+			}
+			pos += 2 + pos[1];
+		}
+	}
+
+	/* Append NoA IE if need */
+	if (buf)
+		ath6kl_p2p_ps_user_app_ie(vif->p2p_ps_info_ctx,
+					  WMI_FRAME_BEACON,
+					  &buf,
+					  &len);
+
+	ret = ath6kl_wmi_set_appie_cmd(vif->ar->wmi,
+					vif->fw_vif_idx,
+					WMI_FRAME_BEACON,
+					buf,
+					len);
+	kfree(buf);
+
+	return ret;
+}
+
+static int ath6kl_set_ap_assoc_resp_ies(struct ath6kl_vif *vif,
+					const u8 *ies,
+					size_t ies_len)
+{
+	const u8 *pos;
+	u8 *buf = NULL;
+	size_t len = 0;
+	int ret;
+
+	if (ies && ies_len) {
+		buf = kmalloc(ies_len, GFP_KERNEL);
+		if (buf == NULL)
+			return -ENOMEM;
+
+		pos = ies;
+		while (pos + 1 < ies + ies_len) {
+			if (pos + 2 + pos[1] > ies + ies_len)
+				break;
+
+			/*
+			 * Target will handle ext-capabilities IE
+			 * and remove user's. This also fixed P2P-GO
+			 * IOT issue.
+			 */
+			if (!ath6kl_is_exteneded_cap_ie(pos)) {
+				memcpy(buf + len, pos, 2 + pos[1]);
+				len += 2 + pos[1];
+			}
+			pos += 2 + pos[1];
+		}
+	}
+
+	ret = ath6kl_wmi_set_appie_cmd(vif->ar->wmi,
+					vif->fw_vif_idx,
+					WMI_FRAME_ASSOC_RESP,
+					buf,
+					len);
+	kfree(buf);
+
 	return ret;
 }
 
@@ -5135,18 +5230,9 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (info->beacon_ies) {
-		u8 *beacon_ies = (u8 *)info->beacon_ies;
-		size_t beacon_ies_len = info->beacon_ies_len;
-
-		ath6kl_p2p_ps_user_app_ie(vif->p2p_ps_info_ctx,
-					  WMI_FRAME_BEACON,
-					  &beacon_ies,
-					  &beacon_ies_len);
-
-		res = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
-					       WMI_FRAME_BEACON,
-					       beacon_ies,
-					       beacon_ies_len);
+		res = ath6kl_set_ap_beacon_ies(vif,
+					       info->beacon_ies,
+					       info->beacon_ies_len);
 		if (res) {
 			up(&ar->sem);
 			return res;
@@ -5162,7 +5248,8 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 	ath6kl_wmi_set_dtim_cmd(ar->wmi, vif->fw_vif_idx, 1);
 
 	if (info->proberesp_ies) {
-		res = ath6kl_set_ap_probe_resp_ies(vif, info->proberesp_ies,
+		res = ath6kl_set_ap_probe_resp_ies(vif,
+						   info->proberesp_ies,
 						   info->proberesp_ies_len);
 		if (res) {
 			up(&ar->sem);
@@ -5170,10 +5257,9 @@ static int ath6kl_ap_beacon(struct wiphy *wiphy, struct net_device *dev,
 		}
 	}
 	if (info->assocresp_ies) {
-		res = ath6kl_wmi_set_appie_cmd(ar->wmi, vif->fw_vif_idx,
-					       WMI_FRAME_ASSOC_RESP,
-					       info->assocresp_ies,
-					       info->assocresp_ies_len);
+		res = ath6kl_set_ap_assoc_resp_ies(vif,
+						   info->assocresp_ies,
+						   info->assocresp_ies_len);
 		if (res) {
 			up(&ar->sem);
 			return res;
