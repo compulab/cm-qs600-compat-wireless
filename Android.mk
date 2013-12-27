@@ -1,5 +1,5 @@
 LOCAL_PATH := $(call my-dir)
-ifeq ($(call is-android-codename,JELLY_BEAN),true)
+ifeq ($(call is-platform-sdk-version-at-least,16),true)
 	DLKM_DIR := $(TOP)/device/qcom/common/dlkm
 else
 	DLKM_DIR := $(TOP)/device/qcom/common/dlkm
@@ -68,6 +68,10 @@ ifeq ($(BOARD_HAS_CFG80211_KERNEL3_7), true)
 export HAVE_CFG80211=0
 export HAVE_CFG80211_KERNEL3_4=1
 export HAVE_CFG80211_KERNEL3_7=1
+endif
+ifeq ($(BOARD_HAS_CFG80211_KERNEL3_10), true)
+export HAVE_CFG80211=0
+export HAVE_CFG80211_KERNEL3_10=1
 else
 export HAVE_CFG80211=1
 export HAVE_CFG80211_KERNEL3_4=0
