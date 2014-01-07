@@ -18,9 +18,15 @@
 #define AP_H
 
 /* Time defines */
-#define ATH6KL_AP_KA_INTERVAL_DEFAULT		(15 * 1000)	/* in ms. */
 #define ATH6KL_AP_KA_INTERVAL_MIN		(5 * 1000)	/* in ms. */
+/* NOTE_ath6kl_3.5.4 : MPQ requires disconnection happen in 50sec. */
+#ifdef ATH6KL_3_5_4
+#define ATH6KL_AP_KA_INTERVAL_DEFAULT           (8 * 1000)      /* in ms. */
+#define ATH6KL_AP_KA_RECLAIM_CYCLE              (5)             /* 40 sec. */
+#else
+#define ATH6KL_AP_KA_INTERVAL_DEFAULT           (15 * 1000)     /* in ms. */
 #define ATH6KL_AP_KA_RECLAIM_CYCLE		(4)		/* 1 min. */
+#endif
 #define ATH6KL_AP_KA_RECLAIM_TIME_MAX		((15 * 60) * 1000)
 
 /* Do some fine tune to overwrite the config in P2P cases. */
