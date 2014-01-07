@@ -24,6 +24,9 @@
 #include <linux/mmc/sdio_ids.h>
 #include <linux/mmc/sdio.h>
 #include <linux/mmc/sd.h>
+#ifdef ATH6KL_SDIO_RECOVER
+#include <linux/kobject.h>
+#endif
 #include "hif.h"
 #include "hif-ops.h"
 #include "target.h"
@@ -37,6 +40,11 @@
 #ifdef CONFIG_ANDROID
 #define PLAT_WOW_GPIO_PIN                  26
 #endif
+
+#ifdef ATH6KL_SDIO_RECOVER
+atomic_t ath6kl_recover_state;
+#endif
+
 
 struct ath6kl_sdio {
 	struct sdio_func *func;
@@ -1275,6 +1283,52 @@ static void ath6kl_sdio_set_max_queue_number(struct ath6kl *ar, bool limitEnable
 	/* TBD */
 }
 
+#ifdef ATH6KL_SDIO_RECOVER
+int ath6kl_sdio_sw_recover(struct ath6kl *ar)
+{
+        struct ath6kl_vif *vif;
+        struct net_device *netdev;
+	char *sw_recover_event[] = { "FW_CRASH=1", NULL };
+#if 0
+        if (ath6kl_driver_unloaded)
+                return 0;
+
+        if (atomic_read(&ath6kl_usb_unload_state) ==
+                        ATH6KL_USB_UNLOAD_STATE_DRV_DEREG) {
+                ath6kl_info("%s driver unloaded, exit\n", __func__);
+                return 0;
+        }
+#endif
+
+        atomic_set(&ath6kl_recover_state,
+                                ATH6KL_RECOVER_STATE_IN_PROGRESS);
+
+        vif = ath6kl_vif_first(ar);
+
+        if (vif == NULL)
+                return 0;
+
+        set_bit(RECOVER_IN_PROCESS, &ar->flag);
+        clear_bit(WMI_READY, &ar->flag);
+
+        netdev = vif->ndev;
+#ifdef CE_OLD_KERNEL_SUPPORT_2_6_23
+        netdev->stop(netdev);
+#else
+        netdev->netdev_ops->ndo_stop(netdev);
+#endif
+
+        ath6kl_info("%s schedule recover worker thread\n", __func__);
+        ath6kl_check_apmode(ar);
+#if 0
+        schedule_work(&ar->reset_cover_war_work);
+#endif
+	kobject_uevent_env(&netdev->dev.kobj, KOBJ_CHANGE, sw_recover_event);
+
+        return 0;
+}
+#endif
+
 static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.read_write_sync = ath6kl_sdio_read_write_sync,
 	.write_async = ath6kl_sdio_write_async,
@@ -1310,6 +1364,9 @@ static const struct ath6kl_hif_ops ath6kl_sdio_ops = {
 	.auto_pm_set_delay = sdio_auto_pm_set_delay,
 #endif
 	.pipe_set_max_queue_number = ath6kl_sdio_set_max_queue_number,
+#ifdef ATH6KL_SDIO_RECOVER
+	.sw_recover = ath6kl_sdio_sw_recover,
+#endif
 };
 
 #ifdef CONFIG_PM_SLEEP
@@ -1342,6 +1399,21 @@ static SIMPLE_DEV_PM_OPS(ath6kl_sdio_pm_ops, ath6kl_sdio_pm_suspend,
 #define ATH6KL_SDIO_PM_OPS NULL
 
 #endif /* CONFIG_PM_SLEEP */
+
+#ifdef ATH6KL_SDIO_RECOVER
+static void ath6kl_recover_war_work(struct work_struct *work)
+{
+	int status = 0;
+	char buf[32];
+	size_t len;
+
+	len = snprintf(buf, sizeof(buf), "%s", "bt_restart");
+	status = _readwrite_file("/tmp/bt_restart", NULL,
+				buf, len, (O_WRONLY | O_CREAT));
+	if (status < 0)
+		ath6kl_info("write failed with status code 0x%x\n", status);
+}
+#endif
 
 static int ath6kl_sdio_probe(struct sdio_func *func,
 			     const struct sdio_device_id *id)
@@ -1410,6 +1482,19 @@ static int ath6kl_sdio_probe(struct sdio_func *func,
 		ath6kl_err("Failed to config sdio: %d\n", ret);
 		goto err_core_alloc;
 	}
+
+#ifdef ATH6KL_SDIO_RECOVER
+#if 0
+        /* Initialize the worker */
+        INIT_WORK(&ar->reset_cover_war_work,
+                        ath6kl_recover_war_work);
+
+#endif
+        /* Initialize the state */
+        atomic_set(&ath6kl_recover_state,
+                        ATH6KL_RECOVER_STATE_INITIALIZED);
+
+#endif
 
 	ath6kl_htc_mbox_attach(ar);
 	ret = ath6kl_core_init(ar);
@@ -1486,6 +1571,13 @@ static int __init ath6kl_sdio_init(void)
 
 static void __exit ath6kl_sdio_exit(void)
 {
+#ifdef ATH6KL_SDIO_RECOVER
+	/* If recover is on going, wait for recover is done. */
+	if (atomic_read(&ath6kl_recover_state) ==
+			ATH6KL_RECOVER_STATE_IN_PROGRESS) {
+		msleep(2000);
+	}
+#endif
 	sdio_unregister_driver(&ath6kl_sdio_driver);
 #ifdef CONFIG_ANDROID
 	ath6kl_sdio_exit_msm();

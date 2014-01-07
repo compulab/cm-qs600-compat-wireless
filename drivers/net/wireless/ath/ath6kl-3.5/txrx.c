@@ -446,7 +446,7 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 		cookie = ath6kl_alloc_cookie(ar, COOKIE_TYPE_CTRL);
 
 	if (cookie == NULL) {
-#ifdef ATH6KL_HSIC_RECOVER
+#if defined(ATH6KL_HSIC_RECOVER) || defined(ATH6KL_SDIO_RECOVER)
 		if (ar->cookie_ctrl.cookie_fail_in_row >
 				MAX_COOKIE_FAIL_IN_ROW) {
 			ath6kl_err("control cookie fail %d time reset!\n",
@@ -455,7 +455,11 @@ int ath6kl_control_tx(void *devt, struct sk_buff *skb,
 			if (!test_and_set_bit(RECOVER_IN_PROCESS, &ar->flag)) {
 				ath6kl_info("%s schedule recover\n", __func__);
 				ath6kl_check_apmode(ar);
+#if defined(ATH6KL_SDIO_RECOVER)
+				ath6kl_hif_sw_recover(ar);
+#else
 				schedule_work(&ar->reset_cover_war_work);
+#endif
 			}
 			del_timer(&fw_ping_timer);
 			fw_ping_count = 0;

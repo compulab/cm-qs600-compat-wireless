@@ -44,6 +44,8 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 {
 	struct p2p_ps_info *p2p_ps = vif->p2p_ps_info_ctx;
 
+	vif->p2p_ps_info_ctx = NULL;
+
 	if (p2p_ps) {
 		spin_lock_bh(&p2p_ps->p2p_ps_lock);
 		if (p2p_ps->go_last_beacon_app_ie != NULL)
@@ -58,8 +60,6 @@ void ath6kl_p2p_ps_deinit(struct ath6kl_vif *vif)
 
 		kfree(p2p_ps);
 	}
-
-	vif->p2p_ps_info_ctx = NULL;
 
 	ath6kl_dbg(ATH6KL_DBG_POWERSAVE,
 		   "p2p_ps deinit %p\n",
@@ -423,13 +423,11 @@ void ath6kl_p2p_ps_user_app_ie(struct p2p_ps_info *p2p_ps,
 			       p2p_ps->go_last_noa_ie,
 			       p2p_ps->go_last_noa_ie_len);
 
-			if (mgmt_frm_type == WMI_FRAME_PROBE_RESP) {
-				/* caller will release it. */
-				kfree(*ie);
-				*ie = p2p_ps->go_working_buffer;
-				p2p_ps->go_working_buffer = NULL;
-			} else
-				*ie = p2p_ps->go_working_buffer;
+			/* caller will release it. */
+			kfree(*ie);
+			*ie = p2p_ps->go_working_buffer;
+			p2p_ps->go_working_buffer = NULL;
+
 			*len += p2p_ps->go_last_noa_ie_len;
 		}
 

@@ -63,6 +63,69 @@ int ath6kl_hif_rw_comp_handler(void *context, int status)
 #define REGISTER_DUMP_LEN_MAX   60
 #define REG_DUMP_COUNT_AR6004   60
 
+#ifdef ATH6KL_SDIO_RECOVER
+static int dump_fw_crash_to_file(struct ath6kl *ar, u8 *netdata)
+{
+        char *buf;
+        unsigned int len = 0, buf_len = DUMP_BUF_SIZE;
+        int i;
+        int status = 0;
+
+        status = check_dump_file_size();
+        if (status)
+                ath6kl_info("crash log file check status code 0x%x\n", status);
+
+        buf = kmalloc(buf_len, GFP_ATOMIC);
+
+        if (buf == NULL)
+                return -ENOMEM;
+
+        memset(buf, 0, buf_len);
+
+        len = snprintf(buf + len, buf_len - len, "Drv ver %s\n",
+                DRV_VERSION);
+        len += snprintf(buf + len, buf_len - len, "FW ver %s\n",
+                ar->wiphy->fw_version);
+
+        len += scnprintf(buf + len, buf_len - len,
+                "\n++++++++++crash log sart+++++++++++\n");
+
+        for (i = 0; i < REG_DUMP_COUNT_AR6004_USB * 4; i += 16) {
+                len += scnprintf(buf + len, buf_len - len,
+                        "%d: 0x%08x 0x%08x 0x%08x 0x%08x\n", i/4,
+                        be32_to_cpu(*(u32 *)(netdata+i)),
+                        be32_to_cpu(*(u32 *)(netdata+i + 4)),
+                        be32_to_cpu(*(u32 *)(netdata+i + 8)),
+                        be32_to_cpu(*(u32 *)(netdata+i + 12)));
+        }
+
+        for (; i < EXTRA_DUMP_MAX; i += 16) {
+
+                if ((*(u32 *)(netdata+i) == DELIMITER) ||
+                        ((*(u32 *)(netdata+i) == 0)))
+                        break;
+
+                len += scnprintf(buf + len, buf_len - len,
+                        "%d: 0x%08x 0x%08x "
+                        "0x%08x 0x%08x\n", i/4,
+                        be32_to_cpu(*(u32 *)(netdata+i)),
+                        be32_to_cpu(*(u32 *)(netdata+i + 4)),
+                        be32_to_cpu(*(u32 *)(netdata+i + 8)),
+                        be32_to_cpu(*(u32 *)(netdata+i + 12)));
+        }
+        len += scnprintf(buf + len, buf_len - len,
+                        "----------crash log end-------------\n");
+
+        status = _readwrite_file(CRASH_DUMP_FILE, NULL,
+                        buf, len, (O_WRONLY | O_APPEND | O_CREAT));
+        if (status < 0)
+                ath6kl_info("write failed with status code 0x%x\n", status);
+
+        kfree(buf);
+        return status;
+}
+#endif
+
 static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 {
 	__le32 regdump_val[REGISTER_DUMP_LEN_MAX];
@@ -108,6 +171,10 @@ static void ath6kl_hif_dump_fw_crash(struct ath6kl *ar)
 		ath6kl_warn("failed to get register dump: %d\n", ret);
 		return;
 	}
+
+#ifdef ATH6KL_SDIO_RECOVER
+	dump_fw_crash_to_file(ar, (u8*)regdump_val);
+#endif
 
 	ath6kl_info("crash dump:\n");
 	ath6kl_info("hw 0x%x fw %s\n", ar->wiphy->hw_version,

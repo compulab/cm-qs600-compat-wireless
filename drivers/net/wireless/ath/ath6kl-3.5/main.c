@@ -1529,6 +1529,9 @@ void ath6kl_fw_crash_notify(struct ath6kl *ar)
 
 	ath6kl_info("notify firmware crash to user %p\n", ar);
 
+#ifdef ATH6KL_SDIO_RECOVER
+	ath6kl_hif_sw_recover(ar);
+#endif
 	/* TODO */
 #ifdef ATH6KL_HSIC_RECOVER
 	if (BOOTSTRAP_IS_HSIC(ar->bootstrap_mode))
