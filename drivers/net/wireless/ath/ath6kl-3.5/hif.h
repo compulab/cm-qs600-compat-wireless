@@ -297,7 +297,7 @@ struct ath6kl_hif_ops {
 	void (*auto_pm_set_delay)(struct ath6kl *ar, int delay);
 #endif
 	int (*pipe_set_rxq_threshold)(struct ath6kl *ar, u32 rxq_threshold);
-#ifdef ATH6KL_HSIC_RECOVER
+#if defined(ATH6KL_HSIC_RECOVER) || defined(ATH6KL_SDIO_RECOVER)
 	int (*sw_recover)(struct ath6kl *ar);
 #endif
 };

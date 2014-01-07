@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.559)
+#define __BUILD_VERSION_ (3.5.0.561)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -78,6 +78,12 @@
 #endif
 #ifndef ATH6KL_HSIC_RECOVER
 #define ATH6KL_HSIC_RECOVER
+#endif
+#endif
+
+#ifdef CONFIG_ATH6KL_SDIO
+#ifndef ATH6KL_SDIO_RECOVER
+#define ATH6KL_SDIO_RECOVER
 #endif
 #endif
 
@@ -210,6 +216,16 @@ enum ath6kl_hsic_recover_state {
 };
 
 extern wait_queue_head_t ath6kl_hsic_recover_wq;
+extern atomic_t ath6kl_recover_state;
+#elif defined(ATH6KL_SDIO_RECOVER)
+enum ath6kl_sdio_recover_state {
+        ATH6KL_RECOVER_STATE_INITIALIZED = 0,
+        ATH6KL_RECOVER_STATE_IN_PROGRESS,
+        ATH6KL_RECOVER_STATE_DONE,
+        ATH6KL_RECOVER_STATE_BY_SERVICE,
+};
+
+extern wait_queue_head_t ath6kl_sdio_recover_wq;
 extern atomic_t ath6kl_recover_state;
 #endif
 

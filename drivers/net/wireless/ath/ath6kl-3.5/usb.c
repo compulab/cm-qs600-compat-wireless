@@ -2612,8 +2612,10 @@ static void ath6kl_recover_war_work(struct work_struct *work)
 
 		atomic_set(&ath6kl_recover_state,
 				ATH6KL_RECOVER_STATE_IN_PROGRESS);
+#ifdef ATH6KL_BUS_VOTE
 		sema_init(&usb_probe_sem, 1);
 		down(&usb_probe_sem);
+#endif
 
 		/* When WiFi is not in AP mode, 
 		 * use WiFi svc restart to recover WiFi when fw crash/hang happens.
@@ -3234,9 +3236,11 @@ static void ath6kl_usb_exit(void)
 			/* If timeout occurs, wait 2s more */
 			msleep(2000);
 		} else if (timeleft > 0) {
+#ifdef ATH6KL_BUS_VOTE
 			if (down_timeout(&usb_probe_sem,
 					msecs_to_jiffies(USB_PROBE_WAIT_TIMEOUT)) != 0)
 				ath6kl_info("can't wait for usb probe done, unload\n");
+#endif
 		}
 	}
 
