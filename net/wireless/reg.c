@@ -1375,9 +1375,6 @@ static int ignore_request(struct wiphy *wiphy,
 				return -EAGAIN;
 		}
 
-		if (!regdom_changes(pending_request->alpha2))
-			return -EALREADY;
-
 		return 0;
 	}
 
@@ -2124,9 +2121,10 @@ static int __set_regdom(const struct ieee80211_regdomain *rd)
 	/*
 	 * Lets only bother proceeding on the same alpha2 if the current
 	 * rd is non static (it means CRDA was present and was used last)
-	 * and the pending request came in from a country IE
+	 * and the pending request came in from a country IE and SET_BY_USER
 	 */
-	if (last_request->initiator != NL80211_REGDOM_SET_BY_COUNTRY_IE) {
+	if (last_request->initiator != NL80211_REGDOM_SET_BY_COUNTRY_IE &&
+			last_request->initiator != NL80211_REGDOM_SET_BY_USER) {
 		/*
 		 * If someone else asked us to change the rd lets only bother
 		 * checking if the alpha2 changes if CRDA was already called
