@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.4.30)
+#define __BUILD_VERSION_ (3.5.4.31)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -124,7 +124,7 @@
 
 /* NOTE_ath6kl_3.5.4 : specific to this branch.  */
 #ifdef ATH6KL_3_5_4
-#define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT		(BIT(31))
+#define ATH6KL_MODULE_DEF_DEBUG_MASK_EXT		(0)
 #define ATH6KL_MODULE_DEF_DEBUG_QUIRKS			\
 	(ATH6KL_MODULE_DISABLE_WMI_SYC |		\
 	ATH6KL_MODULE_DISABLE_RX_AGGR_DROP |		\
