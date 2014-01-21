@@ -582,6 +582,12 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 	list_for_each_entry(vif_tmp, &ar->vif_list, list) {
 		if (vif_tmp->nw_type == AP_NETWORK) {
 			if (vif_tmp->ap_hold_conn && !ar->acs_in_prog) {
+				int vif_tmp_band = vif_tmp->phy_mode ==
+					WMI_11A_MODE ? IEEE80211_BAND_5GHZ :
+					IEEE80211_BAND_2GHZ;
+				int vif_band = vif->phy_mode == WMI_11A_MODE ?
+					IEEE80211_BAND_5GHZ :
+					IEEE80211_BAND_2GHZ;
 				vif_tmp->ap_hold_conn = 0;
 				ar->acs_in_prog = 1;
 				vif_tmp_ch = vif_tmp->profile.ch;
@@ -622,14 +628,26 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 						if(ch != vif_tmp->profile.ch)
 							vif_tmp->profile.ch =
 								ch;
-					} else if(adj_ch_dif <
-						ar->mcc_adj_ch_spacing) {
+					} else if ((adj_ch_dif <
+						ar->mcc_adj_ch_spacing) &&
+							(vif_tmp_band ==
+							vif_band)) {
 						ath6kl_warn("Override to %d due"
 						" to MCC intf\n", vif->bss_ch);
 						vif_tmp->profile.ch =
 						cpu_to_le16(vif->bss_ch);
 						ar->acs_in_prog = 0;
 					}
+				}
+
+				if ((vif_tmp_band == vif_band) &&
+					(vif_tmp->profile.ch == AP_ACS_NORMAL)) {
+					vif_tmp->profile.ch =
+						cpu_to_le16(vif->bss_ch);
+					ath6kl_warn("Override to %d due"
+						" to ACS in both the AP",
+						vif->bss_ch);
+					ar->acs_in_prog = 0;
 				}
 
 				ath6kl_dbg(ATH6KL_DBG_WLAN_CFG,
