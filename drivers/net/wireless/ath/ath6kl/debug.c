@@ -1842,7 +1842,7 @@ void ath6kl_debug_init(struct ath6kl *ar)
 	 * Actually we are lying here but don't know how to read the mask
 	 * value from the firmware.
 	 */
-	ar->debug.fwlog_mask = 0;
+	ar->debug.fwlog_mask = 0x1FFFF;
 
 	/*
 	 * MSB is for AutoPM stats and each LSB bits are for corresponding
