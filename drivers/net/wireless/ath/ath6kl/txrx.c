@@ -971,7 +971,7 @@ static void ath6kl_ipa_msg_free_fn(void *buff, u32 len, u32 type)
 
 #ifdef CONFIG_ATH6KL_DEBUG
 /* Based on msm_ipa.h */
-const char *ath6kl_ipa_event_name[IPA_EVENT_MAX] = {
+const char *ath6kl_ipa_event_name[IPA_WLAN_EVENT_MAX] = {
 	__stringify(WLAN_CLIENT_CONNECT),
 	__stringify(WLAN_CLIENT_DISCONNECT),
 	__stringify(WLAN_CLIENT_POWER_SAVE_MODE),
@@ -1008,7 +1008,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 	if (!ath6kl_debug_quirks(vif->ar, ATH6KL_MODULE_IPA_WITH_IPACM))
 		return 0;
 
-	if (type >= IPA_EVENT_MAX) {
+	if (type >= IPA_WLAN_EVENT_MAX) {
 		ath6kl_err("IPA-CM: Unknown IPA event type: %d\n", type);
 		return -EINVAL;
 	}
