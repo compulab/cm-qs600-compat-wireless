@@ -57,6 +57,7 @@ static int ath6kl_dt_parse_vreg_info(struct device *dev,
 	return 0;
 }
 
+struct ath6kl_platform_data *gpdata;
 static int ath6kl_dt_parse_gpio_info(struct device *dev,
 	struct ath6kl_gpio_data *gpio_data)
 {
@@ -333,6 +334,7 @@ static int ath6kl_platform_probe(struct platform_device *pdev)
 		return -EINVAL;
 	}
 
+        gpdata = pdata;
 	pdata->pdev = pdev;
 
 	platform_set_drvdata(pdev, pdata);
@@ -477,4 +479,23 @@ void ath6kl_hsic_bind(int bind)
 
 	return;
 }
-EXPORT_SYMBOL(ath6kl_hsic_bind);
+
+void ath6kl_recover_firmware()
+{
+	int ret = 0;
+
+	ret = ath6kl_platform_power(gpdata, 0);
+
+	if (ret == 0) {
+		ath6kl_hsic_bind(0);
+        }
+
+	msleep(200);
+
+	ret = ath6kl_platform_power(gpdata, 1);
+
+	if (ret == 0) {
+		ath6kl_hsic_bind(1);
+	}
+}
+EXPORT_SYMBOL(ath6kl_recover_firmware);

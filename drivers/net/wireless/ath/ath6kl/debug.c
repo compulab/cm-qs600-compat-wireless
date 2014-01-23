@@ -1832,6 +1832,66 @@ static const struct file_operations fops_tx_psq_threshold = {
 	.llseek = default_llseek,
 };
 
+void ath6kl_recovery_dump_crash_info(struct ath6kl *ar)
+{
+	u8 buf[30];
+	unsigned int len = 0;
+	u32 addr;
+	int i;
+	struct sk_buff *skb;
+	u8 *netdata;
+	static u32 reg_pattern = cpu_to_be32(0x0000d600);
+	static u32 regend_pattern =cpu_to_be32(0x0000e600);
+	struct file *file;
+	mm_segment_t oldfs;
+
+#define AR6004_CRASHDUMP_REGCOUNT 370
+	if (skb_queue_len((&ar->debug.cdlog_queue)) == 0) return;
+
+	oldfs = get_fs();
+	set_fs(get_ds());
+
+	file = filp_open(ATH6KL_RECOVERY_CRASH_DUMP_FILE,
+			O_WRONLY | O_RDONLY | O_TRUNC, S_IRUSR | S_IWUSR);
+	if (IS_ERR(file) || !file->f_op || !file->f_op->write ||
+			!file->f_op->read) {
+		ath6kl_err("File pointer error in %s\n", __func__);
+		return;
+	}
+
+	while ((skb = __skb_dequeue(&ar->debug.cdlog_queue))) {
+		if(skb == NULL ) {
+			return;
+		}
+		netdata = skb->data;
+		if (!memcmp(netdata, &reg_pattern, sizeof(reg_pattern))) {
+
+			netdata += 4;
+			addr = be32_to_cpu(*(u32 *)(netdata));
+			netdata += 4;
+			for (i = 0; i < AR6004_CRASHDUMP_REGCOUNT * 4; i += 4) {
+				len = 0;
+				memset(buf, 0, sizeof(buf));
+
+				/* if this is end if registry type , go to next */
+				if (regend_pattern == be32_to_cpu(*(u32 *)(netdata+i)))
+					break;
+				len = scnprintf(buf, sizeof(buf),
+						"0x%04x:0x%04x\n", addr,
+						be32_to_cpu(*(u32 *)(netdata+i)));
+				file->f_op->write(file, buf, len, &file->f_pos);
+
+				addr +=4;
+			}
+		}
+
+		kfree_skb(skb);
+		skb = NULL;
+	}
+
+	set_fs(oldfs);
+}
+
 void ath6kl_debug_init(struct ath6kl *ar)
 {
 	skb_queue_head_init(&ar->debug.fwlog_queue);
@@ -2157,9 +2217,6 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 	debugfs_create_file("power_params", S_IWUSR, ar->debugfs_phy, ar,
 			    &fops_power_params);
 
-	debugfs_create_file("crash_dump", S_IRUSR, ar->debugfs_phy, ar,
-			    &fops_crash_dump);
-
 	debugfs_create_file("hif_rxq_threshold", S_IWUSR,
 			ar->debugfs_phy, ar, &fops_hif_pipe_rxq_threshold);
 
@@ -2171,6 +2228,36 @@ int ath6kl_debug_init_fs(struct ath6kl *ar)
 
 	debugfs_create_file("mcc_stats", S_IRUSR | S_IWUSR,
 			ar->debugfs_phy, ar, &fops_mcc_stats);
+
+	if (ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY)) {
+		struct file *file = NULL;
+		mm_segment_t oldfs;
+
+		oldfs = get_fs();
+		set_fs(KERNEL_DS);
+		if (ar->fw_recovery->state != ATH6KL_FW_RECOVERY_INPROGRESS) {
+			file = filp_open(ATH6KL_RECOVERY_CRASH_DUMP_FILE,
+				O_CREAT | O_WRONLY | O_RDONLY | O_TRUNC |
+				O_LARGEFILE, S_IRUSR | S_IWUSR);
+
+			if (IS_ERR(file)) {
+				ath6kl_err("Not able to create the crash dump"
+					       " file\n");
+				set_fs(oldfs);
+				return -ENOMEM;
+			}
+		}
+
+		if (!debugfs_create_symlink("crash_dump", ar->debugfs_phy,
+					ATH6KL_RECOVERY_CRASH_DUMP_FILE)) {
+			ath6kl_err("Fialed to create symlink for crash_dump\n");
+			return -EINVAL;
+		}
+		set_fs(oldfs);
+	} else  {
+		debugfs_create_file("crash_dump", S_IRUSR, ar->debugfs_phy, ar,
+				&fops_crash_dump);
+	}
 
 	return 0;
 }

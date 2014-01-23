@@ -2659,6 +2659,14 @@ int ath6kl_cfg80211_suspend(struct ath6kl *ar,
 		break;
 	}
 
+	if (ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY)) {
+		if (ar->fw_recovery->hb_poll && !ar->fw_recovery->hb_misscnt) {
+			mod_timer(&ar->fw_recovery->hb_timer, jiffies +
+				(ATH6KL_SUSPEND_HB_DELAY *
+				 ar->fw_recovery->hb_poll));
+		}
+	}
+
 	list_for_each_entry(vif, &ar->vif_list, list)
 		ath6kl_cfg80211_scan_complete_event(vif, true);
 
@@ -2707,6 +2715,13 @@ int ath6kl_cfg80211_resume(struct ath6kl *ar)
 
 	default:
 		break;
+	}
+
+	if (ath6kl_debug_quirks_any(ar, ATH6KL_MODULE_FW_ERROR_RECOVERY)) {
+		if (ar->fw_recovery->hb_poll && !ar->fw_recovery->hb_misscnt) {
+			mod_timer(&ar->fw_recovery->hb_timer, jiffies +
+				ar->fw_recovery->hb_poll);
+		}
 	}
 
 	return 0;

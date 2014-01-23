@@ -258,10 +258,8 @@ static struct bam_inf {
 
 void ath6kl_hsic_restart(struct ath6kl *ar)
 {
-	mdelay(100);
-	ath6kl_hsic_bind(0);
-	mdelay(1000);
-	ath6kl_hsic_bind(1);
+	mdelay(500);
+	ath6kl_recover_firmware();
 }
 
 static inline void ath6kl_put_context(struct sk_buff *skb,
