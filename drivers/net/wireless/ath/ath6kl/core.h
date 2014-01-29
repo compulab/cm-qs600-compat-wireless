@@ -1021,6 +1021,7 @@ struct ath6kl {
 	u16 pas_chdwell_time;
 	u32 bootstrap_mode;
 	u8 lte_margin;
+	bool enable_ani;
 };
 
 
