@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2011 Atheros Communications Inc.
+ * Copyright (c) 2004-2014 Atheros Communications Inc.
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -19,7 +19,7 @@
 #include "wmi_btcoex.h"
 #include "debug.h"
 #ifdef CONFIG_ANDROID
-#include <mach/socinfo.h>
+#include <soc/qcom/socinfo.h>
 #endif
 
 #define BDATA_ANTCONF_OFFSET	4069
