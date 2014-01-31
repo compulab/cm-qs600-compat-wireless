@@ -567,7 +567,7 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 		break;
 	}
 
-	if (ar->want_ch_switch & (1 << vif->fw_vif_idx)) {
+	if ((ar->want_ch_switch & (1 << vif->fw_vif_idx))) {
 		ar->want_ch_switch &= ~(1 << vif->fw_vif_idx);
 		ath6kl_cfg80211_ch_switch_notify(vif, channel,
 						 sec_ch, phymode);

@@ -3584,8 +3584,16 @@ static int nl80211_set_bss(struct sk_buff *skb, struct genl_info *info)
 		params.ht_opmode =
 			nla_get_u16(info->attrs[NL80211_ATTR_BSS_HT_OPMODE]);
 	if (info->attrs[NL80211_ATTR_HT_2040_MODE])
-		params.ht_2040_mode =
+		params.ht_2040_info.ht_2040_mode =
 			nla_get_u8(info->attrs[NL80211_ATTR_HT_2040_MODE]);
+
+	if (info->attrs[NL80211_ATTR_HT40_SEC_CHOFF])
+		params.ht_2040_info.sec_choff =
+			nla_get_u8(info->attrs[NL80211_ATTR_HT40_SEC_CHOFF]);
+
+	if (info->attrs[NL80211_ATTR_WIPHY_FREQ])
+		params.ht_2040_info.freq =
+			nla_get_u32(info->attrs[NL80211_ATTR_WIPHY_FREQ]);
 
 	if (info->attrs[NL80211_ATTR_WIPHY_RTS_THRESHOLD])
 		params.rts_threshold = nla_get_u32(
