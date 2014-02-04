@@ -1746,7 +1746,8 @@ static int ath6kl_init_upload(struct ath6kl *ar)
 		return status;
 
 	address = MBOX_BASE_ADDRESS + LOCAL_SCRATCH_ADDRESS;
-	param = options | 0x20;
+        if (!(ar->enable_ani))
+		param = options | 0x20;
 	status = ath6kl_bmi_reg_write(ar, address, param);
 	if (status)
 		return status;
