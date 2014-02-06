@@ -636,7 +636,7 @@ int ath6kl_rebind_hsic_by_device_op(int bind, bool recover)
 		return -ENODEV;
 	}
 
-#ifndef ATH6KL_SUPPORT_NL80211_KERNEL3_10
+#ifdef ATH6KL_ENABLE_REBIND
 	if (bind) {
 		/* make sure to hold a reference to the kobj */
 		of_dev_get(ehci_hsic_pdev);

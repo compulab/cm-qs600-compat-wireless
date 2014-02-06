@@ -58,7 +58,7 @@
 #define TO_STR(symbol) MAKE_STR(symbol)
 
 /* The script (used for release builds) modifies the following line. */
-#define __BUILD_VERSION_ (3.5.0.561)
+#define __BUILD_VERSION_ (3.5.0.562)
 
 #define DRV_VERSION		TO_STR(__BUILD_VERSION_)
 
@@ -1352,6 +1352,7 @@ enum ath6kl_vif_state {
 	SCANNING_WAIT,
 	DORMANT,
 	PS_STICK,
+	SKIP_CONNECT_EVENT,
 #ifdef ATHTST_SUPPORT
 	CE_WMI_UPDATE,
 	CE_WMI_SCAN,

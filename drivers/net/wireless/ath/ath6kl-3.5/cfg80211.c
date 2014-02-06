@@ -1266,6 +1266,11 @@ static int ath6kl_cfg80211_connect(struct wiphy *wiphy, struct net_device *dev,
 		}
 	}
 
+	if (test_bit(SKIP_CONNECT_EVENT, &vif->flags) &&
+	    (vif->nw_type == INFRA_NETWORK)) {
+		clear_bit(SKIP_CONNECT_EVENT, &vif->flags);
+	}
+
 #ifdef USB_AUTO_SUSPEND
 	if (ar->autopm_turn_on) {
 		ar->autopm_defer_delay_change_cnt =
@@ -1915,8 +1920,16 @@ void ath6kl_cfg80211_disconnect_event(struct ath6kl_vif *vif, u8 reason,
 			vif->next_conn_status = WLAN_STATUS_CHALLENGE_FAIL;
 		else
 			vif->next_conn_status = WLAN_STATUS_UNSPECIFIED_FAILURE;
+
+		if (vif->nw_type == INFRA_NETWORK)
+			set_bit(SKIP_CONNECT_EVENT, &vif->flags);
 		ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 		return;
+	} else {
+		if (test_bit(SKIP_CONNECT_EVENT, &vif->flags) &&
+		   (vif->nw_type == INFRA_NETWORK)) {
+			clear_bit(SKIP_CONNECT_EVENT, &vif->flags);
+		}
 	}
 
 	clear_bit(CONNECT_PEND, &vif->flags);

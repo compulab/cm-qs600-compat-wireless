@@ -1454,6 +1454,15 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 		   le16_to_cpu(ev->u.sta.beacon_intvl),
 		   le32_to_cpu(ev->u.sta.nw_type));
 
+	if (test_bit(SKIP_CONNECT_EVENT, &vif->flags) &&
+		(vif->nw_type == INFRA_NETWORK)) {
+		ath6kl_dbg(ATH6KL_DBG_WMI |
+			ATH6KL_DBG_EXT_INFO1 |
+			ATH6KL_DBG_EXT_DEF,
+			"skip connect event indication\n");
+		return 0;
+	}
+
 	do_gettimeofday(&vif->last_connect_time);
 
 	/* Start of assoc rsp IEs */
