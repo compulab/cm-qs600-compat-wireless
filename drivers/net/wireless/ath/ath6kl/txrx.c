@@ -4007,8 +4007,12 @@ u8 ath6kl_mcc_flowctrl_get_conn_id(struct ath6kl_vif *vif,
 	if (vif->nw_type != AP_NETWORK) {
 		hint = ethhdr->h_source;
 	} else {
-		if (is_multicast_ether_addr(ethhdr->h_dest))
-			hint = ethhdr->h_source;
+		if (is_multicast_ether_addr(ethhdr->h_dest)){
+			if (vif->ndev)
+				hint = vif->ndev->dev_addr;
+			else /* Protective condition if ndev is null */
+				return conn_id;
+		}
 		else
 			hint = ethhdr->h_dest;
 	}
