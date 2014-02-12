@@ -394,12 +394,22 @@ int ath6kl_usb_bam_activity_cb(void *priv)
 {
 	struct ath6kl_usb_pipe *pipe = (struct ath6kl_usb_pipe *) priv;
 	struct ath6kl_usb *ar_usb = pipe->ar_usb;
+	int autopm_state;
 
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
 			"BAM Activity indication callback, pipe_num: %d\n",
 			pipe->logical_pipe_num);
 
-	usb_autopm_get_interface_async(ar_usb->interface);
+	spin_lock_bh(&ar_usb->pm_lock);
+
+	autopm_state = atomic_read(&ar_usb->autopm_state);
+
+	if(autopm_state != ATH6KL_USB_AUTOPM_STATE_ON ||
+		(atomic_read(&ar_usb->interface->pm_usage_cnt) == 0))
+		usb_autopm_get_interface_async(ar_usb->interface);
+
+	spin_unlock_bh(&ar_usb->pm_lock);
+
 	ar_usb->pm_stats.bam_activity++;
 
 	return 0;
@@ -409,12 +419,22 @@ int ath6kl_usb_bam_inactivity_cb(void *priv)
 {
 	struct ath6kl_usb_pipe *pipe = (struct ath6kl_usb_pipe *) priv;
 	struct ath6kl_usb *ar_usb = pipe->ar_usb;
+	int autopm_state;
 
 	ath6kl_dbg(ATH6KL_DBG_SUSPEND,
 			"BAM Inactivity indication callback, pipe_num: %d\n",
 			pipe->logical_pipe_num);
 
-	usb_autopm_put_interface_async(ar_usb->interface);
+	spin_lock_bh(&ar_usb->pm_lock);
+
+	autopm_state = atomic_read(&ar_usb->autopm_state);
+
+	if(autopm_state == ATH6KL_USB_AUTOPM_STATE_ON &&
+		(atomic_read(&ar_usb->interface->pm_usage_cnt)>0))
+		usb_autopm_put_interface_async(ar_usb->interface);
+
+	spin_unlock_bh(&ar_usb->pm_lock);
+
 	ar_usb->pm_stats.bam_inactivity++;
 
 	return 0;
@@ -661,6 +681,7 @@ static int ath6kl_usb_bam_resubmit_urbs(struct ath6kl_usb *ar_usb)
 	struct ath6kl_usb_pipe *pipe;
 	int usb_status = 0;
 	int i;
+	int autopm_state;
 
 	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM))
 		return 0;
@@ -689,7 +710,14 @@ static int ath6kl_usb_bam_resubmit_urbs(struct ath6kl_usb *ar_usb)
 	}
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
-	usb_autopm_get_interface_async(ar_usb->interface);
+	spin_lock_bh(&ar_usb->pm_lock);
+
+	autopm_state = atomic_read(&ar_usb->autopm_state);
+
+	if(autopm_state != ATH6KL_USB_AUTOPM_STATE_ON)
+		usb_autopm_get_interface_async(ar_usb->interface);
+
+	spin_unlock_bh(&ar_usb->pm_lock);
 #endif
 
 	return 0;
