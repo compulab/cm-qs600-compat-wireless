@@ -303,6 +303,7 @@ static const struct nla_policy nl80211_policy[NL80211_ATTR_MAX+1] = {
 	[NL80211_ATTR_HT_2040_MODE] = { .type = NLA_U8 },
 	[NL80211_ATTR_MAX_NUM_STA] = { .type = NLA_U32 },
 	[NL80211_ATTR_ACS_CHAN_MASK] = { .type = NLA_U32 },
+	[NL80211_ATTR_HT40_SEC_CHOFF] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -2619,6 +2620,11 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 
 	if (info->attrs[NL80211_ATTR_HT_CAPABILITY]) {
 		params.ht_cap_info = nla_get_u16(info->attrs[NL80211_ATTR_HT_CAPABILITY]);
+	}
+
+	if (info->attrs[NL80211_ATTR_HT40_SEC_CHOFF]) {
+		params.ht40_sec_choff =
+			nla_get_u8(info->attrs[NL80211_ATTR_HT40_SEC_CHOFF]);
 	}
 
 	if (info->attrs[NL80211_ATTR_MAC_ACL]) {

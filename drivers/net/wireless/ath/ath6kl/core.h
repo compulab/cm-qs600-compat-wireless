@@ -648,7 +648,7 @@ struct ath6kl_htcap {
 	u8 ampdu_factor;
 	unsigned short cap_info;
 	bool require_ht;
-	u8 ext_ch_mask;
+	u8 ext_chan;
 };
 
 /*
