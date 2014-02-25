@@ -460,6 +460,7 @@ struct cfg80211_ap_settings {
 	u32 acs_chan_mask;
 	u32 max_num_sta;
 	u8 require_ht;
+	u8 ht40_sec_choff;
 };
 
 /**

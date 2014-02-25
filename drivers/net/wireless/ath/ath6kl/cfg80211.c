@@ -2822,7 +2822,7 @@ int ath6kl_restore_htcap(struct ath6kl_vif *vif)
 		htcap->cap_info = 0;
 		htcap->ht_enable = wiphy->bands[band]->ht_cap.ht_supported;
 		htcap->require_ht = 0;
-		htcap->ext_ch_mask = 0;
+		htcap->ext_chan = 0;
 		ret = ath6kl_set_htcap(vif, band,
 				wiphy->bands[band]->ht_cap.ht_supported);
 		if (ret)
@@ -3475,8 +3475,9 @@ static int ath6kl_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	if(info->ht_cap_info) {
 		htcap->cap_info = info->ht_cap_info;
-		htcap->ext_ch_mask = ath6kl_get_ht40_ext_ch_mask(info,
+		htcap->ext_chan = ath6kl_get_ht40_ext_ch_mask(info,
 				htcap->cap_info);
+		htcap->ext_chan |= info->ht40_sec_choff;
 	} else {
                 if (band != IEEE80211_BAND_2GHZ) {
 			htcap->cap_info = ath6kl_ap_a_htcap;

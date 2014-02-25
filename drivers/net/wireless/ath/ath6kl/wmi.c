@@ -873,7 +873,7 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 			ath6kl_connect_ap_mode_bss(
 				vif, le16_to_cpu(ev->u.ap_bss.ch),
 			       		sec_ch, phymode);
-			if (htcap->ext_ch_mask) {
+			if (htcap->ext_chan & IEEE80211_HT_CAP_EXT_CH_MASK) {
 				memset(&rate, 0, sizeof(rate));
 				rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK;
 				ath6kl_wmi_set_fixrates(vif->ar->wmi,
@@ -3259,8 +3259,12 @@ int ath6kl_wmi_set_htcap_cmd(struct wmi *wmi, u8 if_idx,
 	cmd->ht20_sgi = !!(htcap->cap_info & IEEE80211_HT_CAP_SGI_20);
 	cmd->ht40_supported =
 		!!(htcap->cap_info & IEEE80211_HT_CAP_SUP_WIDTH_20_40);
-	if (htcap->ext_ch_mask)
+	if (htcap->ext_chan & IEEE80211_HT_CAP_EXT_CH_MASK)
 		cmd->ht40_supported |= IEEE80211_HT_CAP_EXT_CH_MASK;
+	if (htcap->ext_chan & IEEE80211_HT_SC_CH_ABOVE)
+		cmd->ht40_supported |= IEEE80211_HT_SC_CH_ABOVE;
+	else if (htcap->ext_chan & IEEE80211_HT_SC_CH_BELOW)
+		cmd->ht40_supported |= IEEE80211_HT_SC_CH_BELOW;
 
 	cmd->ht40_sgi = !!(htcap->cap_info & IEEE80211_HT_CAP_SGI_40);
 	cmd->intolerant_40mhz =

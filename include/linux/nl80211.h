@@ -1544,6 +1544,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_REQUIRE_HT,
 
 	NL80211_ATTR_ACS_CHAN_MASK,
+
+	NL80211_ATTR_HT40_SEC_CHOFF,
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
