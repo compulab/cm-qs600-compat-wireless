@@ -4096,7 +4096,10 @@ int ath6kl_wmi_set_acl_policy(struct wmi *wmi, u8 if_idx, bool enable_acl)
 #ifdef CONFIG_ACL_BLWL_MAC
        cmd->policy = enable_acl ? WMI_ACL_BLWL_MAC : 0;
 #else
-       cmd->policy = enable_acl ? WMI_ACL_DENY_MAC : WMI_ACL_ALLOW_MAC;
+	if (enable_acl ==  NL80211_ACL_POLICY_DISABLE)
+		cmd->policy = WMI_ACL_DISABLE;
+	else
+		cmd->policy = enable_acl ? WMI_ACL_DENY_MAC : WMI_ACL_ALLOW_MAC;
 #endif
        ath6kl_dbg(ATH6KL_DBG_WMI, "Set acl policy=%d\n", cmd->policy);
 
@@ -4199,17 +4202,20 @@ int ath6kl_wmi_set_acl_list(struct wmi *wmi, u8 if_idx, int index,
               cmd->action = WMI_ACL_RESET_LIST;
        else if (acl_action == WMI_ACL_DEL_MAC_ADDR)
               cmd->action = WMI_ACL_DEL_MAC_ADDR;
+       else if (acl_action == WMI_ACL_END_MAC_LIST)
+              cmd->action = WMI_ACL_END_MAC_LIST;
        else
               cmd->action = WMI_ACL_ADD_MAC_ADDR;
 
-       if (acl_action != WMI_ACL_RESET_MAC_ADDR) {
+       if (!((acl_action == WMI_ACL_RESET_MAC_ADDR) ||
+		       (acl_action == WMI_ACL_END_MAC_LIST))) {
            cmd->wildcard = wildcard;
            vif = ath6kl_get_vif_by_index(wmi->parent_dev, if_idx);
            if (!ath6kl_acl_add_del_mac(&(vif->ap_acl_list), cmd)) {
-               ath6kl_dbg(ATH6KL_DBG_WMI, "could not set acl mac: index:%d action:%d mac:%pM wild:%d acl_action:%d\n",
+               ath6kl_info("could not set acl mac: index:%d action:%d mac:%pM wild:%d acl_action:%d\n",
                       cmd->index, cmd->action, cmd->mac, cmd->wildcard, acl_action);
                dev_kfree_skb(skb);
-               return -2;
+               return 0;
            }
        }
 #endif

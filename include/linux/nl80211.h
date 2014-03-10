@@ -3055,5 +3055,6 @@ enum nl80211_probe_resp_offload_support_attr {
 enum nl80211_acl_policy_attr {
        NL80211_ACL_POLICY_ACCEPT,
        NL80211_ACL_POLICY_DENY,
+       NL80211_ACL_POLICY_DISABLE,
 };
 #endif /* __LINUX_NL80211_H */

@@ -4021,6 +4021,22 @@ static int ath6kl_set_mac_acl(struct wiphy *wiphy,
        int i, err;
        static const u8 zero_mac[ETH_ALEN] = { 0 };
 
+	/* Reset the acl list */
+	err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, 0, zero_mac, 0,
+                                acl_info->acl_policy,
+				WMI_ACL_RESET_MAC_ADDR);
+	if (err)
+		return err;
+
+	if (!acl_info->n_acl_entries) {
+		err = ath6kl_wmi_set_acl_policy(ar->wmi, vif->fw_vif_idx,
+					NL80211_ACL_POLICY_DISABLE);
+		if (err < 0)
+			return err;
+		return 0;
+	}
+
+	memset(&(vif->ap_acl_list),0,sizeof(struct wmi_ap_acl_list));
 #ifndef CONFIG_ACL_BLWL_MAC
 	/* Set the acl policy */
 	err = ath6kl_wmi_set_acl_policy(ar->wmi, vif->fw_vif_idx,
@@ -4028,11 +4044,6 @@ static int ath6kl_set_mac_acl(struct wiphy *wiphy,
 	if (err < 0)
 		return err;
 #endif
-       /* Reset the acl list */
-       err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, 0, zero_mac, 0,
-                                     acl_info->acl_policy, WMI_ACL_RESET_MAC_ADDR);
-       if (err)
-		return err;
 
        for (i = 0; i < acl_info->n_acl_entries; i++) {
                err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, i,
@@ -4042,6 +4053,13 @@ static int ath6kl_set_mac_acl(struct wiphy *wiphy,
                if (err)
 			return err;
        }
+       err = ath6kl_wmi_set_acl_list(ar->wmi, vif->fw_vif_idx, 0,
+				acl_info->mac_addrs[0].addr,
+				acl_info->mac_addrs[0].wild,
+				acl_info->acl_policy, WMI_ACL_END_MAC_LIST);
+       if (err)
+	       return err;
+
 
 #ifdef CONFIG_ACL_BLWL_MAC
        /*

@@ -2325,9 +2325,7 @@ static int nl80211_set_mac_acl(struct sk_buff *skb, struct genl_info *info)
         if (!(rdev->wiphy.features & NL80211_FEATURE_MAC_ACL))
                 return -EOPNOTSUPP;
 
-        if (!info->attrs[NL80211_ATTR_ACL_POLICY] ||
-            !info->attrs[NL80211_ATTR_MAC_ADDRS] ||
-            !info->attrs[NL80211_ATTR_MAC_ADDRS_WILD])
+        if (!info->attrs[NL80211_ATTR_ACL_POLICY])
                 return -EINVAL;
 
         n_mac_addrs = validate_acl_mac_addrs(
