@@ -793,6 +793,20 @@ struct mpath_info {
 	int generation;
 };
 
+/* *
+ * struct ht_2040_params - HT 2040 channel switch data
+ *
+ * @ht_2040_ch_switch: 1 to switch to HT 20 mode
+ * 		     : 2 to switch to HT 40 mode
+ * @ht_40_sec_choff: secondary channel offset, HT40+/-
+ * @channel: in case of 5G channel to be switched after obss scan
+ * */
+struct ht_2040_params {
+	u8 ht_2040_mode;
+	u8 sec_choff;
+	u32 freq;
+};
+
 /**
  * struct bss_parameters - BSS parameters
  *
@@ -820,7 +834,7 @@ struct bss_parameters {
 	u8 basic_rates_len;
 	int ap_isolate;
 	int ht_opmode;
-	u8 ht_2040_mode;
+	struct ht_2040_params ht_2040_info;
 	int rts_threshold;
 };
 

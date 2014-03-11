@@ -3020,13 +3020,24 @@ static int ath6kl_change_bss(struct wiphy *wiphy, struct net_device *dev,
 	if (info->ap_isolate >= 0)
 		vif->intra_bss = !(info->ap_isolate);
 
-	if (info->ht_2040_mode > 0) {
+	if (info->ht_2040_info.ht_2040_mode > 0) {
 		u64 ht40_rate = ATH6KL_RATE_MASK;
-		if (info->ht_2040_mode == ATH6KL_HT_OPMODE_SWITCH_TO_20)
+		if (info->ht_2040_info.ht_2040_mode == ATH6KL_HT_OPMODE_SWITCH_TO_20)
 			rate.fix_rate_mask[0] = ATH6KL_HT40_RATE_MASK; /* Setting HT20 rates */
 		else
 			memcpy(&rate, &ht40_rate, sizeof(rate)); /*Setting HT40 rates */
 		ath6kl_wmi_set_fixrates(vif->ar->wmi, vif->fw_vif_idx, rate);
+	} else if (info->ht_2040_info.freq) {
+		vif->htcap[IEEE80211_BAND_5GHZ].ext_chan =
+			info->ht_2040_info.sec_choff;
+		ath6kl_set_htcap(vif, IEEE80211_BAND_5GHZ, true);
+
+		vif->profile.ch = cpu_to_le16(info->ht_2040_info.freq);
+		if (ath6kl_wmi_ap_profile_commit(vif->ar->wmi, vif->fw_vif_idx,
+					&vif->profile)) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_CFG, "Ap profile commit "
+					"failure");
+		}
 	}
 
 	return 0;

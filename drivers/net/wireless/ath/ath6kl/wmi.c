@@ -879,6 +879,7 @@ static int ath6kl_wmi_connect_event_rx(struct wmi *wmi, u8 *datap, int len,
 				ath6kl_wmi_set_fixrates(vif->ar->wmi,
 						vif->fw_vif_idx, rate);
 			}
+
                         if (ath6kl_is_mcc_enabled(vif->ar)) {
 				vif->ar->is_mcc_enabled = true;
 #ifdef CONFIG_ATH6KL_BAM2BAM
