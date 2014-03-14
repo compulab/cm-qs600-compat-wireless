@@ -1516,6 +1516,15 @@ int ath6kl_data_tx(struct sk_buff *skb, struct net_device *dev)
 			"%s: skb=0x%p, data=0x%p, len=0x%x\n", __func__,
 			skb, skb->data, skb->len);
 
+	if(skb_cloned(skb)) {
+		skb = skb_unshare(skb, GFP_ATOMIC);
+		if(skb == NULL) {
+			ath6kl_dbg(ATH6KL_DBG_WLAN_TX,
+					"skb cannot be shared\n");
+			goto fail_tx;
+		}
+	}
+
 	/* If target is not associated */
 	if (!test_bit(CONNECTED, &vif->flags) &&
 			!test_bit(TESTMODE_EPPING, &ar->flag))
