@@ -31,7 +31,7 @@
 #include <linux/device.h>
 #include <linux/platform_device.h>
 #include <linux/wlan_plat.h>
-#include <mach/msm_bus.h>
+#include <linux/msm-bus.h>
 #include <linux/gpio.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
