@@ -2884,6 +2884,7 @@ struct wmi_ap_mode_stat {
 /* Special mac index to notify eol */
 #define MAC_ACL_INDEX_EOL      0xff
 
+#define WMI_ACL_DISABLE        0x0
 #define WMI_ACL_ALLOW_MAC      0x1
 #define WMI_ACL_DENY_MAC       0x2
 #define WMI_ACL_BLWL_MAC       0x3
@@ -2892,6 +2893,7 @@ struct wmi_ap_mode_stat {
 #define WMI_ACL_RESET_MAC_ADDR  0
 #define WMI_ACL_ADD_MAC_ADDR    1
 #define WMI_ACL_DEL_MAC_ADDR    2
+#define WMI_ACL_END_MAC_LIST    3
 
 enum wmi_mac_acl_action {
        WMI_ACL_ADD_WHITE_MAC_ADDR = 0x01,
