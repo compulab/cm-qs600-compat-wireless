@@ -57,7 +57,7 @@ int _string_to_mac(char *string, int len, u8 *macaddr)
 }
 
 struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr,
-				   bool inter_bss)
+				   int inter_bss)
 {
 	struct ath6kl *ar = vif->ar;
 	struct ath6kl_sta *conn = NULL;
@@ -70,7 +70,8 @@ struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr,
 
 	for (i = 0; i < max_conn; i++) {
 		if (memcmp(node_addr, ar->sta_list[i].mac, ETH_ALEN) == 0) {
-			if (ar->sta_list[i].vif == vif || inter_bss)
+			if ((ar->sta_list[i].vif == vif) || (inter_bss ==
+					ATH6KL_ROUTE_IN_DRIVER))
 				conn = &ar->sta_list[i];
 			break;
 		}

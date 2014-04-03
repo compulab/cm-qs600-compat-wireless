@@ -1371,7 +1371,7 @@ static bool ath6kl_powersave_ap(struct ath6kl_vif *vif, struct sk_buff *skb,
 			}
 		}
 	} else {
-		conn = ath6kl_find_sta(vif, datap->h_dest, false);
+		conn = ath6kl_find_sta(vif, datap->h_dest, 0);
 		if (!conn) {
 			dev_kfree_skb(skb);
 
@@ -2141,7 +2141,8 @@ static void ath6kl_deliver_ampdu_frames_to_ipa(struct ath6kl *ar,
 		} else if (!is_broadcast_ether_addr(datap->h_dest) &&
 				!is_multicast_ether_addr(datap->h_dest) &&
 				(NULL != ath6kl_find_sta(vif, datap->h_dest,
-				true))) {
+				ATH6KL_ROUTE_IN_DRIVER)) && (ar->inter_bss ==
+				ATH6KL_DISABLE_INTER_BSS)) {
 			dev_kfree_skb(skb);
 			skb = NULL;
 		}
@@ -2213,7 +2214,8 @@ static void ath6kl_deliver_frames_to_nw_stack(struct net_device *dev,
 		} else if (!is_broadcast_ether_addr(datap->h_dest) &&
 				!is_multicast_ether_addr(datap->h_dest) &&
 				(NULL != ath6kl_find_sta(vif, datap->h_dest,
-					true))) {
+					ATH6KL_ROUTE_IN_DRIVER)) && (ar->inter_bss ==
+					ATH6KL_DISABLE_INTER_BSS)) {
 			dev_kfree_skb(skb);
 			skb = NULL;
 		}
@@ -3083,7 +3085,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 		}
 
 		datap = (struct ethhdr *) (skb->data + offset);
-		conn = ath6kl_find_sta(vif, datap->h_source, false);
+		conn = ath6kl_find_sta(vif, datap->h_source, 0);
 
 		if (!conn) {
 			dev_kfree_skb(skb);
@@ -3267,7 +3269,7 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 	if (is_unicast_ether_addr(datap->h_dest)) {
 		if (vif->nw_type == AP_NETWORK) {
-			conn = ath6kl_find_sta(vif, datap->h_source, false);
+			conn = ath6kl_find_sta(vif, datap->h_source, 0);
 			if (!conn)
 				return;
 			aggr_conn = conn->aggr_conn;
