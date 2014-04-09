@@ -309,6 +309,28 @@ static void ath6kl_usb_bam_free_urb(struct urb *urb)
 	usb_free_urb(urb);
 }
 
+static void ath6kl_kill_bam_urbs(struct ath6kl_usb *ar_usb)
+{
+	int i;
+	struct ath6kl_usb_bam_pipe *bam_pipe;
+
+	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
+
+		bam_pipe = &ar_usb->pipes[i].bam_pipe;
+
+		/* If bam pipe not connected then dont kill dummy urbs attached
+		 * to bam pipes */
+		if (!bam_pipe->connected)
+			continue;
+
+		/* kill the dummy urbs attached to bam pipe during error
+		 * condition. If we are not clearing here, while unloading the
+		 * driver usb will try to clear these urbs and the callback
+		 * registered will be invalid at that time */
+		usb_kill_urb(bam_pipe->urb);
+	}
+}
+
 /* Disconnects all the bam pipes Tx-4, Rx-1 */
 static void ath6kl_disconnect_bam_pipes(struct ath6kl_usb *ar_usb)
 {
@@ -955,6 +977,7 @@ static int ath6kl_usb_setup_bampipe_resources(struct ath6kl_usb *ar_usb)
 	return 0;
 
 cleanup_bam_pipe:
+	ath6kl_kill_bam_urbs(ar_usb);
 	ath6kl_disconnect_bam_pipes(ar_usb);
 
 	return status;
