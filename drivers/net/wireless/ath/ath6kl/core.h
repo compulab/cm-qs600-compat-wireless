@@ -832,6 +832,13 @@ struct ath6kl_mcc_flowctrl {
 
 };
 
+enum inter_bss_flags {
+	ATH6KL_DISABLE_INTER_BSS,
+	ATH6KL_ROUTE_IN_DRIVER,
+	ATH6KL_ROUTE_IN_NETWORK_LAYER,
+};
+
+
 struct ath6kl {
 	struct device *dev;
 	struct wiphy *wiphy;
@@ -1009,7 +1016,7 @@ struct ath6kl {
 #endif /* CONFIG_ATH6KL_DEBUG */
 	struct ath6kl_mcc_flowctrl *mcc_flowctrl_ctx;
 	struct ath6kl_lte_coex_priv *lte_coex;
-	bool inter_bss;
+	int inter_bss;
 
 	u32 tx_psq_threshold;
 	bool is_mcc_enabled;
@@ -1182,7 +1189,7 @@ void aggr_module_destroy(struct aggr_info *aggr_info);
 void aggr_reset_state(struct aggr_info_conn *aggr_conn);
 
 struct ath6kl_sta *ath6kl_find_sta(struct ath6kl_vif *vif, u8 *node_addr,
-		bool inter_bss);
+		int inter_bss);
 struct ath6kl_sta *ath6kl_find_sta_by_aid(struct ath6kl_vif *vif, u8 aid);
 
 void ath6kl_ready_event(void *devt, u8 *datap, u32 sw_ver, u32 abi_ver,
