@@ -3574,6 +3574,13 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 	if (vif->nw_type != AP_NETWORK)
 		return -EOPNOTSUPP;
 
+	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
+	clear_bit(CONNECTED, &vif->flags);
+
+	vif->prwise_crypto = NONE_CRYPT;
+	vif->max_num_sta = 0;
+	vif->ap_hold_conn = 0;
+
 	list_for_each_entry(vif_tmp, &ar->vif_list, list) {
 		if (vif_tmp->nw_type == AP_NETWORK) {
 			if (vif_tmp->ap_hold_conn) {
@@ -3590,15 +3597,6 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 				ar->acs_in_prog = 0;
 		}
 	}
-
-	if (!test_bit(CONNECTED, &vif->flags))
-		return -ENOTCONN;
-
-	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
-	clear_bit(CONNECTED, &vif->flags);
-
-	vif->prwise_crypto = NONE_CRYPT;
-	vif->max_num_sta = 0;
 
 	/* Restore ht setting in firmware */
 	return ath6kl_restore_htcap(vif);
