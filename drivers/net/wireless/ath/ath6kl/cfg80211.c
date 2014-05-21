@@ -3351,8 +3351,6 @@ static int ath6kl_stop_ap(struct wiphy *wiphy, struct net_device *dev)
 
 	if (vif->nw_type != AP_NETWORK)
 		return -EOPNOTSUPP;
-	if (!test_bit(CONNECTED, &vif->flags))
-		return -ENOTCONN;
 
 	ath6kl_wmi_disconnect_cmd(ar->wmi, vif->fw_vif_idx);
 	clear_bit(CONNECTED, &vif->flags);
