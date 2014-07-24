@@ -38,6 +38,7 @@
 #include <linux/mii.h>
 #include <linux/cpumask.h>
 #include <linux/aer.h>
+#include <linux/version.h>
 #include <asm/byteorder.h>
 
 #include "alx_sw.h"
