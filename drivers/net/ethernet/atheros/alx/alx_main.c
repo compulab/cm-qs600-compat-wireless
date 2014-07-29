@@ -459,7 +459,11 @@ static void alx_receive_skb(struct alx_adapter *adpt,
 	if (vlan_flag) {
 		u16 vlan;
 		ALX_TAG_TO_VLAN(vlan_tag, vlan);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
+                __vlan_hwaccel_put_tag(skb, skb->vlan_proto, vlan);
+#else
 		__vlan_hwaccel_put_tag(skb, vlan);
+#endif
 	}
 	netif_receive_skb(skb);
 }
@@ -1599,7 +1603,11 @@ static void alx_vlan_mode(struct net_device *netdev,
 	if (!CHK_ADPT_FLAG(1, STATE_DOWN))
 		alx_disable_intr(adpt);
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+	if (features & NETIF_F_HW_VLAN_CTAG_RX) {
+#else
 	if (features & NETIF_F_HW_VLAN_RX) {
+#endif
 		/* enable VLAN tag insert/strip */
 		SET_HW_FLAG(VLANSTRIP_EN);
 	} else {
@@ -2627,10 +2635,17 @@ static netdev_features_t alx_fix_features(struct net_device *netdev,
 	 * Since there is no support for separate rx/tx vlan accel
 	 * enable/disable make sure tx flag is always in same state as rx.
 	 */
-	if (features & NETIF_F_HW_VLAN_RX)
-		features |= NETIF_F_HW_VLAN_TX;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+	if (features & NETIF_F_HW_VLAN_CTAG_RX)
+		features |= NETIF_F_HW_VLAN_CTAG_TX;
 	else
-		features &= ~NETIF_F_HW_VLAN_TX;
+		features &= ~NETIF_F_HW_VLAN_CTAG_TX;
+#else
+        if (features & NETIF_F_HW_VLAN_RX)
+                features |= NETIF_F_HW_VLAN_TX;
+        else
+                features &= ~NETIF_F_HW_VLAN_TX;
+#endif /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))*/
 
 	if (netdev->mtu > ALX_MAX_TSO_PKT_SIZE ||
 	    adpt->hw.mac_type == alx_mac_l1c ||
@@ -2646,7 +2661,11 @@ static int alx_set_features(struct net_device *netdev,
 {
 	netdev_features_t changed = netdev->features ^ features;
 
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+        if (changed & NETIF_F_HW_VLAN_CTAG_RX)
+#else
 	if (changed & NETIF_F_HW_VLAN_RX)
+#endif /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))*/
 		alx_vlan_mode(netdev, features);
 	return 0;
 }
@@ -3733,7 +3752,11 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	netdev->base_addr = (unsigned long)adpt->hw.hw_addr;
 
 	/* set cb member of netdev structure*/
+#ifdef MDM_PLATFORM
+       netdev->netdev_ops = &alx_netdev_ops;
+#else
 	netdev_attach_ops(netdev, &alx_netdev_ops);
+#endif
 	alx_set_ethtool_ops(netdev);
 	netdev->watchdog_timeo = ALX_WATCHDOG_TIME;
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
@@ -3784,7 +3807,11 @@ static int __devinit alx_init(struct pci_dev *pdev,
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
 	netdev->hw_features = NETIF_F_SG	 |
 			      NETIF_F_HW_CSUM	 |
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+                              NETIF_F_HW_VLAN_CTAG_RX;
+#else
 			      NETIF_F_HW_VLAN_RX;
+#endif /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))*/
 	if (adpt->hw.mac_type != alx_mac_l1c &&
 	    adpt->hw.mac_type != alx_mac_l2c) {
 		netdev->hw_features = netdev->hw_features |
@@ -3792,11 +3819,19 @@ static int __devinit alx_init(struct pci_dev *pdev,
 				      NETIF_F_TSO6;
 	}
 	netdev->features = netdev->hw_features |
-			   NETIF_F_HW_VLAN_TX;
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+                           NETIF_F_HW_VLAN_CTAG_TX;
+#else
+                           NETIF_F_HW_VLAN_TX;
+#endif /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))*/
 #else
 	netdev->features = NETIF_F_SG	 |
 			   NETIF_F_HW_CSUM	 |
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+                           NETIF_F_HW_VLAN_CTAG_RX;
+#else
 			   NETIF_F_HW_VLAN_RX;
+#endif /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))*/
 	if (adpt->hw.mac_type != alx_mac_l1c &&
 	    adpt->hw.mac_type != alx_mac_l2c) {
 		netdev->features = netdev->features |
@@ -3804,7 +3839,11 @@ static int __devinit alx_init(struct pci_dev *pdev,
 				   NETIF_F_TSO6;
 	}
 	netdev->features = netdev->features |
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))
+                           NETIF_F_HW_VLAN_CTAG_TX;
+#else
 			   NETIF_F_HW_VLAN_TX;
+#endif /*(LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0))*/
 #endif /* (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39)) */
 
 	/* get mac addr and perm mac addr, set to register */
@@ -4115,8 +4154,10 @@ static struct pci_error_handlers alx_err_handler = {
 #ifdef CONFIG_PM_SLEEP
 static SIMPLE_DEV_PM_OPS(alx_pm_ops, alx_suspend, alx_resume);
 #define ALX_PM_OPS      (&alx_pm_ops)
+#ifndef MDM_PLATFORM
 compat_pci_suspend(alx_suspend)
 compat_pci_resume(alx_resume)
+#endif
 #else
 #define ALX_PM_OPS      NULL
 #endif
