@@ -3276,8 +3276,8 @@ void ath6kl_rx(struct htc_target *target, struct htc_packet *packet)
 
 	datap = (struct ethhdr *) skb->data;
 
-	if ((!(is_multicast_ether_addr(datap->h_dest))) &&
-			(vif->nw_type == INFRA_NETWORK)) {
+	if (!((is_multicast_ether_addr(datap->h_dest)) &&
+			(vif->nw_type == INFRA_NETWORK))) {
 		if (vif->nw_type == AP_NETWORK) {
 			conn = ath6kl_find_sta(vif, datap->h_source, 0);
 			if (!conn)
