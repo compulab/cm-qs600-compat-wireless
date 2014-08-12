@@ -32,7 +32,7 @@ unsigned int debug_mask;
 static unsigned int wow_mode;
 static unsigned int ath6kl_p2p;
 static unsigned int devmode = ATH6KL_DEFAULT_DEV_MODE;
-static unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
+unsigned int debug_quirks = ATH6KL_DEF_DEBUG_QUIRKS;
 static unsigned int mcc_adj_ch_spacing = ATH6KL_DEF_MCC_ADJ_CH_SPACING;
 static unsigned int heart_beat_poll;
 static unsigned int lte_margin = ATH6KL_DEF_LTE_MARGIN;
@@ -47,6 +47,7 @@ module_param(mcc_adj_ch_spacing, uint, 0644);
 module_param(heart_beat_poll, uint, 0644);
 module_param(lte_margin, uint, 0644);
 module_param(enable_ani, uint, 0644);
+EXPORT_SYMBOL(debug_quirks);
 
 struct ath6kl_fw_err_recovery *fw_recovery;
 

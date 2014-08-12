@@ -32,6 +32,8 @@
 #define ATH6KL_TID_MASK 0xf
 #define ATH6KL_AID_SHIFT 4
 
+extern unsigned int debug_quirks;
+
 static void ath6kl_mcc_event_ctrl_timer_handler(unsigned long ptr);
 
  /* Dont define if IPA conf. Manager is not present */
@@ -721,7 +723,7 @@ void ath6kl_disconnect_sysbam_pipes(struct ath6kl *ar)
 	int status,i;
 
 	/* If Rx SW path, then no need to create/delete sysbam pipe */
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+	if (!!(debug_quirks & ATH6KL_MODULE_BAM_RX_SW_PATH))
 		return;
 
 	for (i = 0; i < MAX_SYSBAM_PIPE; i++) {
@@ -740,7 +742,7 @@ int ath6kl_usb_create_sysbam_pipes(struct ath6kl *ar)
 	int status,i;
 
 	/* If Rx SW path, then no need to create/delete sysbam pipe */
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+	if (!!(debug_quirks & ATH6KL_MODULE_BAM_RX_SW_PATH))
 		return 0;
 
 	/* The config is similar to the RX Bam pipe configuration */
@@ -921,13 +923,13 @@ void ath6kl_remove_filter_rule(enum ipa_ip_type ip_type, uint32_t hdl)
 void ath6kl_remove_ipa_exception_filters(struct ath6kl *ar)
 {
 	/* In Rx SW path, no need to create/delete the exception filter */
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+	if (!!(debug_quirks & ATH6KL_MODULE_BAM_RX_SW_PATH))
 		return;
 
 	/* Remove the filters */
 	ath6kl_remove_filter_rule(IPA_IP_v4, flt_hdl_ipv4);
 
-	if (ath6kl_debug_quirks(ar, ATH6KL_MODULE_IPA_WITH_IPV6))
+	if (!!(debug_quirks & ATH6KL_MODULE_IPA_WITH_IPV6))
 		ath6kl_remove_filter_rule(IPA_IP_v6, flt_hdl_ipv6);
 }
 EXPORT_SYMBOL(ath6kl_remove_ipa_exception_filters);
