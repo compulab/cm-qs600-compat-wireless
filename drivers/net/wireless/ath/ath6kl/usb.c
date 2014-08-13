@@ -33,6 +33,8 @@
 #define RX_URB_COUNT            32
 #define ATH6KL_USB_RX_BUFFER_SIZE  1700
 
+extern unsigned int debug_quirks;
+
 /* tx/rx pipes for usb */
 enum ATH6KL_USB_PIPE_ID {
 	ATH6KL_USB_PIPE_TX_CTRL = 0,
@@ -276,13 +278,13 @@ static inline void *ath6kl_get_context(struct sk_buff *skb)
 #ifdef CONFIG_ATH6KL_BAM2BAM
 static void ath6kl_usb_bam_set_pipe_mask(struct ath6kl_usb *ar_usb)
 {
-	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM))
+	if (!(!!(debug_quirks & ATH6KL_MODULE_BAM2BAM)))
 		return;
 
-	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM_RX_SW_PATH))
+	if (!(!!(debug_quirks & ATH6KL_MODULE_BAM_RX_SW_PATH)))
 		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_RX_DATA2);
 
-	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM_TX_SW_PATH)) {
+	if (!(!!(debug_quirks & ATH6KL_MODULE_BAM_TX_SW_PATH))) {
 		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_LP);
 		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_MP);
 		ar_usb->bam_pipe_mask |= BIT(ATH6KL_USB_PIPE_TX_DATA_HP);
@@ -347,6 +349,7 @@ static void ath6kl_disconnect_bam_pipes(struct ath6kl_usb *ar_usb)
 
 		bam_pipe->connected = 0;
 		usb_bam_disconnect_ipa(&bam_pipe->ipa_params);
+
 		ath6kl_usb_bam_free_urb(bam_pipe->urb);
 	}
 }
@@ -927,7 +930,7 @@ static int ath6kl_usb_setup_bampipe_resources(struct ath6kl_usb *ar_usb)
 	int status = 0;
 	struct ath6kl_usb_pipe *pipe;
 
-	if (!ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM)) {
+	if (!(!!(debug_quirks & ATH6KL_MODULE_BAM2BAM))) {
 		ath6kl_dbg(ATH6KL_DBG_BAM2BAM, "BAM2BAM mode is not"
 				" enabled!\n");
 		return 0;
@@ -1503,7 +1506,7 @@ static void ath6kl_usb_device_detached(struct usb_interface *interface)
 	ath6kl_stop_txrx(ar_usb->ar);
 
 	/* Delay to wait for target to reboot */
-	mdelay(20);
+	mdelay(50);
 
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	if (ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM)) {
@@ -2310,6 +2313,22 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		ret = -ENOMEM;
 		goto err_usb_put;
 	}
+	mdelay(500);
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ath6kl_usb_bam_set_pipe_mask(ar_usb);
+#endif
+
+#ifdef CONFIG_ATH6KL_BAM2BAM
+	ret = ath6kl_usb_setup_bampipe_resources(ar_usb);
+
+	if (ret) {
+		ath6kl_err("Failed to init ath6kl bampipe: %d\n", ret);
+		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
+		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
+		goto err_usb_destroy;
+	}
+
+#endif
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	spin_lock_init(&ar_usb->pm_lock);
@@ -2333,27 +2352,12 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 	ar->bmi.max_data_size = 252;
 
 	ar_usb->ar = ar;
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	ath6kl_usb_bam_set_pipe_mask(ar_usb);
-#endif
 
 	ret = ath6kl_core_init(ar, ATH6KL_HTC_TYPE_PIPE);
 	if (ret) {
 		ath6kl_err("Failed to init ath6kl core: %d\n", ret);
 		goto err_core_free;
 	}
-
-#ifdef CONFIG_ATH6KL_BAM2BAM
-	ret = ath6kl_usb_setup_bampipe_resources(ar_usb);
-
-	if (ret) {
-		ath6kl_err("Failed to init ath6kl bampipe: %d\n", ret);
-		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
-		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
-		goto err_core_cleanup;
-	}
-
-#endif
 
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	/* Enable Autsuspend (Delay 2sec)
@@ -2368,14 +2372,13 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 
 	return ret;
 
+err_core_free:
 #ifdef CONFIG_ATH6KL_BAM2BAM
-err_core_cleanup:
-	if (ath6kl_debug_quirks(ar_usb->ar, ATH6KL_MODULE_BAM2BAM)) {
-		ath6kl_stop_txrx(ar_usb->ar);
-		ath6kl_core_cleanup(ar_usb->ar);
+	if ((!!(debug_quirks & ATH6KL_MODULE_BAM2BAM))) {
+		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
+		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
 	}
 #endif
-err_core_free:
 	ath6kl_core_destroy(ar);
 err_usb_destroy:
 	ath6kl_usb_destroy(ar_usb);
