@@ -40,6 +40,9 @@
 #include <linux/aer.h>
 #include <linux/version.h>
 #include <asm/byteorder.h>
+#ifdef MDM_PLATFORM
+#include <linux/ipa.h>
+#endif
 
 #include "alx_sw.h"
 
@@ -52,6 +55,16 @@
 #define ALX_LINK_DOWN_CONFIG 1
 #define ALX_HIB_TASK_CONFIG  1
 #define ALX_HIB_TIMER_CONFIG 1
+
+#ifdef MDM_PLATFORM
+#define MAX_AR8151_BW 900
+/* Protocol Specific Offsets*/
+#define ALX_IP_OFFSET       14
+#define ALX_IP_HEADER_SIZE  20
+#define ALX_DHCP_SRV_PORT   67
+#define ALX_DHCP_CLI_PORT   68
+#endif
+
 /*
  * Definition to enable some features
  */
@@ -667,6 +680,43 @@ struct alx_msix_param {
 #define SET_MSIX_FLAG(_flag)    SET_FLAG(msix, MSIX, _flag)
 #define CLI_MSIX_FLAG(_flag)    CLI_FLAG(msix, MSIX, _flag)
 
+#ifdef MDM_PLATFORM
+/**
+ *  * struct alx_ipa_stats - ALX - ODU_Bridge/IPA Stats
+ *  * @send_msg: MSG Send to ODU_Bridge
+ *  * @recv_msg: MSG Recd from ODU_Bridge/IPA
+ *  * @rx_ipa_excep: Exception packets send from ODU_Bridge/IPA; packets
+ *  *                that need to be delivered to network stack
+ *  * @rx_ipa_write_done: MSG Recd from ODU_Bridge/IPA when message posted to
+ *  *			  IPA HW
+ *  * This function sets the link local ipv6 address provided by IOCTL
+ *  */
+struct alx_ipa_stats {
+	/* RX Side */
+	uint64_t rx_ipa_excep;
+	uint64_t rx_ipa_write_done;
+	uint64_t rx_ipa_send;
+
+	/* TX Side*/
+	uint64_t tx_ipa_send;
+
+	/* Interrupt RX */
+};
+
+/**
+ *  * struct alx_ipa_ctx - ALX IPA Context
+ *  * @stats: ALX - IPA brigde stats
+ *  * @debugfs_dir: Debug FS handle for alx
+ *  */
+struct alx_ipa_ctx {
+	struct alx_ipa_stats stats;
+	struct dentry *debugfs_dir;
+	struct net_device *netdev;
+	struct pci_dev *pdev;
+	struct alx_adapter *adpt;
+};
+#endif
+
 /*
  *board specific private data structure
  */
@@ -727,8 +777,13 @@ struct alx_adapter {
 	atomic_t irq_sem;
 
 	u16 msg_enable;
+#ifdef MDM_PLATFORM
+	unsigned long flags[3];
+#else
 	unsigned long flags[2];
+#endif
 };
+
 
 #define ALX_ADPT_FLAG_0_MSI_CAP                 0x00000001
 #define ALX_ADPT_FLAG_0_MSI_EN                  0x00000002
@@ -752,6 +807,12 @@ struct alx_adapter {
 #define ALX_ADPT_FLAG_1_STATE_DIAG_RUNNING      0x00000010
 #define ALX_ADPT_FLAG_1_STATE_INACTIVE          0x00000020
 
+#ifdef MDM_PLATFORM
+#define ALX_ADPT_FLAG_2_ODU_CONNECT		0x00000001
+#define ALX_ADPT_FLAG_2_IPA_RM			0x00000002
+#define ALX_ADPT_FLAG_2_DEBUGFS_INIT		0x00000004
+#define ALX_ADPT_FLAG_2_ODU_INIT		0x00000008
+#endif
 
 #define CHK_ADPT_FLAG(_idx, _flag)	\
 		CHK_FLAG_ARRAY(adpt, _idx, ADPT, _flag)
