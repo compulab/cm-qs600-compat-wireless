@@ -3283,7 +3283,11 @@ static void alx_task_routine(struct work_struct *work)
 	alx_link_task_routine(adpt);
 
 	/* flush memory to make sure state is correct before next watchog */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,39))
+	smp_mb();
+#else
 	smp_mb__before_clear_bit();
+#endif
 
 	CLI_ADPT_FLAG(1, STATE_WATCH_DOG);
 }
