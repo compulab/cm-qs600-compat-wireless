@@ -3048,12 +3048,13 @@ u8 ath6kl_get_ht40_ext_ch_mask(struct cfg80211_ap_settings *info,
 {
 	u8 is_sec_ch = 0;
 	u8 mask_sec_ch = 0;
-	struct ieee80211_ht_operation *ht_op_ie =
-				(struct ieee80211_ht_operation *)(cfg80211_find_ie(WLAN_EID_HT_OPERATION,
-					info->beacon.tail,
-					info->beacon.tail_len) + 2);
-	if (!ht_op_ie || !ht_op_ie->ht_param)
+	struct ieee80211_ht_operation *ht_op_ie = NULL;
+	const u8 *ie = cfg80211_find_ie(WLAN_EID_HT_OPERATION,
+			info->beacon.tail, info->beacon.tail_len);
+	if (!ie)
 		return mask_sec_ch;
+
+	ht_op_ie = (struct ieee80211_ht_operation *)(ie + 2);
 
 	if (ht_op_ie->ht_param & IEEE80211_HT_PARAM_CHA_SEC_ABOVE ||
 			ht_op_ie->ht_param & IEEE80211_HT_PARAM_CHA_SEC_BELOW)
