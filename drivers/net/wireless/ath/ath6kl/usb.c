@@ -2314,6 +2314,15 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		goto err_usb_put;
 	}
 	mdelay(500);
+
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	spin_lock_init(&ar_usb->pm_lock);
+	INIT_LIST_HEAD(&ar_usb->pm_q);
+	interface->needs_remote_wakeup = 1;
+	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_ON);
+	INIT_WORK(&ar_usb->pm_resume_work, ath6kl_auto_pm_wakeup_resume);
+#endif
+
 #ifdef CONFIG_ATH6KL_BAM2BAM
 	ath6kl_usb_bam_set_pipe_mask(ar_usb);
 #endif
@@ -2328,14 +2337,6 @@ static int ath6kl_usb_probe(struct usb_interface *interface,
 		goto err_usb_destroy;
 	}
 
-#endif
-
-#ifdef CONFIG_ATH6KL_AUTO_PM
-	spin_lock_init(&ar_usb->pm_lock);
-	INIT_LIST_HEAD(&ar_usb->pm_q);
-	interface->needs_remote_wakeup = 1;
-	atomic_set(&ar_usb->autopm_state, ATH6KL_USB_AUTOPM_STATE_ON);
-	INIT_WORK(&ar_usb->pm_resume_work, ath6kl_auto_pm_wakeup_resume);
 #endif
 
 	ar = ath6kl_core_create(&ar_usb->udev->dev);
@@ -2377,6 +2378,7 @@ err_core_free:
 	if ((!!(debug_quirks & ATH6KL_MODULE_BAM2BAM))) {
 		ath6kl_remove_ipa_exception_filters(ar_usb->ar);
 		ath6kl_disconnect_sysbam_pipes(ar_usb->ar);
+		ath6kl_disconnect_bam_pipes(ar_usb);
 	}
 #endif
 	ath6kl_core_destroy(ar);
