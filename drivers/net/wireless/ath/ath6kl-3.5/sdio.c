@@ -33,9 +33,11 @@
 /*
  * Define GPIO number for WoW in your platform other than zero
  * Wake lock will be called when GPIO asserted.
+ *
+ * In a proper design, WoW GPIO number would be passed by the board file.
  */
 #ifdef CONFIG_ANDROID
-#define PLAT_WOW_GPIO_PIN                  26
+#define PLAT_WOW_GPIO_PIN		0
 #endif
 
 struct ath6kl_sdio {
