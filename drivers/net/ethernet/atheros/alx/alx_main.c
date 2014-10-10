@@ -69,7 +69,8 @@ static void alx_stop_internal(struct alx_adapter *adpt, u32 ctrl);
 static void alx_init_ring_ptrs(struct alx_adapter *adpt);
 
 #ifdef MDM_PLATFORM
-static struct alx_ipa_ctx *galx_ipa_ptr;
+/* Global CTX PTR which can be used for debugging */
+static struct alx_adapter *galx_adapter_ptr = NULL;
 
 #ifdef ALX_IPA_DEBUG
 /**
@@ -494,15 +495,35 @@ static void alx_config_rss(struct alx_adapter *adpt)
 }
 
 #ifdef MDM_PLATFORM
-static bool alx_ipa_is_ip_pkt(struct sk_buff *skb)
+static bool alx_ipa_is_non_ip_pkt(uint8_t proto)
 {
-	uint16_t eth_type;
-	struct ethhdr *eth = eth_hdr(skb);
-
-	eth_type = be16_to_cpu(eth->h_proto);
-	if ((eth_type == ETH_P_IP) || (eth_type == ETH_P_IPV6))
+	if ((proto == RRD_PROTO_NON_IP) ||
+		(proto == RRD_PROTO_LLDP))
 		return true;
 	return false;
+}
+
+
+static bool alx_ipa_is_ip_frag_pkt(struct sk_buff *skb)
+{
+	struct iphdr *ip_hdr = NULL;
+	ip_hdr = (struct iphdr *)(skb_mac_header(skb) + ETH_HLEN);
+
+	/* Return true if: 'More_Frag bit is set' OR
+			'Fragmentation Offset is set' */
+	if (ip_hdr->frag_off & htons(IP_MF | IP_OFFSET))
+		return true;
+	return false;
+}
+
+static bool alx_ipa_is_ipv4_pkt(uint8_t proto)
+{
+	if ((proto == RRD_PROTO_IPv4) ||
+		(proto == RRD_PROTO_IPv4_TCP) ||
+		(proto == RRD_PROTO_IPv4_UDP))
+		return true;
+	else
+		return false;
 }
 #endif
 
@@ -510,13 +531,33 @@ static bool alx_ipa_is_ip_pkt(struct sk_buff *skb)
  * alx_receive_skb
  */
 static void alx_receive_skb(struct alx_adapter *adpt,
-			    struct sk_buff *skb,
-			    u16 vlan_tag, bool vlan_flag)
+                            struct sk_buff *skb,
+                            u16 vlan_tag, bool vlan_flag)
+{
+	if (vlan_flag) {
+		u16 vlan;
+		ALX_TAG_TO_VLAN(vlan_tag, vlan);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0))
+                __vlan_hwaccel_put_tag(skb, skb->vlan_proto, vlan);
+#else
+                __vlan_hwaccel_put_tag(skb, vlan);
+#endif
+	}
+	netif_receive_skb(skb);
+}
+
+#ifdef MDM_PLATFORM
+/*
+ * alx_receive_skb_ipa
+ */
+static void alx_receive_skb_ipa(struct alx_adapter *adpt,
+				struct sk_buff *skb,
+				u16 vlan_tag, bool vlan_flag, uint8_t proto)
 {
 	struct ipa_tx_meta ipa_meta = {0x0};
-	struct ethhdr *eth = eth_hdr(skb);
-	struct ethhdr *pusheth = NULL;
 	int ret =0;
+
+	skb_reset_mac_header(skb);
 	if (vlan_flag) {
 		u16 vlan;
 		ALX_TAG_TO_VLAN(vlan_tag, vlan);
@@ -526,30 +567,29 @@ static void alx_receive_skb(struct alx_adapter *adpt,
 		__vlan_hwaccel_put_tag(skb, vlan);
 #endif
 	}
-#ifdef MDM_PLATFORM
-	/* If Packet is an IPA Packet then Send it to IPA/ODU Bridge Driver*/
-	if (alx_ipa_is_ip_pkt(skb) && CHK_ADPT_FLAG(2, ODU_CONNECT)) {
-		/* ETH Header was pulled by eth_type_trans(); but IPA Needs L2 header, hence need to push it*/
-		pusheth = (struct ethhdr *)skb_push(skb, ETH_HLEN);
-		memcpy(pusheth->h_dest, eth->h_dest, ETH_ALEN);
-		memcpy(pusheth->h_source, eth->h_source, ETH_ALEN);
-		memcpy(&pusheth->h_proto, &eth->h_proto, sizeof(__be16));
 
+	/* If Packet is an IP Packet and non-fragmented then Send it to
+		IPA/ODU Bridge Driver*/
+	if (alx_ipa_is_non_ip_pkt(proto) ||
+	   (alx_ipa_is_ipv4_pkt(proto) && alx_ipa_is_ip_frag_pkt(skb)) ||
+	   (!CHK_ADPT_FLAG(2, ODU_CONNECT))) {
+		/* Send packet to network stack */
+		skb->protocol = eth_type_trans(skb, adpt->netdev);
+		adpt->palx_ipa->stats.non_ip_frag_pkt++;
+		netif_receive_skb(skb);
+	} else {
 		/* Send Packet to ODU bridge Driver */
 		ipa_meta.dma_address_valid = false;
-		galx_ipa_ptr->stats.rx_ipa_send++;
+		adpt->palx_ipa->stats.rx_ipa_send++;
 		ret = odu_bridge_tx_dp(skb, &ipa_meta);
 		if (ret) {
-			pr_err("odu_bridge_tx_dp() Failed!!! ret %d-- Free SKB \n", ret);
+			pr_err("odu_bridge_tx_dp() Failed!! ret %d--Free SKB\n",
+				ret);
 			kfree(skb);
 		}
-	} else {
-		netif_receive_skb(skb);
 	}
-#else
-	netif_receive_skb(skb);
-#endif
 }
+#endif
 
 
 static bool alx_get_rrdesc(struct alx_adapter *adpt, struct alx_rx_queue *rxque,
@@ -924,7 +964,6 @@ static bool alx_handle_rx_irq(struct alx_msix_param *msix,
 	struct alx_adapter *adpt = msix->adpt;
 	struct alx_hw *hw = &adpt->hw;
 	struct pci_dev *pdev = adpt->pdev;
-	struct net_device *netdev  = adpt->netdev;
 
 	union alx_sw_rrdesc srrd;
 	struct alx_buffer *rfbuf;
@@ -966,12 +1005,19 @@ static bool alx_handle_rx_irq(struct alx_msix_param *msix,
 			break;
 		}
 		alx_clean_rfdesc(rxque, &srrd);
-
 		skb_put(skb, srrd.genr.pkt_len - ETH_FCS_LEN);
-		skb->protocol = eth_type_trans(skb, netdev);
+#ifndef	MDM_PLATFORM
+		skb->protocol = eth_type_trans(skb, adpt->netdev);
+#endif
 		skb_checksum_none_assert(skb);
+#ifdef	MDM_PLATFORM
+                alx_receive_skb_ipa(adpt, skb, (u16)srrd.genr.vlan_tag,
+					(bool)srrd.genr.vlan_flag,
+					(uint8_t)srrd.genr.proto);
+#else
 		alx_receive_skb(adpt, skb, (u16)srrd.genr.vlan_tag,
 				(bool)srrd.genr.vlan_flag);
+#endif
 
 		num_consume_pkts--;
 		count++;
@@ -1642,6 +1688,7 @@ static int alx_request_irq(struct alx_adapter *adpt)
 			alx_err(adpt, "request msix irq failed, error = %d\n",
 				retval);
 		}
+		pr_info("%s -- request_irq() suceeded for irq %d\n", __func__, adpt->pdev->irq);
 		goto out;
 	}
 
@@ -2125,6 +2172,7 @@ static int alx_set_msi_interrupt_mode(struct alx_adapter *adpt)
 	int retval;
 
 	retval = pci_enable_msi(adpt->pdev);
+	adpt->netdev->irq = adpt->pdev->irq;
 	if (retval) {
 		netif_dbg(adpt, probe, adpt->netdev,
 			   "can't enable MSI interrupt, error = %d\n", retval);
@@ -2310,7 +2358,11 @@ static int __devinit alx_init_adapter(struct alx_adapter *adpt)
 	hw->intr_mask = ALX_IMR_NORMAL_MASK;
 	hw->smb_timer = 400; /* 400ms */
 	hw->mtu = adpt->netdev->mtu;
+#ifdef MDM_PLATFORM
+	hw->imt = 500;       /* For MDM set it to 1ms */
+#else
 	hw->imt = 100;       /* set to 200us */
+#endif
 
 	/* set default for wrr */
 	hw->wrr_prio0 = 4;
@@ -3249,7 +3301,7 @@ static int alx_ipa_set_perf_level(void)
 	ret = ipa_rm_set_perf_profile (IPA_RM_RESOURCE_ODU_ADAPT_PROD,
 					&profile);
 	if (ret) {
-		pr_err("Err to set BW - IPA_RM_RESOURCE_ODU_ADAPT_PROD err:%d",
+		pr_err("Err to set BW: IPA_RM_RESOURCE_ODU_ADAPT_PROD err:%d\n",
 			ret);
 		return ret;
 	}
@@ -3257,7 +3309,7 @@ static int alx_ipa_set_perf_level(void)
 	ret = ipa_rm_set_perf_profile (IPA_RM_RESOURCE_ODU_ADAPT_CONS,
 					&profile);
 	if (ret) {
-		pr_err("Err to set BW - IPA_RM_RESOURCE_ODU_ADAPT_CONS err:%d",
+		pr_err("Err to set BW: IPA_RM_RESOURCE_ODU_ADAPT_CONS err:%d\n",
 			ret);
 		return ret;
 	}
@@ -3322,7 +3374,8 @@ static void alx_link_task_routine(struct alx_adapter *adpt)
 		if (CHK_ADPT_FLAG(2, ODU_INIT)) {
 			ret = odu_bridge_connect();
 			if (ret)
-				pr_err("Could not connect to ODU bridge %d \n", ret);
+				pr_err("Could not connect to ODU bridge %d \n",
+					ret);
 			else
 				SET_ADPT_FLAG(2, ODU_CONNECT);
 			/* Set the max perf levels */
@@ -3819,21 +3872,21 @@ static const struct net_device_ops alx_netdev_ops = {
 static void alx_ipa_tx_dp_cb(void *priv, enum ipa_dp_evt_type evt,
                 unsigned long data)
 {
-	struct alx_ipa_ctx *alx_ipa = priv;
+	struct alx_adapter *adpt = priv;
+	struct alx_ipa_ctx *alx_ipa = adpt->palx_ipa;
 	struct sk_buff *skb = (struct sk_buff *)data;
-	struct alx_adapter *adpt = alx_ipa->adpt;
 
 	if (!CHK_ADPT_FLAG(2, ODU_CONNECT)) {
-		pr_err("%s called before ODU_CONNECT was called with evt %d",
+		pr_err("%s called before ODU_CONNECT was called with evt %d \n",
 				__func__, evt);
 		return;
 	}
 
-	pr_debug("%s %d EVT Rcvd %d", __func__, __LINE__, evt);
+	pr_debug("%s %d EVT Rcvd %d \n", __func__, __LINE__, evt);
 	if (evt == IPA_RECEIVE) {
 		/* Deliver SKB to network adapter */
 		alx_ipa->stats.rx_ipa_excep++;
-		skb->dev = alx_ipa->netdev;
+		skb->dev = adpt->netdev;
 		skb->protocol = eth_type_trans(skb, skb->dev);
 		netif_receive_skb(skb);
         } else if (evt == IPA_WRITE_DONE) {
@@ -3845,19 +3898,19 @@ static void alx_ipa_tx_dp_cb(void *priv, enum ipa_dp_evt_type evt,
 
 static void alx_ipa_tx_dl(void *priv, struct sk_buff *skb)
 {
-	struct alx_ipa_ctx *alx_ipa = priv;
+	struct alx_adapter *adpt = priv;
+	struct alx_ipa_ctx *alx_ipa = adpt->palx_ipa;
 	netdev_tx_t ret = __NETDEV_TX_MIN;
-	struct alx_adapter *adpt = alx_ipa->adpt;
 
 	if (!CHK_ADPT_FLAG(2, ODU_CONNECT)) {
                 pr_err("%s called before ODU_CONNECT was called! \n",__func__);
                 return;
         }
 
-	pr_debug("%s %d SKB Send to line",__func__,__LINE__);
+	pr_debug("%s %d SKB Send to line \n",__func__,__LINE__);
 	/* Deliver SKB to HW */
 	alx_ipa->stats.tx_ipa_send++;
-	if ((ret = alx_start_xmit(skb, alx_ipa->netdev)) != NETDEV_TX_OK)
+	if ((ret = alx_start_xmit(skb, adpt->netdev)) != NETDEV_TX_OK)
 	{
 		pr_err("%s alx_ipa_tx_dl() failed xmit returned %d \n",
 					__func__, ret);
@@ -3867,11 +3920,11 @@ static void alx_ipa_tx_dl(void *priv, struct sk_buff *skb)
 static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
                 char __user *user_buf, size_t count, loff_t *ppos)
 {
-	struct alx_ipa_ctx *alx_ipa = file->private_data;
+	struct alx_adapter *adpt = file->private_data;
+	struct alx_ipa_ctx *alx_ipa = adpt->palx_ipa;
 	char *buf;
 	unsigned int len = 0, buf_len = 1000;
 	ssize_t ret_cnt;
-	struct alx_adapter *adpt = alx_ipa->adpt;
 
 	if (unlikely(!alx_ipa)) {
 		pr_err(" %s NULL Pointer \n",__func__);
@@ -3891,14 +3944,16 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
         len += scnprintf(buf + len, buf_len - len, "%25s\n\n",
          "==================================================");
 
-        len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
         "IPA RX Pkt Send: ", alx_ipa->stats.rx_ipa_send);
-        len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
-        "IPA RX Write done:", alx_ipa->stats.rx_ipa_write_done);
-        len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        "IPA RX Write done: ", alx_ipa->stats.rx_ipa_write_done);
+        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
         "IPA RX Exception: ", alx_ipa->stats.rx_ipa_excep);
-        len += scnprintf(buf + len, buf_len - len, "%20s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
         "IPA TX Send: ", alx_ipa->stats.tx_ipa_send);
+        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        "Non-IP or Frag RX Pkt: ", alx_ipa->stats.non_ip_frag_pkt);
 
         if (len > buf_len)
 	        len = buf_len;
@@ -3915,22 +3970,22 @@ static const struct file_operations fops_ipa_stats = {
                 .llseek = default_llseek,
 };
 
-static int alx_debugfs_init(struct alx_ipa_ctx *alx_ipa)
+static int alx_debugfs_init(struct alx_adapter *adpt)
 {
-	alx_ipa->debugfs_dir = debugfs_create_dir("alx", 0);
-	if (!alx_ipa->debugfs_dir)
+	adpt->palx_ipa->debugfs_dir = debugfs_create_dir("alx", 0);
+	if (!adpt->palx_ipa->debugfs_dir)
 		return -ENOMEM;
 
-	debugfs_create_file("stats", S_IRUSR, alx_ipa->debugfs_dir,
-					alx_ipa, &fops_ipa_stats);
+	debugfs_create_file("stats", S_IRUSR, adpt->palx_ipa->debugfs_dir,
+					adpt, &fops_ipa_stats);
 
 	return 0;
 }
 
-void alx_debugfs_exit(struct alx_ipa_ctx *alx_ipa)
+void alx_debugfs_exit(struct alx_adapter *adpt)
 {
-    if (alx_ipa->debugfs_dir)
-	debugfs_remove_recursive(alx_ipa->debugfs_dir);
+    if (adpt->palx_ipa->debugfs_dir)
+	debugfs_remove_recursive(adpt->palx_ipa->debugfs_dir);
 }
 
 /*
@@ -3948,7 +4003,7 @@ static void alx_ipa_rm_notify(void *user_data, enum ipa_rm_event event,
 {
         //struct alx_ipa_ctx *alx_ipa = user_data;
 
-        pr_debug(" %s IPA RM Evt: %d",__func__,  event);
+        pr_debug(" %s IPA RM Evt: %d \n",__func__,  event);
 
 #if 0
         switch(event) {
@@ -3978,20 +4033,20 @@ static int alx_ipa_rm_cons_release(void)
 	return 0;
 }
 
-static int alx_ipa_setup_rm(struct alx_ipa_ctx *alx_ipa)
+static int alx_ipa_setup_rm(struct alx_adapter *adpt)
 {
 	struct ipa_rm_create_params create_params = {0};
 	int ret;
 
 	memset(&create_params, 0, sizeof(create_params));
 	create_params.name = IPA_RM_RESOURCE_ODU_ADAPT_PROD;
-	create_params.reg_params.user_data = alx_ipa;
+	create_params.reg_params.user_data = adpt;
 	create_params.reg_params.notify_cb = alx_ipa_rm_notify;
 	create_params.floor_voltage = IPA_VOLTAGE_SVS;
 
         ret = ipa_rm_create_resource(&create_params);
         if (ret) {
-                pr_err("Create ODU PROD RM resource failed: %d", ret);
+                pr_err("Create ODU PROD RM resource failed: %d \n", ret);
 		goto prod_fail;
         }
 
@@ -4003,7 +4058,7 @@ static int alx_ipa_setup_rm(struct alx_ipa_ctx *alx_ipa)
 
         ret = ipa_rm_create_resource(&create_params);
         if (ret) {
-		pr_err("Create ODU CONS RM resource failed: %d", ret);
+		pr_err("Create ODU CONS RM resource failed: %d \n", ret);
                 goto delete_prod;
         }
 
@@ -4016,18 +4071,18 @@ prod_fail:
         return ret;
 }
 
-static void alx_ipa_cleanup_rm(struct alx_ipa_ctx *alx_ipa)
+static void alx_ipa_cleanup_rm(struct alx_adapter *adpt)
 {
         int ret;
 
         ret = ipa_rm_delete_resource(IPA_RM_RESOURCE_ODU_ADAPT_PROD);
         if (ret)
-                pr_err("Resource:IPA_RM_RESOURCE_ODU_ADAPT_PROD del failed %d",
+                pr_err("Resource:IPA_RM_RESOURCE_ODU_ADAPT_PROD del fail %d\n",
 					ret);
 
         ret = ipa_rm_delete_resource(IPA_RM_RESOURCE_ODU_ADAPT_CONS);
         if (ret)
-                pr_err("Resource:IPA_RM_RESOURCE_ODU_ADAPT_CONS del failed %d",
+                pr_err("Resource:IPA_RM_RESOURCE_ODU_ADAPT_CONS del fail %d\n",
 					ret);
 }
 #endif
@@ -4098,8 +4153,27 @@ static int __devinit alx_init(struct pci_dev *pdev,
 
 	SET_NETDEV_DEV(netdev, &pdev->dev);
 	netdev->irq  = pdev->irq;
-
 	adpt = netdev_priv(netdev);
+
+#ifdef MDM_PLATFORM
+        /* Init IPA Context */
+        alx_ipa = kzalloc(sizeof(struct alx_ipa_ctx), GFP_KERNEL);
+        if (!alx_ipa) {
+                pr_err("kzalloc err.\n");
+                return -ENOMEM;
+        } else {
+		adpt->palx_ipa = alx_ipa;
+	}
+	pr_info("%s alx_ipa %p adpt->palx_ipa %p",__func__, alx_ipa, adpt->palx_ipa);
+        /* Reset all the flags */
+        CLI_ADPT_FLAG(2, ODU_CONNECT);
+        CLI_ADPT_FLAG(2, ODU_INIT);
+        CLI_ADPT_FLAG(2, IPA_RM);
+        CLI_ADPT_FLAG(2, DEBUGFS_INIT);
+
+	galx_adapter_ptr = adpt;
+#endif
+
 	pci_set_drvdata(pdev, adpt);
 	adpt->netdev = netdev;
 	adpt->pdev = pdev;
@@ -4108,11 +4182,17 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	adpt->msg_enable = ALX_MSG_DEFAULT;
 
 #ifdef MDM_PLATFORM
-        /* Reset all the flags */
-        CLI_ADPT_FLAG(2, ODU_CONNECT);
-        CLI_ADPT_FLAG(2, ODU_INIT);
-        CLI_ADPT_FLAG(2, IPA_RM);
-        CLI_ADPT_FLAG(2, DEBUGFS_INIT);
+        if (alx_ipa_setup_rm(adpt)) {
+		pr_err("ALX: IPA Setup RM Failed \n");
+		goto err_ipa_rm;
+	} else {
+		SET_ADPT_FLAG(2, IPA_RM);
+	}
+        if (alx_debugfs_init(adpt)) {
+		pr_err("ALX: Debugfs Init failed \n");
+	} else {
+		SET_ADPT_FLAG(2, DEBUGFS_INIT);
+	}
 #endif
 
 	adpt->hw.hw_addr = ioremap(pci_resource_start(pdev, BAR_0),
@@ -4134,31 +4214,6 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	netdev->watchdog_timeo = ALX_WATCHDOG_TIME;
 	strncpy(netdev->name, pci_name(pdev), sizeof(netdev->name) - 1);
 
-#ifdef MDM_PLATFORM
-        /* Init IPA Context */
-        alx_ipa = kzalloc(sizeof(struct alx_ipa_ctx), GFP_KERNEL);
-        if (!alx_ipa) {
-                pr_err("kzalloc err.\n");
-                return -ENOMEM;
-        } else {
-		galx_ipa_ptr = alx_ipa;
-	}
-
-        if (alx_ipa_setup_rm(alx_ipa)) {
-		pr_err("ALX: IPA Setup RM Failed \n");
-		goto err_ipa_rm;
-	} else {
-		SET_ADPT_FLAG(2, IPA_RM);
-	}
-        if (alx_debugfs_init(alx_ipa)) {
-		pr_err("ALX: Debugfs Init failed \n");
-	} else {
-		SET_ADPT_FLAG(2, DEBUGFS_INIT);
-	}
-	alx_ipa->netdev = netdev;
-	alx_ipa->pdev = pdev;
-	alx_ipa->adpt = adpt;
-#endif
 
 	adpt->bd_number = cards_found;
 
@@ -4372,7 +4427,7 @@ static int __devinit alx_init(struct pci_dev *pdev,
 #ifdef MDM_PLATFORM
 	/* Initialize the ODU bridge driver now: odu_bridge_init()*/
         params_ptr->netdev_name = netdev->name;
-	params_ptr->priv = galx_ipa_ptr;
+	params_ptr->priv = adpt;
 	params.tx_dp_notify = alx_ipa_tx_dp_cb;
 	params_ptr->send_dl_skb = (void *)&alx_ipa_tx_dl;
 	memcpy(params_ptr->device_ethaddr, netdev->dev_addr, ETH_ALEN);
@@ -4496,28 +4551,31 @@ static void __devexit alx_remove(struct pci_dev *pdev)
 	if (CHK_ADPT_FLAG(2, ODU_CONNECT)) {
 		retval = odu_bridge_disconnect();
 		if (retval)
-			pr_err("Could not Disconnect to ODU bridge or ODU Bridge already disconnected %d \n", retval);
+			pr_err("Could not Disconnect to ODU bridge"
+				"or ODU Bridge already disconnected %d \n",
+				retval);
 	}
 
 	if (CHK_ADPT_FLAG(2, ODU_INIT)) {
 		retval = odu_bridge_cleanup();
 		if (retval)
-			pr_err("Couldnt cleanup ODU_Bridge Driver %d\n", retval);
+			pr_err("Couldnt cleanup ODU_Bridge Driver %d \n",
+				retval);
 	}
 
 	/* ALX IPA Specific Cleanup */
 	if (CHK_ADPT_FLAG(2, IPA_RM))
-		alx_ipa_cleanup_rm(galx_ipa_ptr);
+		alx_ipa_cleanup_rm(adpt);
 
 	if (CHK_ADPT_FLAG(2, DEBUGFS_INIT))
-		alx_debugfs_exit(galx_ipa_ptr);
+		alx_debugfs_exit(adpt);
 
 	/* Reset all the flags */
 	CLI_ADPT_FLAG(2, ODU_CONNECT);
 	CLI_ADPT_FLAG(2, ODU_INIT);
 	CLI_ADPT_FLAG(2, IPA_RM);
 	CLI_ADPT_FLAG(2, DEBUGFS_INIT);
-	kfree(galx_ipa_ptr);
+	kfree(adpt->palx_ipa);
 #endif
 
 	pci_disable_pcie_error_reporting(pdev);

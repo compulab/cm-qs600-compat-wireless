@@ -158,7 +158,7 @@ struct alx_sw_rrdes_general {
 	u32 l4f:1;       /* L4(TCP/UDP) checksum failed */
 	u32 ipf:1;       /* IP checksum failed */
 	u32 vlan_flag:1; /* vlan tag */
-	u32 reserve:3;
+	u32 proto:3;
 	u32 res:1;       /* received error summary */
 	u32 crc:1;       /* crc error */
 	u32 fae:1;       /* frame alignment error */
@@ -197,7 +197,7 @@ struct alx_sw_rrdes_general {
 	u32 fae:1;
 	u32 crc:1;
 	u32 res:1;
-	u32 reserve1:3;
+	u32 proto:3;
 	u32 vlan_flag:1;
 	u32 ipf:1;
 	u32 l4f:1;
@@ -284,6 +284,18 @@ union alx_sw_rfdesc {
 	struct {
 		u64 qw0;
 	} qfmt;
+};
+
+/* RRD Proto Defination as per spec*/
+enum alx_rrd_proto {
+	RRD_PROTO_NON_IP = 0,
+	RRD_PROTO_IPv4,
+	RRD_PROTO_IPv6_TCP,
+	RRD_PROTO_IPv4_TCP,
+	RRD_PROTO_IPv6_UDP,
+	RRD_PROTO_IPv4_UDP,
+	RRD_PROTO_IPv6,
+	RRD_PROTO_LLDP
 };
 
 /*
@@ -700,7 +712,8 @@ struct alx_ipa_stats {
 	/* TX Side*/
 	uint64_t tx_ipa_send;
 
-	/* Interrupt RX */
+	/* Frag Stats */
+	uint64_t non_ip_frag_pkt;
 };
 
 /**
@@ -711,9 +724,6 @@ struct alx_ipa_stats {
 struct alx_ipa_ctx {
 	struct alx_ipa_stats stats;
 	struct dentry *debugfs_dir;
-	struct net_device *netdev;
-	struct pci_dev *pdev;
-	struct alx_adapter *adpt;
 };
 #endif
 
@@ -723,6 +733,9 @@ struct alx_ipa_ctx {
 struct alx_adapter {
 	struct net_device *netdev;
 	struct pci_dev    *pdev;
+#ifdef  MDM_PLATFORM
+	struct alx_ipa_ctx *palx_ipa;
+#endif
 	struct net_device_stats net_stats;
 	bool netdev_registered;
 	u16 bd_number;    /* board number;*/
@@ -808,10 +821,10 @@ struct alx_adapter {
 #define ALX_ADPT_FLAG_1_STATE_INACTIVE          0x00000020
 
 #ifdef MDM_PLATFORM
-#define ALX_ADPT_FLAG_2_ODU_CONNECT		0x00000001
-#define ALX_ADPT_FLAG_2_IPA_RM			0x00000002
-#define ALX_ADPT_FLAG_2_DEBUGFS_INIT		0x00000004
-#define ALX_ADPT_FLAG_2_ODU_INIT		0x00000008
+#define ALX_ADPT_FLAG_2_ODU_CONNECT             0x00000001
+#define ALX_ADPT_FLAG_2_IPA_RM                  0x00000002
+#define ALX_ADPT_FLAG_2_DEBUGFS_INIT            0x00000004
+#define ALX_ADPT_FLAG_2_ODU_INIT                0x00000008
 #endif
 
 #define CHK_ADPT_FLAG(_idx, _flag)	\
