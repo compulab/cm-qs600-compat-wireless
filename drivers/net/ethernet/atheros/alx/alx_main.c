@@ -1,3 +1,4 @@
+/* Copyright (c) 2014, The Linux Foundation. All rights reserved. */
 /*
  * Copyright (c) 2012 Qualcomm Atheros, Inc.
  *
@@ -556,6 +557,8 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
 {
 	struct ipa_tx_meta ipa_meta = {0x0};
 	int ret =0;
+	struct alx_ipa_rx_desc_node *node = NULL;
+	bool schedule_ipa_work = false;
 
 	skb_reset_mac_header(skb);
 	if (vlan_flag) {
@@ -577,15 +580,61 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
 		skb->protocol = eth_type_trans(skb, adpt->netdev);
 		adpt->palx_ipa->stats.non_ip_frag_pkt++;
 		netif_receive_skb(skb);
+		return;
 	} else {
 		/* Send Packet to ODU bridge Driver */
-		ipa_meta.dma_address_valid = false;
-		adpt->palx_ipa->stats.rx_ipa_send++;
-		ret = odu_bridge_tx_dp(skb, &ipa_meta);
-		if (ret) {
-			pr_err("odu_bridge_tx_dp() Failed!! ret %d--Free SKB\n",
-				ret);
+		/* Flow Control Checks */
+		spin_lock(&adpt->flow_ctrl_lock);
+
+		/* Drop Packets if we cannot handle them */
+		if (adpt->freeq_cnt == 0) {
+			adpt->palx_ipa->stats.flow_control_pkt_drop++;
+                        pr_debug("ALX-IPA Flow Control - Drop Pkt"
+				" IPA pending packets = %d",
+					adpt->ipa_free_desc_cnt);
 			kfree(skb);
+			/* Schedule ipa_work task if IPA has desc left. This is
+			done since priority of softirq > IPA_WRITE_DONE Event.
+			Which implies ipa_send_task will not be scheduled in
+			a timely manner */
+			if ((adpt->ipa_free_desc_cnt > 0) && !CHK_ADPT_FLAG(2, WQ_SCHED))
+				schedule_ipa_work = true;
+			goto unlock_and_schedule;
+		}
+
+		/* Send Packet to IPA; if there are no pending packets
+		   and ipa has available descriptors */
+		if ((adpt->pendq_cnt == 0) && (adpt->ipa_free_desc_cnt > 0)) {
+			ipa_meta.dma_address_valid = false;
+			/* Send Packet to ODU bridge Driver */
+			ret = odu_bridge_tx_dp(skb, &ipa_meta);
+			if (ret) {
+				pr_err("odu_bridge_tx_dp() Failed!!"
+					" ret %d--Free SKB\n", ret);
+				kfree(skb);
+				adpt->palx_ipa->stats.rx_ipa_send_fail++;
+			} else {
+				adpt->ipa_free_desc_cnt--;
+				adpt->palx_ipa->stats.rx_ipa_send++;
+			}
+		} else if (adpt->pendq_cnt <= ALX_IPA_SYS_PIPE_DNE_PKTS) {
+			/* If we have pending packets to send,
+			add the current packet to the end of the queue. */
+			node = list_first_entry(&adpt->free_queue_head,
+				struct alx_ipa_rx_desc_node, link);
+			list_del(&node->link);
+			node->skb_ptr = skb;
+			list_add_tail(&node->link, &adpt->pend_queue_head);
+			adpt->freeq_cnt--;
+			adpt->pendq_cnt++;
+			if (!CHK_ADPT_FLAG(2, WQ_SCHED))
+				schedule_ipa_work = true;
+		}
+unlock_and_schedule:
+		spin_unlock(&adpt->flow_ctrl_lock);
+		if (schedule_ipa_work) {
+			SET_ADPT_FLAG(2, WQ_SCHED);
+			schedule_work(&adpt->ipa_send_task);
 		}
 	}
 }
@@ -2653,6 +2702,46 @@ static void alx_free_rx_descriptor(struct alx_rx_queue *rxque)
 	}
 }
 
+#ifdef MDM_PLATFORM
+static int alx_alloc_flow_ctrl_desc(struct alx_adapter *adpt)
+{
+	int i;
+	struct alx_ipa_rx_desc_node *node = NULL;
+
+	for (i = 0; i < ALX_IPA_SYS_PIPE_DNE_PKTS; i++) {
+		node = (struct alx_ipa_rx_desc_node *)
+				kzalloc(sizeof(struct alx_ipa_rx_desc_node),
+					GFP_KERNEL);
+		if (!node) {
+			pr_err("%s -- Only able to allocate %d nodes \n"
+						,__func__, adpt->freeq_cnt);
+			return -ENOMEM;
+		}
+		spin_lock(&adpt->flow_ctrl_lock);
+		adpt->freeq_cnt++;
+		list_add_tail(&node->link, &adpt->free_queue_head);
+		spin_unlock(&adpt->flow_ctrl_lock);
+	}
+	return 0;
+}
+
+static void alx_free_flow_ctrl_desc(struct alx_adapter *adpt)
+{
+	struct alx_ipa_rx_desc_node *node, *tmp;
+
+	spin_lock_bh(&adpt->flow_ctrl_lock);
+	list_for_each_entry_safe(node, tmp, &adpt->free_queue_head, link) {
+		list_del(&node->link);
+		kfree(node);
+		adpt->freeq_cnt--;
+	}
+	spin_unlock_bh(&adpt->flow_ctrl_lock);
+	if (adpt->freeq_cnt != 0) {
+		pr_err("%s - Memory Leak Detected \n",__func__);
+		BUG();
+	}
+}
+#endif
 
 /* alx_free_all_rx_descriptor - Free all Rx Descriptor */
 static void alx_free_all_rx_descriptor(struct alx_adapter *adpt)
@@ -2974,6 +3063,17 @@ static int alx_open(struct net_device *netdev)
 		goto err_alloc_rtx;
 	}
 
+#ifdef  MDM_PLATFORM
+	/* Allocate Nodes and List for storing flow control packets*/
+	retval = alx_alloc_flow_ctrl_desc(adpt);
+	if (retval) {
+		alx_err(adpt, "Error in allocating Flow Control Buffers \n");
+		goto err_alloc_flow_ctrl;
+	}
+	pr_info("%s -- %d Flow Control Buffer Allocated \n",
+					__func__, adpt->freeq_cnt);
+#endif
+
 	retval = alx_open_internal(adpt, ALX_OPEN_CTRL_IRQ_EN);
 	if (retval)
 		goto err_open_internal;
@@ -2982,6 +3082,10 @@ static int alx_open(struct net_device *netdev)
 
 err_open_internal:
 	alx_stop_internal(adpt, ALX_OPEN_CTRL_IRQ_EN);
+#ifdef MDM_PLATFORM
+err_alloc_flow_ctrl:
+	alx_free_flow_ctrl_desc(adpt);
+#endif
 err_alloc_rtx:
 	alx_free_all_rtx_descriptor(adpt);
 	hw->cbs.reset_mac(hw);
@@ -2995,6 +3099,7 @@ err_alloc_rtx:
 static int alx_stop(struct net_device *netdev)
 {
 	struct alx_adapter *adpt = netdev_priv(netdev);
+	struct alx_ipa_rx_desc_node *node = NULL;
 
 	if (CHK_ADPT_FLAG(1, STATE_RESETTING))
 		netif_warn(adpt, ifdown, adpt->netdev,
@@ -3003,7 +3108,27 @@ static int alx_stop(struct net_device *netdev)
 	alx_stop_internal(adpt, ALX_OPEN_CTRL_IRQ_EN |
 				ALX_OPEN_CTRL_RESET_MAC);
 	alx_free_all_rtx_descriptor(adpt);
-
+#ifdef  MDM_PLATFORM
+	/* Flush any pending packets */
+	pr_info("ALX - Flush %d Pending Packets \n", adpt->pendq_cnt);
+	spin_lock_bh(&adpt->flow_ctrl_lock);
+	while (adpt->pendq_cnt) {
+		node = list_first_entry(&adpt->pend_queue_head,
+			struct alx_ipa_rx_desc_node, link);
+		list_del(&node->link);
+		list_add_tail(&node->link, &adpt->free_queue_head);
+		adpt->pendq_cnt--;
+		adpt->freeq_cnt++;
+	}
+	spin_unlock_bh(&adpt->flow_ctrl_lock);
+	if ((adpt->freeq_cnt != ALX_IPA_SYS_PIPE_DNE_PKTS) ||
+		(adpt->pendq_cnt != 0)) {
+		pr_err("%s -- Memory leak detected freeq_cnt %d, pendq_cnt %d",
+			__func__, adpt->freeq_cnt, adpt->pendq_cnt);
+		BUG();
+	}
+	alx_free_flow_ctrl_desc(adpt);
+#endif
 	return 0;
 }
 
@@ -3484,6 +3609,56 @@ static void alx_task_routine(struct work_struct *work)
 	CLI_ADPT_FLAG(1, STATE_WATCH_DOG);
 }
 
+/*
+ * alx_ipa_send_routine - Sends packets to IPA/ODU bridge Driver
+ * Scheduled on RX of IPA_WRITE_DONE Event
+ */
+static void alx_ipa_send_routine(struct work_struct *work)
+{
+	struct alx_adapter *adpt = container_of(work,
+				struct alx_adapter, ipa_send_task);
+	struct alx_ipa_rx_desc_node *node = NULL;
+	struct ipa_tx_meta ipa_meta = {0x0};
+	int ret =0;
+
+	/* Send all pending packets to IPA.
+          Compute the number of desc left for HW and send packets accordingly*/
+	spin_lock_bh(&adpt->flow_ctrl_lock);
+	CLI_ADPT_FLAG(2, WQ_SCHED);
+	if (unlikely(!adpt->pendq_cnt)) {
+		pr_err("%s - Error no pending packets in Queue %d\n",
+						__func__, adpt->pendq_cnt);
+		spin_unlock_bh(&adpt->flow_ctrl_lock);
+		return;
+	}
+	if (adpt->ipa_free_desc_cnt < adpt->ipa_low_watermark) {
+		adpt->palx_ipa->stats.ipa_low_watermark_cnt++;
+		spin_unlock_bh(&adpt->flow_ctrl_lock);
+		return;
+	}
+
+	while (adpt->ipa_free_desc_cnt && adpt->pendq_cnt) {
+		node = list_first_entry(&adpt->pend_queue_head,
+				struct alx_ipa_rx_desc_node, link);
+		list_del(&node->link);
+		list_add_tail(&node->link, &adpt->free_queue_head);
+		adpt->freeq_cnt++;
+		adpt->pendq_cnt--;
+		ipa_meta.dma_address_valid = false;
+		/* Send Packet to ODU bridge Driver */
+		ret = odu_bridge_tx_dp(node->skb_ptr, &ipa_meta);
+		if (ret) {
+			pr_err("odu_bridge_tx_dp() Failed in %s!!"
+				" ret %d--Free SKB\n", __func__, ret);
+			kfree(node->skb_ptr);
+			adpt->palx_ipa->stats.rx_ipa_send_fail++;
+		} else {
+			adpt->palx_ipa->stats.rx_ipa_send++;
+			adpt->ipa_free_desc_cnt--;
+		}
+	}
+	spin_unlock_bh(&adpt->flow_ctrl_lock);
+}
 
 /* Calculate the transmit packet descript needed*/
 static bool alx_check_num_tpdescs(struct alx_tx_queue *txque,
@@ -3875,6 +4050,7 @@ static void alx_ipa_tx_dp_cb(void *priv, enum ipa_dp_evt_type evt,
 	struct alx_adapter *adpt = priv;
 	struct alx_ipa_ctx *alx_ipa = adpt->palx_ipa;
 	struct sk_buff *skb = (struct sk_buff *)data;
+	bool schedule_ipa_work = false;
 
 	if (!CHK_ADPT_FLAG(2, ODU_CONNECT)) {
 		pr_err("%s called before ODU_CONNECT was called with evt %d \n",
@@ -3893,6 +4069,21 @@ static void alx_ipa_tx_dp_cb(void *priv, enum ipa_dp_evt_type evt,
 		/* SKB send to IPA, safe to free */
 		alx_ipa->stats.rx_ipa_write_done++;
 		kfree_skb(skb);
+	        spin_lock_bh(&adpt->flow_ctrl_lock);
+		adpt->ipa_free_desc_cnt++;
+		if ((adpt->pendq_cnt > 0) &&
+			(adpt->ipa_free_desc_cnt < adpt->ipa_low_watermark)) {
+			alx_ipa->stats.ipa_low_watermark_cnt++;
+		} else if ((adpt->pendq_cnt > 0) &&
+			(adpt->ipa_free_desc_cnt >= adpt->ipa_low_watermark) &&
+			!CHK_ADPT_FLAG(2, WQ_SCHED)) {
+			schedule_ipa_work = true;
+		}
+		spin_unlock_bh(&adpt->flow_ctrl_lock);
+		if (schedule_ipa_work) {
+			SET_ADPT_FLAG(2, WQ_SCHED);
+			schedule_work(&adpt->ipa_send_task);
+		}
 	}
 }
 
@@ -3923,8 +4114,10 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
 	struct alx_adapter *adpt = file->private_data;
 	struct alx_ipa_ctx *alx_ipa = adpt->palx_ipa;
 	char *buf;
-	unsigned int len = 0, buf_len = 1000;
+	unsigned int len = 0, buf_len = 2000;
 	ssize_t ret_cnt;
+	u8 pendq_cnt, freeq_cnt, ipa_free_desc_cnt;
+	u8 max_pkts_allowed, min_pkts_allowed;
 
 	if (unlikely(!alx_ipa)) {
 		pr_err(" %s NULL Pointer \n",__func__);
@@ -3944,16 +4137,41 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
         len += scnprintf(buf + len, buf_len - len, "%25s\n\n",
          "==================================================");
 
-        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "IPA RX Pkt Send: ", alx_ipa->stats.rx_ipa_send);
-        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
+        "IPA RX IPA Send Fail: ", alx_ipa->stats.rx_ipa_send_fail);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "IPA RX Write done: ", alx_ipa->stats.rx_ipa_write_done);
-        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "IPA RX Exception: ", alx_ipa->stats.rx_ipa_excep);
-        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "IPA TX Send: ", alx_ipa->stats.tx_ipa_send);
-        len += scnprintf(buf + len, buf_len - len, "%24s %10llu\n",
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "Non-IP or Frag RX Pkt: ", alx_ipa->stats.non_ip_frag_pkt);
+
+	spin_lock_bh(&adpt->flow_ctrl_lock);
+	pendq_cnt = adpt->pendq_cnt;
+	freeq_cnt = adpt->freeq_cnt;
+	ipa_free_desc_cnt = adpt->ipa_free_desc_cnt;
+	max_pkts_allowed = adpt->ipa_high_watermark;
+	min_pkts_allowed = adpt->ipa_low_watermark;
+	spin_unlock_bh(&adpt->flow_ctrl_lock);
+
+        len += scnprintf(buf + len, buf_len - len, "%25s %10u\n",
+        "ALX Pending Queue Count: ", pendq_cnt);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10u\n",
+        "ALX Free Queue Count: ", freeq_cnt);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10u\n",
+        "IPA Free Queue Count: ", ipa_free_desc_cnt);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10u\n",
+        "IPA High Watermark: ", max_pkts_allowed);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10u\n",
+        "IPA Low Watermark: ", min_pkts_allowed);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
+        "IPA Low Watermark Count: ", alx_ipa->stats.ipa_low_watermark_cnt);
+	len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
+	"IPA Flow Ctrl Pkt Drop: ", alx_ipa->stats.flow_control_pkt_drop);
 
         if (len > buf_len)
 	        len = buf_len;
@@ -4164,14 +4382,24 @@ static int __devinit alx_init(struct pci_dev *pdev,
         } else {
 		adpt->palx_ipa = alx_ipa;
 	}
-	pr_info("%s alx_ipa %p adpt->palx_ipa %p",__func__, alx_ipa, adpt->palx_ipa);
         /* Reset all the flags */
         CLI_ADPT_FLAG(2, ODU_CONNECT);
         CLI_ADPT_FLAG(2, ODU_INIT);
         CLI_ADPT_FLAG(2, IPA_RM);
         CLI_ADPT_FLAG(2, DEBUGFS_INIT);
+	CLI_ADPT_FLAG(2, WQ_SCHED);
 
 	galx_adapter_ptr = adpt;
+
+	/* Initialize all the flow control variables */
+	adpt->pendq_cnt = 0;
+	adpt->freeq_cnt = 0;
+	adpt->ipa_free_desc_cnt = ALX_IPA_SYS_PIPE_MAX_PKTS_DESC;
+	adpt->ipa_high_watermark = ALX_IPA_SYS_PIPE_MAX_PKTS_DESC;
+	adpt->ipa_low_watermark = ALX_IPA_SYS_PIPE_MIN_PKTS_DESC;
+	spin_lock_init(&adpt->flow_ctrl_lock);
+	INIT_LIST_HEAD(&adpt->pend_queue_head);
+	INIT_LIST_HEAD(&adpt->free_queue_head);
 #endif
 
 	pci_set_drvdata(pdev, adpt);
@@ -4431,6 +4659,11 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	params.tx_dp_notify = alx_ipa_tx_dp_cb;
 	params_ptr->send_dl_skb = (void *)&alx_ipa_tx_dl;
 	memcpy(params_ptr->device_ethaddr, netdev->dev_addr, ETH_ALEN);
+        /* The maximum number of descriptors that can be provided to a BAM at
+	 * once is one less than the total number of descriptors that the buffer
+         * can contain. */
+	params_ptr->ipa_desc_size = (adpt->ipa_high_watermark + 1) *
+					sizeof(struct sps_iovec);
 	retval = odu_bridge_init(params_ptr);
 	if (retval) {
 		pr_err("Couldnt initialize ODU_Bridge Driver \n");
@@ -4438,6 +4671,9 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	} else {
 		SET_ADPT_FLAG(2, ODU_INIT);
 	}
+
+	/* Initialize IPA Flow Control Work Task */
+	INIT_WORK(&adpt->ipa_send_task, alx_ipa_send_routine);
 #endif
 
 	/* carrier off reporting is important to ethtool even BEFORE open */
@@ -4575,7 +4811,11 @@ static void __devexit alx_remove(struct pci_dev *pdev)
 	CLI_ADPT_FLAG(2, ODU_INIT);
 	CLI_ADPT_FLAG(2, IPA_RM);
 	CLI_ADPT_FLAG(2, DEBUGFS_INIT);
+	CLI_ADPT_FLAG(2, WQ_SCHED);
 	kfree(adpt->palx_ipa);
+
+	/* Cancel ALX IPA Flow Control Work */
+	cancel_work_sync(&adpt->ipa_send_task);
 #endif
 
 	pci_disable_pcie_error_reporting(pdev);

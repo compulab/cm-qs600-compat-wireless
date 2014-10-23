@@ -58,6 +58,9 @@
 
 #ifdef MDM_PLATFORM
 #define MAX_AR8151_BW 900
+#define ALX_IPA_SYS_PIPE_MAX_PKTS_DESC 30
+#define ALX_IPA_SYS_PIPE_MIN_PKTS_DESC 5
+#define ALX_IPA_SYS_PIPE_DNE_PKTS ALX_IPA_SYS_PIPE_MAX_PKTS_DESC*2
 /* Protocol Specific Offsets*/
 #define ALX_IP_OFFSET       14
 #define ALX_IP_HEADER_SIZE  20
@@ -708,12 +711,17 @@ struct alx_ipa_stats {
 	uint64_t rx_ipa_excep;
 	uint64_t rx_ipa_write_done;
 	uint64_t rx_ipa_send;
+	uint64_t rx_ipa_send_fail;
 
 	/* TX Side*/
 	uint64_t tx_ipa_send;
 
 	/* Frag Stats */
 	uint64_t non_ip_frag_pkt;
+
+	/* Flow Control Stats */
+	uint64_t flow_control_pkt_drop;
+	uint64_t ipa_low_watermark_cnt;
 };
 
 /**
@@ -724,6 +732,11 @@ struct alx_ipa_stats {
 struct alx_ipa_ctx {
 	struct alx_ipa_stats stats;
 	struct dentry *debugfs_dir;
+};
+
+struct alx_ipa_rx_desc_node {
+	struct list_head link;
+	struct sk_buff * skb_ptr;
 };
 #endif
 
@@ -789,6 +802,18 @@ struct alx_adapter {
 	spinlock_t rx_lock;
 	atomic_t irq_sem;
 
+#ifdef  MDM_PLATFORM
+	u8 ipa_high_watermark;
+	u8 ipa_low_watermark;
+	u8 pendq_cnt;
+	u8 freeq_cnt;
+	u8 ipa_free_desc_cnt;
+	spinlock_t flow_ctrl_lock;
+	struct list_head pend_queue_head;
+	struct list_head free_queue_head;
+	struct work_struct ipa_send_task;
+#endif
+
 	u16 msg_enable;
 #ifdef MDM_PLATFORM
 	unsigned long flags[3];
@@ -825,6 +850,7 @@ struct alx_adapter {
 #define ALX_ADPT_FLAG_2_IPA_RM                  0x00000002
 #define ALX_ADPT_FLAG_2_DEBUGFS_INIT            0x00000004
 #define ALX_ADPT_FLAG_2_ODU_INIT                0x00000008
+#define ALX_ADPT_FLAG_2_WQ_SCHED                0x00000010
 #endif
 
 #define CHK_ADPT_FLAG(_idx, _flag)	\
