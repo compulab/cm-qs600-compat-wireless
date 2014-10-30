@@ -3061,7 +3061,7 @@ u8 ath6kl_get_ht40_ext_ch_mask(struct cfg80211_ap_settings *info,
 		is_sec_ch = 1;
 
 	if (!is_sec_ch && (cap_info & IEEE80211_HT_CAP_SUP_WIDTH_20_40))
-		mask_sec_ch = 1;
+		mask_sec_ch = IEEE80211_HT_CAP_EXT_CH_MASK;
 	else
 		mask_sec_ch = 0;
 
