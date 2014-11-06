@@ -568,13 +568,13 @@ void ath6kl_connect_ap_mode_bss(struct ath6kl_vif *vif,
 		break;
 	}
 
+	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
 	if ((ar->want_ch_switch & (1 << vif->fw_vif_idx))) {
 		ar->want_ch_switch &= ~(1 << vif->fw_vif_idx);
 		ath6kl_cfg80211_ch_switch_notify(vif, channel,
 						 sec_ch, phymode);
 	}
 
-	ath6kl_wmi_bssfilter_cmd(ar->wmi, vif->fw_vif_idx, NONE_BSS_FILTER, 0);
 	set_bit(CONNECTED, &vif->flags);
 	netif_wake_queue(vif->ndev);
 	netif_carrier_on(vif->ndev);
