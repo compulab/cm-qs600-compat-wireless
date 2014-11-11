@@ -804,8 +804,10 @@ static int alc_get_ethtool_regs(struct alx_hw *hw, void *buff)
 		L1C_WOL0, L1C_WOL1, L1C_WOL2,
 	};
 
-	for (i = 0; i < ARRAY_SIZE(reg); i++)
+	for (i = 0; i < ARRAY_SIZE(reg); i++) {
 		alx_mem_r32(hw, reg[i], &val[i]);
+                pr_info(" Register offset 0x%04x = 0x%08x \n", reg[i], val[i]);
+	}
 	return 0;
 }
 

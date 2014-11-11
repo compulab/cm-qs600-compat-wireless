@@ -715,6 +715,7 @@ struct alx_ipa_stats {
 
 	/* TX Side*/
 	uint64_t tx_ipa_send;
+	uint64_t tx_ipa_send_err;
 
 	/* Frag Stats */
 	uint64_t non_ip_frag_pkt;
@@ -875,6 +876,7 @@ struct alx_adapter {
 extern char alx_drv_name[];
 extern void alx_reinit_locked(struct alx_adapter *adpt);
 extern void alx_set_ethtool_ops(struct net_device *netdev);
+extern void alx_update_hw_stats(struct alx_adapter *adpt);
 #ifdef ETHTOOL_OPS_COMPAT
 extern int ethtool_ioctl(struct ifreq *ifr);
 #endif
