@@ -25,6 +25,64 @@
 #include "alx_compat_ethtool.c"
 #endif
 
+/* Ethtool Stats API Structs */
+#define ALX_STAT(m) \
+	sizeof(((struct alx_adapter *)0)->m), offsetof(struct alx_adapter, m)
+
+/* For Ethtool HW MAC Stats */
+struct alx_stats {
+	char stat_string[ETH_GSTRING_LEN];
+	int sizeof_stat;
+	int stat_offset;
+};
+
+static struct alx_stats alx_gstrings_stats[] = {
+	{"rx: total pkts                 ", ALX_STAT(hw_stats.rx_ok)},
+	{"rx: bcast pkts                 ", ALX_STAT(hw_stats.rx_bcast)},
+	{"rx: mcast pkts                 ", ALX_STAT(hw_stats.rx_mcast)},
+	{"rx: pause pkts                 ", ALX_STAT(hw_stats.rx_pause)},
+	{"rx: ctrl pkts                  ", ALX_STAT(hw_stats.rx_ctrl)},
+	{"rx: fcs_err pkts               ", ALX_STAT(hw_stats.rx_fcs_err)},
+	{"rx: len_err pkts               ", ALX_STAT(hw_stats.rx_len_err)},
+	{"rx: rx total bytes cnt         ", ALX_STAT(hw_stats.rx_byte_cnt)},
+	{"rx: rx runt pkts               ", ALX_STAT(hw_stats.rx_runt)},
+	{"rx: rx fragment pkts           ", ALX_STAT(hw_stats.rx_frag)},
+	{"rx: 64_bytes_pkts              ", ALX_STAT(hw_stats.rx_sz_64B)},
+	{"rx: 65_to_127_bytes_pkts       ", ALX_STAT(hw_stats.rx_sz_127B)},
+	{"rx: rx_128_to_255_bytes_pkts   ", ALX_STAT(hw_stats.rx_sz_255B)},
+	{"rx: rx_256_to_511_bytes_pkts   ", ALX_STAT(hw_stats.rx_sz_511B)},
+	{"rx: rx_512_to_1023_bytes_pkts  ", ALX_STAT(hw_stats.rx_sz_1023B)},
+	{"rx: rx_1024_to_1518_bytes_pkts ", ALX_STAT(hw_stats.rx_sz_1518B)},
+	{"rx: rx_1519_to_max_bytes_pkts  ", ALX_STAT(hw_stats.rx_sz_max)},
+	{"rx: rx_oversize_pkts           ", ALX_STAT(hw_stats.rx_ov_sz)},
+	{"rx: rx_fifo_overflow_drop_pkts ", ALX_STAT(hw_stats.rx_ov_rxf)},
+	{"rx: rx_no_rrd_drop_pkts        ", ALX_STAT(hw_stats.rx_ov_rrd)},
+	{"rx: rx_align_error pkts        ", ALX_STAT(hw_stats.rx_align_err)},
+	{"rx: rx_addr_err_filtering pkts ", ALX_STAT(hw_stats.rx_err_addr)},
+	{"tx: total pkts                 ", ALX_STAT(hw_stats.tx_ok)},
+	{"tx: bcast pkts                 ", ALX_STAT(hw_stats.tx_bcast)},
+	{"tx: mcast pkts                 ", ALX_STAT(hw_stats.tx_mcast)},
+	{"tx: pause pkts                 ", ALX_STAT(hw_stats.tx_pause)},
+	{"tx: exc_deffer pkts            ", ALX_STAT(hw_stats.tx_exc_defer)},
+	{"tx: ctrl pkts                  ", ALX_STAT(hw_stats.tx_ctrl)},
+	{"tx: deffer pkts                ", ALX_STAT(hw_stats.tx_defer)},
+	{"tx: tx total bytes cnt         ", ALX_STAT(hw_stats.tx_byte_cnt)},
+	{"tx: 64_bytes_pkts              ", ALX_STAT(hw_stats.tx_sz_64B)},
+	{"tx: 65_to_127_bytes_pkts       ", ALX_STAT(hw_stats.tx_sz_127B)},
+	{"tx: 128_to_255_bytes_pkts      ", ALX_STAT(hw_stats.tx_sz_255B)},
+	{"tx: 256_to_511_bytes_pkts      ", ALX_STAT(hw_stats.tx_sz_511B)},
+	{"tx: 512_to_1023_bytes_pkts     ", ALX_STAT(hw_stats.tx_sz_1023B)},
+	{"tx: 1024_to_1518_bytes_pkts    ", ALX_STAT(hw_stats.tx_sz_1518B)},
+	{"tx: 1519_to_max_bytes_pkts     ", ALX_STAT(hw_stats.tx_sz_max)},
+	{"tx: pkts_wo_single_coll        ", ALX_STAT(hw_stats.tx_single_col)},
+	{"tx: ptks_wo_multi_coll         ", ALX_STAT(hw_stats.tx_multi_col)},
+	{"tx: pkts_wi_late_coll          ", ALX_STAT(hw_stats.tx_late_col)},
+	{"tx: pkts_abort_for_coll        ", ALX_STAT(hw_stats.tx_abort_col)},
+	{"tx: underrun pkts              ", ALX_STAT(hw_stats.tx_underrun)},
+	{"tx: rd_beyond_eop pkts         ", ALX_STAT(hw_stats.tx_trd_eop)},
+	{"tx: length_err pkts            ", ALX_STAT(hw_stats.tx_len_err)},
+	{"tx: trunc_err pkts             ", ALX_STAT(hw_stats.tx_trunc)},
+};
 
 static int alx_get_settings(struct net_device *netdev,
 			    struct ethtool_cmd *ecmd)
@@ -492,24 +550,71 @@ static int alx_nway_reset(struct net_device *netdev)
 	return 0;
 }
 
+static void alx_get_ethtool_stats(struct net_device *netdev,
+					struct ethtool_stats *stats, u64 *data)
+{
+	struct alx_adapter *adpt = netdev_priv(netdev);
+	int i;
+	char *p;
+
+	/* Update the current stats from HW */
+	alx_update_hw_stats(adpt);
+	for (i = 0; i < ARRAY_SIZE(alx_gstrings_stats); i++) {
+		p = (char *)adpt + alx_gstrings_stats[i].stat_offset;
+		data[i] = (alx_gstrings_stats[i].sizeof_stat ==
+				sizeof(u64)) ? *(u64 *)p : *(u32 *)p;
+	}
+}
+
+static void alx_get_strings(struct net_device *netdev, u32 stringset,
+						u8 *data)
+{
+	u8 *p = data;
+	int i;
+
+	switch (stringset) {
+	case ETH_SS_STATS:
+		for (i = 0; i < ARRAY_SIZE(alx_gstrings_stats); i++) {
+			memcpy(p, alx_gstrings_stats[i].stat_string,
+				ETH_GSTRING_LEN);
+			p += ETH_GSTRING_LEN;
+		}
+		break;
+	}
+}
+
+static int alx_get_sset_count(struct net_device *netdev, int sset)
+{
+	switch (sset) {
+	case ETH_SS_STATS:
+		return ARRAY_SIZE(alx_gstrings_stats);
+	break;
+	default:
+		return -EOPNOTSUPP;
+	break;
+	}
+}
 
 static const struct ethtool_ops alx_ethtool_ops = {
-	.get_settings    = alx_get_settings,
-	.set_settings    = alx_set_settings,
-	.get_pauseparam  = alx_get_pauseparam,
-	.set_pauseparam  = alx_set_pauseparam,
-	.get_drvinfo     = alx_get_drvinfo,
-	.get_regs_len    = alx_get_regs_len,
-	.get_regs        = alx_get_regs,
-	.get_wol         = alx_get_wol,
-	.set_wol         = alx_set_wol,
-	.get_msglevel    = alx_get_msglevel,
-	.set_msglevel    = alx_set_msglevel,
-	.nway_reset      = alx_nway_reset,
-	.get_link        = ethtool_op_get_link,
-	.get_eeprom_len  = alx_get_eeprom_len,
-	.get_eeprom      = alx_get_eeprom,
-	.set_eeprom      = alx_set_eeprom,
+	.get_settings      = alx_get_settings,
+	.set_settings      = alx_set_settings,
+	.get_pauseparam    = alx_get_pauseparam,
+	.set_pauseparam    = alx_set_pauseparam,
+	.get_drvinfo       = alx_get_drvinfo,
+	.get_regs_len      = alx_get_regs_len,
+	.get_regs          = alx_get_regs,
+	.get_wol           = alx_get_wol,
+	.set_wol           = alx_set_wol,
+	.get_msglevel      = alx_get_msglevel,
+	.set_msglevel      = alx_set_msglevel,
+	.nway_reset        = alx_nway_reset,
+	.get_link          = ethtool_op_get_link,
+	.get_eeprom_len    = alx_get_eeprom_len,
+	.get_eeprom        = alx_get_eeprom,
+	.set_eeprom        = alx_set_eeprom,
+	.get_strings       = alx_get_strings,
+	.get_ethtool_stats = alx_get_ethtool_stats,
+	.get_sset_count    = alx_get_sset_count,
 };
 
 

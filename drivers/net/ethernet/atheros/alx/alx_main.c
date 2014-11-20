@@ -504,6 +504,18 @@ static bool alx_ipa_is_non_ip_pkt(uint8_t proto)
 	return false;
 }
 
+static void alx_ipa_remove_padding(struct sk_buff *skb, bool ipv4, bool ipv6)
+{
+	if (ipv4) {
+		struct iphdr *ip_hdr = NULL;
+		ip_hdr = (struct iphdr *)(skb_mac_header(skb) + ETH_HLEN);
+		skb_trim(skb, ntohs(ip_hdr->tot_len) + ETH_HLEN);
+	} else if (ipv6) {
+		struct ipv6hdr *ip6_hdr = NULL;
+		ip6_hdr = (struct ipv6hdr *)(skb_mac_header(skb) + ETH_HLEN);
+		skb_trim(skb, ntohs(ip6_hdr->payload_len) + sizeof(struct ipv6hdr) + ETH_HLEN);
+	}
+}
 
 static bool alx_ipa_is_ip_frag_pkt(struct sk_buff *skb)
 {
@@ -522,6 +534,16 @@ static bool alx_ipa_is_ipv4_pkt(uint8_t proto)
 	if ((proto == RRD_PROTO_IPv4) ||
 		(proto == RRD_PROTO_IPv4_TCP) ||
 		(proto == RRD_PROTO_IPv4_UDP))
+		return true;
+	else
+		return false;
+}
+
+static bool alx_ipa_is_ipv6_pkt(uint8_t proto)
+{
+	if ((proto == RRD_PROTO_IPv6) ||
+		(proto == RRD_PROTO_IPv6_TCP) ||
+		(proto == RRD_PROTO_IPv6_UDP))
 		return true;
 	else
 		return false;
@@ -559,6 +581,8 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
 	int ret =0;
 	struct alx_ipa_rx_desc_node *node = NULL;
 	bool schedule_ipa_work = false;
+	bool is_pkt_ipv4 = alx_ipa_is_ipv4_pkt(proto);
+	bool is_pkt_ipv6 = alx_ipa_is_ipv6_pkt(proto);
 
 	skb_reset_mac_header(skb);
 	if (vlan_flag) {
@@ -574,7 +598,7 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
 	/* If Packet is an IP Packet and non-fragmented then Send it to
 		IPA/ODU Bridge Driver*/
 	if (alx_ipa_is_non_ip_pkt(proto) ||
-	   (alx_ipa_is_ipv4_pkt(proto) && alx_ipa_is_ip_frag_pkt(skb)) ||
+	   (is_pkt_ipv4 && alx_ipa_is_ip_frag_pkt(skb)) ||
 	   (!CHK_ADPT_FLAG(2, ODU_CONNECT))) {
 		/* Send packet to network stack */
 		skb->protocol = eth_type_trans(skb, adpt->netdev);
@@ -583,6 +607,7 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
 		return;
 	} else {
 		/* Send Packet to ODU bridge Driver */
+
 		/* Flow Control Checks */
 		spin_lock(&adpt->flow_ctrl_lock);
 
@@ -601,6 +626,10 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
 				schedule_ipa_work = true;
 			goto unlock_and_schedule;
 		}
+
+		/* Remove extra padding if the rcv_pkt_len == 64 */
+		if (skb->len == ETH_ZLEN)
+			alx_ipa_remove_padding(skb, is_pkt_ipv4, is_pkt_ipv6);
 
 		/* Send Packet to IPA; if there are no pending packets
 		   and ipa has available descriptors */
@@ -3300,7 +3329,7 @@ static int alx_resume(struct device *dev)
 /*
  * alx_update_hw_stats - Update the board statistics counters.
  */
-static void alx_update_hw_stats(struct alx_adapter *adpt)
+void alx_update_hw_stats(struct alx_adapter *adpt)
 {
 	struct net_device_stats *net_stats;
 	struct alx_hw *hw = &adpt->hw;
@@ -4099,12 +4128,15 @@ static void alx_ipa_tx_dl(void *priv, struct sk_buff *skb)
         }
 
 	pr_debug("%s %d SKB Send to line \n",__func__,__LINE__);
-	/* Deliver SKB to HW */
-	alx_ipa->stats.tx_ipa_send++;
 	if ((ret = alx_start_xmit(skb, adpt->netdev)) != NETDEV_TX_OK)
 	{
 		pr_err("%s alx_ipa_tx_dl() failed xmit returned %d \n",
 					__func__, ret);
+		alx_ipa->stats.tx_ipa_send_err++;
+		dev_kfree_skb_any(skb);
+	} else {
+		/* Deliver SKB to HW */
+		alx_ipa->stats.tx_ipa_send++;
 	}
 }
 
@@ -4147,6 +4179,8 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
         "IPA RX Exception: ", alx_ipa->stats.rx_ipa_excep);
         len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "IPA TX Send: ", alx_ipa->stats.tx_ipa_send);
+        len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
+        "IPA TX Send Err: ", alx_ipa->stats.tx_ipa_send_err);
         len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
         "Non-IP or Frag RX Pkt: ", alx_ipa->stats.non_ip_frag_pkt);
 
