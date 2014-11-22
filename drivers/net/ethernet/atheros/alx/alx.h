@@ -58,7 +58,7 @@
 
 #ifdef MDM_PLATFORM
 #define MAX_AR8151_BW 900
-#define ALX_IPA_SYS_PIPE_MAX_PKTS_DESC 30
+#define ALX_IPA_SYS_PIPE_MAX_PKTS_DESC 160
 #define ALX_IPA_SYS_PIPE_MIN_PKTS_DESC 5
 #define ALX_IPA_SYS_PIPE_DNE_PKTS ALX_IPA_SYS_PIPE_MAX_PKTS_DESC*2
 /* Protocol Specific Offsets*/
@@ -804,11 +804,11 @@ struct alx_adapter {
 	atomic_t irq_sem;
 
 #ifdef  MDM_PLATFORM
-	u8 ipa_high_watermark;
-	u8 ipa_low_watermark;
-	u8 pendq_cnt;
-	u8 freeq_cnt;
-	u8 ipa_free_desc_cnt;
+	u16 ipa_high_watermark;
+	u16 ipa_low_watermark;
+	u16 pendq_cnt;
+	u16 freeq_cnt;
+	u16 ipa_free_desc_cnt;
 	spinlock_t flow_ctrl_lock;
 	struct list_head pend_queue_head;
 	struct list_head free_queue_head;

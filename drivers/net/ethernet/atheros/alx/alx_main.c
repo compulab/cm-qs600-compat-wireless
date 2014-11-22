@@ -617,7 +617,7 @@ static void alx_receive_skb_ipa(struct alx_adapter *adpt,
                         pr_debug("ALX-IPA Flow Control - Drop Pkt"
 				" IPA pending packets = %d",
 					adpt->ipa_free_desc_cnt);
-			kfree(skb);
+			dev_kfree_skb(skb);
 			/* Schedule ipa_work task if IPA has desc left. This is
 			done since priority of softirq > IPA_WRITE_DONE Event.
 			Which implies ipa_send_task will not be scheduled in
@@ -4097,7 +4097,7 @@ static void alx_ipa_tx_dp_cb(void *priv, enum ipa_dp_evt_type evt,
         } else if (evt == IPA_WRITE_DONE) {
 		/* SKB send to IPA, safe to free */
 		alx_ipa->stats.rx_ipa_write_done++;
-		kfree_skb(skb);
+		dev_kfree_skb(skb);
 	        spin_lock_bh(&adpt->flow_ctrl_lock);
 		adpt->ipa_free_desc_cnt++;
 		if ((adpt->pendq_cnt > 0) &&
@@ -4148,8 +4148,8 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
 	char *buf;
 	unsigned int len = 0, buf_len = 2000;
 	ssize_t ret_cnt;
-	u8 pendq_cnt, freeq_cnt, ipa_free_desc_cnt;
-	u8 max_pkts_allowed, min_pkts_allowed;
+	u16 pendq_cnt, freeq_cnt, ipa_free_desc_cnt;
+	u16 max_pkts_allowed, min_pkts_allowed;
 
 	if (unlikely(!alx_ipa)) {
 		pr_err(" %s NULL Pointer \n",__func__);
