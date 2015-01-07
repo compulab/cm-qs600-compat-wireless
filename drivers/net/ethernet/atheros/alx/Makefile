@@ -1,7 +1,7 @@
 
 KERNEL_SRC ?= /lib/modules/$(shell uname -r)/build
 
-ifeq ($(CONFIG_ARCH_MDM9630), y)
+ifeq ($(CONFIG_MDM_ALX), y)
 obj-m += alx.o
 CDEFINES += -DMDM_PLATFORM
 else
