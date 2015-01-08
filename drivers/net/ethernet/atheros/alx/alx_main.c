@@ -21,6 +21,7 @@
 #include <linux/moduleparam.h>
 #ifdef MDM_PLATFORM
 #include <linux/debugfs.h>
+#include <linux/pm_wakeup.h>
 #endif
 
 char alx_drv_name[] = "alx";
@@ -4708,6 +4709,9 @@ static int __devinit alx_init(struct pci_dev *pdev,
 
 	/* Initialize IPA Flow Control Work Task */
 	INIT_WORK(&adpt->ipa_send_task, alx_ipa_send_routine);
+
+	/* Hold a wakelock to ensure that system doesn't goto power collapse*/
+	pm_stay_awake(&pdev->dev);
 #endif
 
 	/* carrier off reporting is important to ethtool even BEFORE open */
@@ -4850,6 +4854,9 @@ static void __devexit alx_remove(struct pci_dev *pdev)
 
 	/* Cancel ALX IPA Flow Control Work */
 	cancel_work_sync(&adpt->ipa_send_task);
+
+	/* Release wakelock to ensure that system can goto power collapse*/
+	pm_relax(&pdev->dev);
 #endif
 
 	pci_disable_pcie_error_reporting(pdev);
