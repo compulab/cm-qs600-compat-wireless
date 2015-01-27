@@ -42,6 +42,7 @@
 #include <asm/byteorder.h>
 #ifdef MDM_PLATFORM
 #include <linux/ipa.h>
+#include <mach/msm_pcie.h>
 #endif
 
 #include "alx_sw.h"
@@ -749,6 +750,7 @@ struct alx_adapter {
 	struct pci_dev    *pdev;
 #ifdef  MDM_PLATFORM
 	struct alx_ipa_ctx *palx_ipa;
+	struct msm_pcie_register_event msm_pcie_event;
 #endif
 	struct net_device_stats net_stats;
 	bool netdev_registered;

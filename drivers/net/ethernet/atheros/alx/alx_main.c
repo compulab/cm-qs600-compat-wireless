@@ -4357,6 +4357,16 @@ static int __devinit alx_init(struct pci_dev *pdev,
         struct odu_bridge_params *params_ptr, params;
         params_ptr = &params;
 
+#ifdef MDM_PLATFORM
+	retval = msm_pcie_pm_control(MSM_PCIE_RESUME, pdev->bus->number,
+					pdev, NULL, 0);
+	if (retval) {
+		pr_err("Couldnt perform PCIe MSM Link resume %d\n",
+			retval);
+		return retval;
+	}
+#endif
+
 	/* enable device (incl. PCI PM wakeup and hotplug setup) */
 	retval = pci_enable_device_mem(pdev);
 	if (retval) {
@@ -4712,6 +4722,20 @@ static int __devinit alx_init(struct pci_dev *pdev,
 
 	/* Hold a wakelock to ensure that system doesn't goto power collapse*/
 	pm_stay_awake(&pdev->dev);
+
+	/* Register with MSM PCIe PM Framework */
+	adpt->msm_pcie_event.events = MSM_PCIE_EVENT_LINKDOWN;
+	adpt->msm_pcie_event.user = pdev;
+	adpt->msm_pcie_event.mode = MSM_PCIE_TRIGGER_CALLBACK;
+	adpt->msm_pcie_event.callback = NULL;
+	adpt->msm_pcie_event.options = MSM_PCIE_CONFIG_NO_RECOVERY;
+	retval = msm_pcie_register_event(&adpt->msm_pcie_event);
+	if (retval) {
+		pr_err("%s: PCI link down detect register failed %d\n",
+				__func__, retval);
+		goto msm_pcie_register_fail;
+	}
+
 #endif
 
 	/* carrier off reporting is important to ethtool even BEFORE open */
@@ -4756,6 +4780,7 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	cards_found++;
 	return 0;
 
+msm_pcie_register_fail:
 err_init_odu_bridge:
 	unregister_netdev(netdev);
 	adpt->netdev_registered = false;
@@ -4862,6 +4887,17 @@ static void __devexit alx_remove(struct pci_dev *pdev)
 	pci_disable_pcie_error_reporting(pdev);
 
 	pci_disable_device(pdev);
+
+#ifdef MDM_PLATFORM
+	/* De-register with MSM PCIe PM framework */
+	msm_pcie_deregister_event(&adpt->msm_pcie_event);
+
+	retval = msm_pcie_pm_control(MSM_PCIE_SUSPEND, pdev->bus->number,
+					  pdev, NULL, 0);
+	if (retval)
+		 pr_err("Couldnt Suspend PCIe MSM Link %d \n",
+				retval);
+#endif
 }
 
 
