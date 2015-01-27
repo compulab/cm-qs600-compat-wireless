@@ -1030,6 +1030,7 @@ int ath6kl_send_msg_ipa(struct ath6kl_vif *vif, enum ipa_wlan_event type,
 				"IPA-CM: AP mode Adding Partial hdr: %s, %pM\n",
 				vif->ndev->name, vif->ndev->dev_addr);
 		/* Add partial header with IPA for this interface */
+		if (!(test_bit(CONNECTED, &vif->flags)))
 		ath6kl_ipa_add_header_info(vif->ar, 1, vif->fw_vif_idx,
 				vif->ndev->name, vif->ndev->dev_addr);
 		break;
