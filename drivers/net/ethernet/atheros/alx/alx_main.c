@@ -4208,6 +4208,9 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
 	len += scnprintf(buf + len, buf_len - len, "%25s %10llu\n",
 	"IPA Flow Ctrl Pkt Drop: ", alx_ipa->stats.flow_control_pkt_drop);
 
+        len += scnprintf(buf + len, buf_len - len, "\n \n");
+	len += scnprintf(buf + len, buf_len - len, "%25s %s\n",
+	"Data Path IPA Enabled: ",CHK_ADPT_FLAG(2, ODU_CONNECT) ? "True" : "False" );
         if (len > buf_len)
 	        len = buf_len;
 
@@ -4216,8 +4219,76 @@ static ssize_t alx_ipa_debugfs_read_ipa_stats(struct file *file,
         return ret_cnt;
 }
 
+static ssize_t alx_ipa_debugfs_disable_ipa(struct file *file,
+                const char __user *user_buf, size_t count, loff_t *ppos)
+{
+	struct alx_adapter *adpt = galx_adapter_ptr;
+	struct alx_ipa_ctx *alx_ipa = adpt->palx_ipa;
+	int ret = 0;
+        char *buf;
+        unsigned int buf_len = 100;
+	unsigned long missing;
+	s8 value;
+
+        if (unlikely(!alx_ipa)) {
+                pr_err(" %s NULL Pointer \n",__func__);
+                return -EINVAL;
+        }
+
+        if (!CHK_ADPT_FLAG(2, DEBUGFS_INIT))
+                return 0;
+
+        buf = kzalloc(buf_len, GFP_KERNEL);
+        if (!buf)
+                return -ENOMEM;
+
+	missing = copy_from_user(buf, user_buf, count);
+	if (missing)
+		return -EFAULT;
+
+	buf[count] = '\0';
+	if (kstrtos8(buf, 0, &value))
+		return -EFAULT;
+
+	/* Only Booloean values allowed */
+	if (value != 0 && value != 1)
+		return -EFAULT;
+
+	if ((value == 0) && CHK_ADPT_FLAG(2, ODU_CONNECT)) {
+		/* Disable ODU Bridge */
+		ret = odu_bridge_disconnect();
+		pr_info("ALX: Disabling IPA Data Path \n");
+		if (ret)
+			pr_err("Could not connect to ODU bridge %d \n", ret);
+		else
+			CLI_ADPT_FLAG(2, ODU_CONNECT);
+
+	}
+
+	if ((value == 1) && !CHK_ADPT_FLAG(2, ODU_CONNECT)) {
+		/* Enable ODU Bridge */
+		pr_info("ALX: Enabling IPA Data Path \n");
+		ret = odu_bridge_connect();
+		if (ret)
+			pr_err("Could not connect to ODU bridge %d \n",
+				ret);
+		else
+			SET_ADPT_FLAG(2, ODU_CONNECT);
+		/* Set the max perf levels */
+		alx_ipa_set_perf_level();
+	}
+	return count;
+}
+
 static const struct file_operations fops_ipa_stats = {
                 .read = alx_ipa_debugfs_read_ipa_stats,
+                .open = simple_open,
+                .owner = THIS_MODULE,
+                .llseek = default_llseek,
+};
+
+static const struct file_operations fops_ipa_disable = {
+                .write = alx_ipa_debugfs_disable_ipa,
                 .open = simple_open,
                 .owner = THIS_MODULE,
                 .llseek = default_llseek,
@@ -4231,6 +4302,8 @@ static int alx_debugfs_init(struct alx_adapter *adpt)
 
 	debugfs_create_file("stats", S_IRUSR, adpt->palx_ipa->debugfs_dir,
 					adpt, &fops_ipa_stats);
+	debugfs_create_file("ipa_enable", S_IWUSR, adpt->palx_ipa->debugfs_dir,
+					adpt, &fops_ipa_disable);
 
 	return 0;
 }
