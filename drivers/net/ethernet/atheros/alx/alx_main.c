@@ -4094,7 +4094,7 @@ static void alx_ipa_tx_dp_cb(void *priv, enum ipa_dp_evt_type evt,
 		alx_ipa->stats.rx_ipa_excep++;
 		skb->dev = adpt->netdev;
 		skb->protocol = eth_type_trans(skb, skb->dev);
-		netif_receive_skb(skb);
+		netif_rx_ni(skb);
         } else if (evt == IPA_WRITE_DONE) {
 		/* SKB send to IPA, safe to free */
 		alx_ipa->stats.rx_ipa_write_done++;
