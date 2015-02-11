@@ -1182,6 +1182,25 @@ static void ath6kl_usb_flush_all(struct ath6kl_usb *ar_usb)
 #endif
 }
 
+static void ath6kl_usb_suspend_flush_all(struct ath6kl_usb *ar_usb)
+{
+	int i;
+	struct ath6kl_usb_pipe *pipe;
+
+	for (i = 0; i < ATH6KL_USB_PIPE_MAX; i++) {
+		pipe = &ar_usb->pipes[i].ar_usb->pipes[i];
+		if (!pipe->ar_usb)
+			continue;
+		flush_work(&pipe->tx_io_complete_work);
+		flush_work(&pipe->rx_io_complete_work);
+		usb_kill_anchored_urbs(&pipe->urb_submitted);
+
+	}
+#ifdef CONFIG_ATH6KL_AUTO_PM
+	flush_work(&ar_usb->pm_resume_work);
+#endif
+}
+
 static void ath6kl_usb_start_recv_pipes(struct ath6kl_usb *ar_usb)
 {
 	/*
@@ -2465,7 +2484,7 @@ end:
 		return ret;
 	}
 
-	ath6kl_usb_flush_all(ar_usb);
+	ath6kl_usb_suspend_flush_all(ar_usb);
 #ifdef CONFIG_ATH6KL_AUTO_PM
 	atomic_set(&ar_usb->autopm_state,
 			ATH6KL_USB_AUTOPM_STATE_SUSPENDED);
