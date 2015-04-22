@@ -188,7 +188,7 @@ void alx_hw_printk(const char *level, const struct alx_hw *hw,
 	va_start(args, fmt);
 	vaf.fmt = fmt;
 	vaf.va = &args;
-/* warning : __netdev_printk if no compat.o 
+/* warning : __netdev_printk if no compat.o
 	if (hw && hw->adpt && hw->adpt->netdev)
 		__netdev_printk(level, hw->adpt->netdev, &vaf);
 	else
@@ -1681,32 +1681,36 @@ static int alx_request_msix_irq(struct alx_adapter *adpt)
 
 		if (CHK_MSIX_FLAG(RXS) && CHK_MSIX_FLAG(TXS)) {
 			handler = alx_msix_rtx;
-			sprintf(msix->name, "%s:%s%d",
-					    netdev->name, "rtx", rx_idx);
+			snprintf(msix->name, sizeof(msix->name), "%s:%s%d",
+				 netdev->name, "rtx", rx_idx);
 			rx_idx++;
 			tx_idx++;
 		} else if (CHK_MSIX_FLAG(RXS)) {
 			handler = alx_msix_rtx;
-			sprintf(msix->name, "%s:%s%d",
-					    netdev->name, "rx", rx_idx);
+			snprintf(msix->name, sizeof(msix->name), "%s:%s%d",
+				 netdev->name, "rx", rx_idx);
 			rx_idx++;
 		} else if (CHK_MSIX_FLAG(TXS)) {
 			handler = alx_msix_rtx;
-			sprintf(msix->name, "%s:%s%d",
-					    netdev->name, "tx", tx_idx);
+			snprintf(msix->name, sizeof(msix->name), "%s:%s%d",
+				 netdev->name, "tx", tx_idx);
 			tx_idx++;
 		} else if (CHK_MSIX_FLAG(TIMER)) {
 			handler = alx_msix_timer;
-			sprintf(msix->name, "%s:%s", netdev->name, "timer");
+			snprintf(msix->name, sizeof(msix->name), "%s:%s",
+				 netdev->name, "timer");
 		} else if (CHK_MSIX_FLAG(ALERT)) {
 			handler = alx_msix_alert;
-			sprintf(msix->name, "%s:%s", netdev->name, "alert");
+			snprintf(msix->name, sizeof(msix->name), "%s:%s",
+				 netdev->name, "alert");
 		} else if (CHK_MSIX_FLAG(SMB)) {
 			handler = alx_msix_smb;
-			sprintf(msix->name, "%s:%s", netdev->name, "smb");
+			snprintf(msix->name, sizeof(msix->name), "%s:%s",
+				 netdev->name, "smb");
 		} else if (CHK_MSIX_FLAG(PHY)) {
 			handler = alx_msix_phy;
-			sprintf(msix->name, "%s:%s", netdev->name, "phy");
+			snprintf(msix->name, sizeof(msix->name), "%s:%s",
+				 netdev->name, "phy");
 		} else {
 			netif_dbg(adpt, ifup, adpt->netdev,
 				   "MSIX entry [%d] is blank\n",
@@ -3129,8 +3133,9 @@ err_alloc_rtx:
 static int alx_stop(struct net_device *netdev)
 {
 	struct alx_adapter *adpt = netdev_priv(netdev);
+#ifdef  MDM_PLATFORM
 	struct alx_ipa_rx_desc_node *node = NULL;
-
+#endif
 	if (CHK_ADPT_FLAG(1, STATE_RESETTING))
 		netif_warn(adpt, ifdown, adpt->netdev,
 			   "flag STATE_RESETTING has already set\n");
@@ -3445,6 +3450,7 @@ static int alx_link_mac_restore(struct alx_adapter *adpt)
 }
 #endif
 
+#ifdef MDM_PLATFORM
 static int alx_ipa_set_perf_level(void)
 {
 	struct ipa_rm_perf_profile profile;
@@ -3471,14 +3477,16 @@ static int alx_ipa_set_perf_level(void)
 
 	return ret;
 }
+#endif
 
 static void alx_link_task_routine(struct alx_adapter *adpt)
 {
 	struct net_device *netdev = adpt->netdev;
 	struct alx_hw *hw = &adpt->hw;
 	char *link_desc;
+#ifdef MDM_PLATFORM
 	int ret = 0;
-
+#endif
 	if (!CHK_ADPT_FLAG(0, TASK_LSC_REQ))
 		return;
 	CLI_ADPT_FLAG(0, TASK_LSC_REQ);
@@ -3639,6 +3647,7 @@ static void alx_task_routine(struct work_struct *work)
 	CLI_ADPT_FLAG(1, STATE_WATCH_DOG);
 }
 
+#ifdef MDM_PLATFORM
 /*
  * alx_ipa_send_routine - Sends packets to IPA/ODU bridge Driver
  * Scheduled on RX of IPA_WRITE_DONE Event
@@ -3689,6 +3698,7 @@ static void alx_ipa_send_routine(struct work_struct *work)
 	}
 	spin_unlock_bh(&adpt->flow_ctrl_lock);
 }
+#endif
 
 /* Calculate the transmit packet descript needed*/
 static bool alx_check_num_tpdescs(struct alx_tx_queue *txque,
@@ -3869,7 +3879,9 @@ static void alx_tx_map(struct alx_adapter *adpt,
 	 * The last buffer info contain the skb address,
 	 * so it will be free after unmap
 	 */
-	tpbuf->skb = skb;
+	if (tpbuf != NULL) {
+		tpbuf->skb = skb;
+	}
 }
 
 
@@ -4427,8 +4439,10 @@ static int __devinit alx_init(struct pci_dev *pdev,
 #endif
 	static int cards_found;
 	int retval;
+#ifdef MDM_PLATFORM
         struct odu_bridge_params *params_ptr, params;
         params_ptr = &params;
+#endif
 
 #ifdef MDM_PLATFORM
 	retval = msm_pcie_pm_control(MSM_PCIE_RESUME, pdev->bus->number,
@@ -4852,18 +4866,21 @@ static int __devinit alx_init(struct pci_dev *pdev,
 	printk(KERN_INFO "alx: Atheros Gigabit Network Connection\n");
 	cards_found++;
 	return 0;
-
+#ifdef MDM_PLATFORM
 msm_pcie_register_fail:
 err_init_odu_bridge:
 	unregister_netdev(netdev);
 	adpt->netdev_registered = false;
+#endif
 err_register_netdev:
 	alx_free_all_rtx_queue(adpt);
 err_alloc_rtx_queue:
 	alx_reset_interrupt_param(adpt);
 err_set_interrupt_param:
 	alx_reset_interrupt_mode(adpt);
+#ifdef MDM_PLATFORM
 err_ipa_rm:
+#endif
 err_set_interrupt_mode:
 err_init_adapter:
 	iounmap(adpt->hw.hw_addr);
@@ -4889,7 +4906,9 @@ static void __devexit alx_remove(struct pci_dev *pdev)
 	struct alx_adapter *adpt = pci_get_drvdata(pdev);
 	struct alx_hw *hw = &adpt->hw;
 	struct net_device *netdev = adpt->netdev;
+#ifdef MDM_PLATFORM
 	int retval = 0;
+#endif
 
 #ifdef ALX_HIB_TIMER_CONFIG
 	del_timer_sync(&adpt->alx_timer);

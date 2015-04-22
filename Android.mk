@@ -1,6 +1,8 @@
 LOCAL_PATH := $(call my-dir)
-ifeq ($(call is-android-codename,JELLY_BEAN),true)
+ifeq ($(call is-vendor-board-platform,QCOM),true)
+ifneq (, $(filter aarch64 arm arm64, $(TARGET_ARCH)))
 	DLKM_DIR := $(TOP)/device/qcom/common/dlkm
+endif #(TARGET_ARCH)
 else
 	DLKM_DIR := build/dlkm
 endif
