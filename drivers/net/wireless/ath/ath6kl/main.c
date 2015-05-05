@@ -1180,9 +1180,11 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 	psq_empty  = skb_queue_empty(&conn->psq) && (conn->mgmt_psq_len == 0);
 	spin_unlock_bh(&conn->psq_lock);
 
-	if (psq_empty)
+	if (psq_empty) {
+		ath6kl_wmi_set_pvb_cmd(ar->wmi, vif->fw_vif_idx, conn->aid, 0);
 		/* TODO: Send out a NULL data frame */
 		return;
+        }
 
 	spin_lock_bh(&conn->psq_lock);
 	if (conn->mgmt_psq_len > 0) {
@@ -1209,13 +1211,6 @@ void ath6kl_pspoll_event(struct ath6kl_vif *vif, u8 aid)
 			conn->sta_flags &= ~STA_PS_POLLED;
 		}
 	}
-
-	spin_lock_bh(&conn->psq_lock);
-	psq_empty  = skb_queue_empty(&conn->psq) && (conn->mgmt_psq_len == 0);
-	spin_unlock_bh(&conn->psq_lock);
-
-	if (psq_empty)
-		ath6kl_wmi_set_pvb_cmd(ar->wmi, vif->fw_vif_idx, conn->aid, 0);
 }
 
 void ath6kl_dtimexpiry_event(struct ath6kl_vif *vif)
