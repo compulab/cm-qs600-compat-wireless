@@ -1135,7 +1135,9 @@ static bool alx_handle_tx_irq(struct alx_msix_param *msix,
 		}
 
 		if (tpbuf->skb) {
-			dev_kfree_skb_irq(tpbuf->skb);
+			/* Since its called by NAPI; we are already in bh
+			context; so its safe to free the skb here*/
+			dev_kfree_skb(tpbuf->skb);
 			tpbuf->skb = NULL;
 		}
 
@@ -3908,6 +3910,7 @@ static netdev_tx_t alx_start_xmit_frame(struct alx_adapter *adpt,
 		/* no enough descriptor, just stop queue */
 		netif_stop_queue(adpt->netdev);
 		spin_unlock_irqrestore(&adpt->tx_lock, flags);
+		alx_err(adpt, "No TX Desc to send packet\n");
 		return NETDEV_TX_BUSY;
 	}
 
