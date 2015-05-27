@@ -3028,7 +3028,7 @@ static int alx_open_internal(struct alx_adapter *adpt, u32 ctrl)
 	/* check link status */
 	SET_ADPT_FLAG(0, TASK_LSC_REQ);
 	adpt->link_jiffies = jiffies + ALX_TRY_LINK_TIMEOUT;
-#ifndef ALX_HIB_TIMER_CONFIG
+#ifdef ALX_HIB_TIMER_CONFIG
 	mod_timer(&adpt->alx_timer, jiffies);
 #endif
 	return retval;
@@ -3060,7 +3060,7 @@ static void alx_stop_internal(struct alx_adapter *adpt, u32 ctrl)
 
 	CLI_ADPT_FLAG(0, TASK_LSC_REQ);
 	CLI_ADPT_FLAG(0, TASK_REINIT_REQ);
-#ifndef ALX_HIB_TIMER_CONFIG
+#ifdef ALX_HIB_TIMER_CONFIG
 	del_timer_sync(&adpt->alx_timer);
 #endif
 	if (ctrl & ALX_OPEN_CTRL_RESET_PHY)
