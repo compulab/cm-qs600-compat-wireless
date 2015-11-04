@@ -1363,69 +1363,26 @@ static bool check_device_tree(struct ath6kl *ar)
 }
 #endif /* CONFIG_OF */
 
-#ifdef CONFIG_ANDROID
-static void ath6kl_replace_with_softmac_2(struct ath6kl *ar)
-{
-#define PREFIX_MAC_LEN 3
-	int i;
-	u16 *p;
-	u32 sum = 0;
-	u8 default_mac[ETH_ALEN] = {0x00, 0x03, 0x7f, 0x12, 0x34, 0x56};
-	size_t remain_mac_len = ETH_ALEN - PREFIX_MAC_LEN;
-
-	if (ar->fw_board == NULL || ar->fw_softmac_2 == NULL)
-		return;
-
-	if (ar->fw_softmac_2_len < remain_mac_len) {
-		ath6kl_warn("softmac_2.bin less than %d bytes, "
-			"ignore softmac_2.bin\n", (int) remain_mac_len);
-		return;
-	}
-
-	/* set checksum filed in the board data to zero */
-	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
-
-	/* replace the mac address with softmac */
-	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET],
-		default_mac, PREFIX_MAC_LEN);
-	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET+PREFIX_MAC_LEN],
-		ar->fw_softmac_2+(ar->fw_softmac_2_len-remain_mac_len),
-		remain_mac_len);
-
-	p = (u16 *) ar->fw_board;
-
-	/* calculate check sum */
-	for (i = 0; i < (ar->fw_board_len / 2); i++)
-		sum ^= *p++;
-
-	sum = ~sum;
-
-	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
-}
-#endif
-
-static void ath6kl_replace_with_softmac(struct ath6kl *ar)
+static int ath6kl_replace_mac(struct ath6kl *ar, u8 *macaddr)
 {
 	int i, ret;
 	u16 *p;
 	u32 sum = 0;
 	u32 param;
 
-	if (ar->fw_board == NULL || ar->fw_softmac == NULL)
-		return;
+	if (!ar || !ar->fw_board || !macaddr)
+		return -EINVAL;
 
-	/* set checksum filed in the board data to zero */
+	/* zero checksum field in the board file */
 	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
+	ar->fw_board[BDATA_CHECKSUM_OFFSET + 1] = 0;
 
-	/* replace the mac address with softmac */
-	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], ar->fw_softmac, ETH_ALEN);
+	/* replace mac address in the board file */
+	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], macaddr, ETH_ALEN);
 
-	p = (u16 *) ar->fw_board;
+	p = (u16 *)ar->fw_board;
 
-	/* calculate check sum */
+	/* calculate checksum */
 	for (i = 0; i < (ar->fw_board_len / 2); i++)
 		sum ^= *p++;
 
@@ -1435,73 +1392,86 @@ static void ath6kl_replace_with_softmac(struct ath6kl *ar)
 	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
 
 	ret = ath6kl_bmi_read(ar,
-				ath6kl_get_hi_item_addr(ar,
-				HI_ITEM(hi_option_flag2)),
-				(u8 *) &param, 4);
-
+			      ath6kl_get_hi_item_addr(ar,
+						      HI_ITEM(hi_option_flag2)),
+			      (u8 *)&param, 4);
 	if (ret) {
-		ath6kl_err("failed to do bmi read %d\n", ret);
-		return;
+		ath6kl_err("failed to bmi read: %d\n", ret);
+		return ret;
 	}
 
 	param |= HI_OPTION_DISABLE_MAC_OTP;
-	ath6kl_bmi_write(ar,
-			 ath6kl_get_hi_item_addr(ar,
-			 HI_ITEM(hi_option_flag2)),
-			 (u8 *)&param, 4);
+	ret = ath6kl_bmi_write(ar,
+			       ath6kl_get_hi_item_addr(ar,
+						       HI_ITEM(hi_option_flag2)),
+			       (u8 *)&param, 4);
+	if (ret) {
+		ath6kl_err("failed to bmi write: %d\n", ret);
+		return ret;
+	}
 
+	return 0;
+}
+
+
+#define PREFIX_MAC_LEN	3
+static int ath6kl_replace_with_softmac_2(struct ath6kl *ar)
+{
+	int ret = -ENOSYS;
+
+#ifdef CONFIG_ANDROID
+	u8 macaddr[ETH_ALEN] = {0x00, 0x03, 0x7f, 0x00, 0x00, 0x00};
+
+	if (!ar)
+		return -EINVAL;
+
+	ret = ath6kl_get_fw(ar, ar->hw.fw_softmac_2, &ar->fw_softmac_2,
+			    &ar->fw_softmac_2_len);
+	if (ret)
+		return ret;
+
+	memcpy(&macaddr[PREFIX_MAC_LEN],
+	       (ar->fw_softmac_2 + PREFIX_MAC_LEN),
+	       (ETH_ALEN - PREFIX_MAC_LEN));
+
+	ret = ath6kl_replace_mac(ar, macaddr);
+	if (ret)
+		vfree(ar->fw_softmac_2);
+#endif
+
+	return ret;
+}
+
+static int ath6kl_replace_with_softmac(struct ath6kl *ar)
+{
+	int ret;
+
+	if (!ar)
+		return -EINVAL;
+
+	ret = ath6kl_get_fw(ar, ar->hw.fw_softmac, &ar->fw_softmac,
+			    &ar->fw_softmac_len);
+	if (ret)
+		return ret;
+
+	ret = ath6kl_replace_mac(ar, ar->fw_softmac);
+	if (ret)
+		vfree(ar->fw_softmac);
+
+	return ret;
 }
 
 static int ath6kl_replace_with_module_param(struct ath6kl *ar, char *str_mac)
 {
-	int i, ret;
-	u16 *p;
-	u32 sum = 0;
-	u32 param;
 	u8 macaddr[ETH_ALEN] = {0,};
 
-	if (ar->fw_board == NULL || str_mac == NULL)
+	if (str_mac == NULL)
 		return -EINVAL;
 
 	if (_string_to_mac(str_mac, strlen(str_mac), macaddr) < 0)
 		return -EINVAL;
 
-	/* set checksum filed in the board data to zero */
-	ar->fw_board[BDATA_CHECKSUM_OFFSET] = 0;
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = 0;
-
-	/* replace the mac address with module parameter input */
-	memcpy(&ar->fw_board[BDATA_MAC_ADDR_OFFSET], macaddr, ETH_ALEN);
-
-	p = (u16 *) ar->fw_board;
-
-	/* calculate check sum */
-	for (i = 0; i < (ar->fw_board_len / 2); i++)
-		sum ^= *p++;
-
-
-	sum = ~sum;
-
-	ar->fw_board[BDATA_CHECKSUM_OFFSET] = (sum & 0xff);
-	ar->fw_board[BDATA_CHECKSUM_OFFSET+1] = ((sum >> 8) & 0xff);
-
-	ret = ath6kl_bmi_read(ar,
-				ath6kl_get_hi_item_addr(ar,
-				HI_ITEM(hi_option_flag2)),
-				(u8 *) &param, 4);
-
-	if (ret) {
-		ath6kl_err("failed to do bmi read %d\n", ret);
-		return ret;
-	}
-
-	param |= HI_OPTION_DISABLE_MAC_OTP;
-	ath6kl_bmi_write(ar,
-			 ath6kl_get_hi_item_addr(ar,
-			 HI_ITEM(hi_option_flag2)),
-			 (u8 *)&param, 4);
-
-	return 0;
+	return ath6kl_replace_mac(ar, macaddr);
 }
 
 static int ath6kl_fetch_board_file(struct ath6kl *ar)
@@ -1527,26 +1497,18 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 	ret = ath6kl_get_fw(ar, filename, &ar->fw_board,
 			    &ar->fw_board_len);
 	if (ret == 0) {
-		/*if valid MAC from module_param, then use it */
+		/* try to replace MAC with a valid module_param */
 		if (ath6kl_replace_with_module_param(ar, ath6kl_wifi_mac) == 0)
 			return 0;
 
-		ret = ath6kl_get_fw(ar, ar->hw.fw_softmac, &ar->fw_softmac,
-			    &ar->fw_softmac_len);
-
-		/* softmac bin file exists */
-		if (ret == 0) {
-			ath6kl_replace_with_softmac(ar);
+		/* try to replace MAC with softmac.bin file */
+		if (ath6kl_replace_with_softmac(ar) == 0)
 			return 0;
-		}
-#ifdef CONFIG_ANDROID
-		ret = ath6kl_get_fw(ar, ar->hw.fw_softmac_2, &ar->fw_softmac_2,
-			    &ar->fw_softmac_2_len);
 
-		/* softmac_2 bin file exists */
-		if (ret == 0)
-			ath6kl_replace_with_softmac_2(ar);
-#endif
+		/* try to replace MAC with softmac_2.bin file */
+		if (ath6kl_replace_with_softmac_2(ar) == 0)
+			return 0;
+
 		/* managed to get proper board file */
 		return 0;
 	}
@@ -1571,7 +1533,7 @@ static int ath6kl_fetch_board_file(struct ath6kl *ar)
 		return ret;
 	}
 
-	ath6kl_warn("WARNING! No proper board file was not found, "
+	ath6kl_warn("WARNING! No proper board file was found, "
 		    "instead using a default board file.\n");
 	ath6kl_warn("Most likely your hardware won't work as specified. "
 		    "Install correct board file!\n");
